@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx ruff
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: 测试
+        run: pytest
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建镜像
+        run: docker build -f docker/Dockerfile -t ocix:ci .
+
+      - name: 起容器做冒烟测试
+        run: |
+          docker run -d --name ocix-ci \
+            -e OCIX_SESSION_SECRET=$(openssl rand -hex 32) \
+            -e OCIX_ADMIN_PASSWORD=citestpass123 \
+            -p 8000:8000 ocix:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/api/health >/dev/null 2>&1; then
+              echo "healthy"; break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/api/health | tee /dev/stderr | grep -q '"ok":true'
+          # 前端静态资源必须在构建期就下好，运行时不能依赖 CDN
+          curl -fsS -o /dev/null http://localhost:8000/assets/vue.global.prod.js
+          curl -fsS -o /dev/null http://localhost:8000/assets/element-plus.full.min.js
+          curl -fsS http://localhost:8000/ | grep -q "OCIX"
+
+      - name: 容器日志（失败时）
+        if: failure()
+        run: docker logs ocix-ci
+
+      - name: 清理
+        if: always()
+        run: docker rm -f ocix-ci || true
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 检查部署脚本
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck -S warning scripts/*.sh

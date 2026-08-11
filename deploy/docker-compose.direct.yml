@@ -1,0 +1,5 @@
+# 直连模式叠加层：把后端端口映射到宿主机，用 http://IP:端口 访问（无 HTTPS）
+services:
+  backend:
+    ports:
+      - "${OCIX_BIND:-0.0.0.0}:${OCIX_PORT:-8000}:8000"

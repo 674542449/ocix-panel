@@ -1,0 +1,2056 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OCIX · Oracle Always Free 开机面板</title>
+  <link rel="stylesheet" href="/assets/element-plus.css" />
+  <link rel="stylesheet" href="/assets/element-plus-dark.css" />
+  <style>
+    :root {
+      --bg:#0b1220; --panel:#131c2e; --panel-2:#162134; --line:#253349;
+      --text:#e2e8f0; --muted:#8fa3bf; --accent:#38bdf8;
+      --ok:#22c55e; --warn:#f59e0b; --crit:#ef4444; --idle:#64748b;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+    }
+    /* Element Plus 暗色变量接到本站色板，避免组件和外壳像两套系统 */
+    html.dark {
+      --el-bg-color: var(--panel);
+      --el-bg-color-page: var(--bg);
+      --el-bg-color-overlay: var(--panel-2);
+      --el-text-color-primary: var(--text);
+      --el-text-color-regular: #cbd5e1;
+      --el-text-color-secondary: var(--muted);
+      --el-text-color-placeholder: #64748b;
+      --el-border-color: var(--line);
+      --el-border-color-light: var(--line);
+      --el-border-color-lighter: var(--line);
+      --el-border-color-extra-light: var(--line);
+      --el-fill-color-blank: var(--panel);
+      --el-fill-color-light: #1a2439;
+      --el-fill-color-lighter: #172032;
+      --el-color-primary: #38bdf8;
+      --el-color-success: var(--ok);
+      --el-color-warning: var(--warn);
+      --el-color-danger: var(--crit);
+      --el-color-error: var(--crit);
+      --el-color-info: var(--idle);
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:var(--sans); background:var(--bg); color:var(--text);
+           font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+    #app { min-height:100vh; }
+    /* 机器产出的值一律等宽 + 等宽数字，便于纵向比对和复制 */
+    .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:12.5px; letter-spacing:-.01em; }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
+              padding:var(--sp-3) var(--sp-5); background:#0d1526; border-bottom:1px solid var(--line);
+              position:sticky; top:0; z-index:20; flex-wrap:wrap; }
+    .brand { font-weight:700; font-size:17px; letter-spacing:.4px; white-space:nowrap; }
+    .brand span { color:var(--accent); }
+    .brand small { display:block; font-weight:400; font-size:11px; color:var(--muted); letter-spacing:0; }
+    .topbar-right { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; }
+    .who { color:var(--muted); font-size:12.5px; }
+
+    /* 左侧竖向导航 + 右侧内容 */
+    .shell { display:flex; align-items:flex-start; min-height:calc(100vh - 57px); }
+    .rail { width:212px; flex:none; padding:var(--sp-4) var(--sp-3); align-self:stretch;
+            border-right:1px solid var(--line); background:#0d1526;
+            position:sticky; top:57px; max-height:calc(100vh - 57px); overflow-y:auto; }
+    .rail-group + .rail-group { margin-top:var(--sp-4); }
+    .rail-title { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+                  color:#64748b; padding:0 10px var(--sp-2); font-weight:600; }
+    .rail-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+                 background:none; border:0; color:var(--muted); font-family:var(--sans);
+                 font-size:13.5px; padding:8px 10px; border-radius:7px; cursor:pointer;
+                 transition:background .18s ease, color .18s ease; position:relative; }
+    .rail-item svg { width:17px; height:17px; flex:none; opacity:.85; }
+    .rail-item:hover { background:#18233a; color:var(--text); }
+    .rail-item.on { background:rgba(56,189,248,.13); color:var(--accent); }
+    .rail-item.on::before { content:""; position:absolute; left:-13px; top:7px; bottom:7px;
+                            width:2px; border-radius:0 2px 2px 0; background:var(--accent); }
+    .rail-item em { margin-left:auto; font-style:normal; font-size:11px; font-weight:600;
+                    background:var(--crit); color:#fff; border-radius:9px; padding:1px 6px; }
+    .main { flex:1; min-width:0; padding:var(--sp-5); max-width:1400px; }
+    .pane { display:block; }
+
+    .container { max-width:1400px; margin:0 auto; padding:var(--sp-5); }
+    .toolbar { display:flex; gap:var(--sp-3); flex-wrap:wrap; align-items:center; margin-bottom:var(--sp-4); }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+            padding:var(--sp-4); margin-bottom:var(--sp-4); }
+    .card-head { display:flex; align-items:baseline; justify-content:space-between;
+                 gap:var(--sp-3); margin-bottom:var(--sp-3); flex-wrap:wrap; }
+    .card-title { font-size:13px; font-weight:600; letter-spacing:.02em; }
+    .hint { font-size:12px; color:var(--muted); line-height:1.7; margin:var(--sp-3) 0 0; }
+    .table-wrap { overflow-x:auto; }
+
+    /* 登录 */
+    .login-wrap { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:var(--sp-4); }
+    .login-card { width:100%; max-width:380px; background:var(--panel); border:1px solid var(--line);
+                  padding:var(--sp-6); border-radius:12px; }
+    .login-card h1 { margin:0 0 var(--sp-1); font-size:20px; letter-spacing:.4px; }
+    .login-card h1 span { color:var(--accent); }
+    .login-sub { color:var(--muted); font-size:12.5px; margin:0 0 var(--sp-5); }
+
+    /* 状态点：本面板唯一允许动的东西——只有过渡态才脉动 */
+    .state { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+    .dot { width:8px; height:8px; border-radius:50%; flex:none; position:relative; background:var(--idle); }
+    .dot::after { content:""; position:absolute; inset:-4px; border-radius:50%;
+                  border:1px solid currentColor; opacity:.35; }
+    .dot.ok { background:var(--ok); color:var(--ok); }
+    .dot.warn { background:var(--warn); color:var(--warn); animation:pulse 1.6s ease-out infinite; }
+    .dot.crit { background:var(--crit); color:var(--crit); }
+    .dot.idle { background:var(--idle); color:var(--idle); }
+    .state-label { font-size:12px; font-variant-numeric:tabular-nums; }
+    @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(245,158,11,.55); } 70% { box-shadow:0 0 0 7px rgba(245,158,11,0); } 100% { box-shadow:0 0 0 0 rgba(245,158,11,0); } }
+
+    /* 自动刷新指示灯 */
+    .live { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .live .dot { width:6px; height:6px; }
+    .live .dot::after { display:none; }
+
+    /* 统计条 */
+    .stats { display:flex; gap:var(--sp-5); flex-wrap:wrap; }
+    .stat { min-width:92px; }
+    .stat .v { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:24px; font-weight:600; line-height:1.2; }
+    .stat .k { font-size:11.5px; color:var(--muted); letter-spacing:.03em; }
+    .stat.ok .v { color:var(--ok); } .stat.idle .v { color:var(--idle); } .stat.crit .v { color:var(--crit); }
+
+    /* 批量操作条 */
+    .bulkbar { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;
+               background:var(--panel-2); border:1px solid var(--accent); border-radius:8px;
+               padding:var(--sp-2) var(--sp-3); margin-bottom:var(--sp-3); }
+    .bulkbar .count { font-family:var(--mono); font-size:12.5px; color:var(--accent); }
+
+    /* 额度进度 */
+    .quota { display:grid; grid-template-columns:150px 1fr 132px; gap:var(--sp-3);
+             align-items:center; padding:var(--sp-2) 0; border-bottom:1px solid var(--line); }
+    .quota:last-child { border-bottom:0; }
+    .quota .label { font-size:12.5px; color:#cbd5e1; }
+    .quota .num { font-family:var(--mono); font-size:12.5px; text-align:right; color:var(--muted); }
+    .quota .num b { color:var(--text); font-weight:600; }
+    .bar { height:6px; border-radius:3px; background:#1d2740; overflow:hidden; }
+    .bar > i { display:block; height:100%; border-radius:3px; background:var(--accent);
+               transition:width .3s ease; }
+    .bar.warn > i { background:var(--warn); } .bar.over > i { background:var(--crit); }
+
+    /* 监控图 */
+    .chart { position:relative; width:100%; }
+    .chart svg { display:block; width:100%; height:auto; }
+    .chart .grid { stroke:var(--line); stroke-width:1; }
+    .chart .axis-t { fill:var(--muted); font-size:10px; font-family:var(--mono); }
+    .legend { display:flex; gap:var(--sp-4); flex-wrap:wrap; font-size:12px; color:var(--muted); margin-bottom:var(--sp-2); }
+    .legend i { display:inline-block; width:18px; height:0; border-top-width:2px; margin-right:6px;
+                vertical-align:middle; }
+    .readout { position:absolute; top:0; right:0; background:var(--panel-2); border:1px solid var(--line);
+               border-radius:6px; padding:6px 9px; font-family:var(--mono); font-size:11.5px; pointer-events:none; }
+    .readout div + div { margin-top:2px; }
+
+    /* 新建实例：左表单 / 右额度预检 */
+    .create-grid { display:grid; grid-template-columns:1fr 380px; gap:var(--sp-5); align-items:start; }
+    .pf-card { background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
+               padding:var(--sp-4); position:sticky; top:76px; }
+    .pf-card.ok { border-color:rgba(34,197,94,.45); }
+    .pf-card.bad { border-color:rgba(239,68,68,.55); }
+    .pf-head { display:flex; align-items:center; justify-content:space-between;
+               gap:var(--sp-2); margin-bottom:var(--sp-3); }
+    .pf-row { display:grid; grid-template-columns:auto 1fr auto; gap:var(--sp-2);
+              align-items:center; padding:7px 0; border-bottom:1px solid var(--line); }
+    .pf-row:last-of-type { border-bottom:0; }
+    .pf-label { font-size:12.5px; color:#cbd5e1; }
+    .pf-calc { font-size:12px; color:var(--muted); white-space:nowrap; }
+    .pf-calc em { font-style:normal; color:var(--accent); }
+    .pf-calc b { color:var(--text); font-weight:600; }
+    .pf-msg { font-size:12px; line-height:1.6; margin-top:var(--sp-2); padding:8px 10px;
+              border-radius:6px; }
+    .pf-msg.crit { color:#fecaca; background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.35); }
+    .pf-msg.warn { color:#fde68a; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); }
+    .el-table .orphan-row td { background:rgba(239,68,68,.07) !important; }
+    code { font-family:var(--mono); font-size:12px; background:#1a2439; padding:1px 5px; border-radius:4px; }
+    @media (max-width:1100px) {
+      .create-grid { grid-template-columns:1fr; }
+      .pf-card { position:static; }
+    }
+
+    /* 分段选择器：不依赖 Element Plus 的版本差异 */
+    .seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+    .seg button { appearance:none; border:0; background:transparent; color:var(--muted);
+                  font-family:var(--sans); font-size:12.5px; padding:6px 13px; cursor:pointer;
+                  border-right:1px solid var(--line); transition:background .18s ease, color .18s ease; }
+    .seg button:last-child { border-right:0; }
+    .seg button:hover { background:#1a2439; color:var(--text); }
+    .seg button.on { background:var(--accent); color:#06121f; font-weight:600; }
+
+    /* 防火墙状态条 */
+    .fw-verdict { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;
+                  background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+                  padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-3); }
+    .fw-verdict.open { border-color:rgba(245,158,11,.5); }
+    .fw-verdict.partial { border-color:rgba(34,197,94,.4); }
+    .fw-verdict b { display:block; font-size:13.5px; }
+    .fw-verdict span { font-size:12px; color:var(--muted); }
+    .fw-actions { margin-left:auto; }
+
+    .empty { text-align:center; color:var(--muted); padding:var(--sp-6) var(--sp-4); font-size:13px; }
+    .empty b { display:block; color:var(--text); font-size:14px; margin-bottom:6px; font-weight:600; }
+    .ip-cell { display:inline-flex; align-items:center; gap:6px; }
+    .copy-btn { background:none; border:0; color:var(--muted); cursor:pointer; padding:2px;
+                border-radius:4px; line-height:0; transition:color .18s ease, background .18s ease; }
+    .copy-btn:hover { color:var(--accent); background:#1d2740; }
+    .el-button, .copy-btn, .el-select, [role="tab"] { cursor:pointer; }
+    .el-table .cell { line-height:1.45; }
+
+    /* 窄屏：左侧导航压成顶部横向可滚动条 */
+    @media (max-width:900px) {
+      .shell { display:block; }
+      .rail { width:auto; position:static; max-height:none; border-right:0;
+              border-bottom:1px solid var(--line); padding:var(--sp-2) var(--sp-3);
+              overflow-x:auto; overflow-y:hidden; }
+      .rail nav { display:flex; gap:var(--sp-3); }
+      .rail-group { display:flex; align-items:center; gap:4px; }
+      .rail-group + .rail-group { margin-top:0; padding-left:var(--sp-3);
+                                  border-left:1px solid var(--line); }
+      .rail-title { display:none; }
+      .rail-item { width:auto; white-space:nowrap; padding:9px 12px; }
+      .rail-item.on::before { display:none; }
+      .main { padding:var(--sp-3); }
+    }
+    @media (max-width:860px) {
+      .container { padding:var(--sp-3); }
+      .quota { grid-template-columns:1fr; gap:var(--sp-1); }
+      .quota .num { text-align:left; }
+      /* 手机上「把机器开回来」是主路径，表格里的按钮不能是 25px 的小条 */
+      .el-table .el-button--small { min-height:36px; padding-left:12px; padding-right:12px; }
+      .el-table .el-button + .el-button { margin-left:8px; }
+      .bulkbar .el-button { min-height:36px; }
+      .seg button { padding:10px 14px; }
+    }
+    /* 复制按钮视觉上很小，但点击区域补到 44×44 */
+    .copy-btn { position:relative; }
+    .copy-btn::after { content:""; position:absolute; left:50%; top:50%;
+                       width:44px; height:44px; transform:translate(-50%,-50%); }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important;
+                               transition-duration:.001ms !important; }
+      .dot.warn { box-shadow:0 0 0 3px rgba(245,158,11,.3); }
+    }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="text/html" id="app-tpl">
+  <!-- ── 登录 ── -->
+  <div class="login-wrap" v-if="!token">
+    <div class="login-card">
+      <h1>OCI<span>X</span></h1>
+      <p class="login-sub">管理你自己的 Oracle 租户。登录后可查看并开关所有账户下的实例。</p>
+      <el-alert v-if="loginErr" :title="loginErr" type="error" show-icon :closable="false" style="margin-bottom:14px;" />
+      <el-form @submit.prevent="doLogin" label-position="top">
+        <el-form-item label="用户名">
+          <el-input v-model="loginForm.username" size="large" autocomplete="username" @keyup.enter="doLogin" />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="loginForm.password" type="password" size="large" show-password
+                    autocomplete="current-password" @keyup.enter="doLogin" />
+        </el-form-item>
+        <el-button type="primary" size="large" style="width:100%;" @click="doLogin" :loading="loading">登录</el-button>
+      </el-form>
+      <p class="hint">首次登录后请立刻改密。面板只操作你自己的 OCI 租户，不做注册或抢机。</p>
+    </div>
+  </div>
+
+  <!-- ── 主面板 ── -->
+  <div v-else>
+    <div class="topbar">
+      <div class="brand">OCI<span>X</span><small>Always Free 开机面板</small></div>
+      <div class="topbar-right">
+        <span class="live" v-if="autoRefresh">
+          <i class="dot ok"></i>{{ countdown }}s 后自动刷新
+        </span>
+        <el-switch v-model="autoRefresh" size="small" active-text="自动刷新" />
+        <span class="who">{{ user }}</span>
+        <el-button size="small" @click="logout">退出</el-button>
+      </div>
+    </div>
+
+    <div class="shell">
+      <!-- 左侧导航 -->
+      <aside class="rail">
+        <nav>
+          <div class="rail-group" v-for="g in NAV" :key="g.title">
+            <div class="rail-title">{{ g.title }}</div>
+            <button v-for="it in g.items" :key="it.name" type="button" class="rail-item"
+                    :class="{ on: activeTab === it.name }"
+                    :aria-current="activeTab === it.name ? 'page' : null"
+                    @click="go(it.name)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path :d="it.icon" />
+              </svg>
+              <span>{{ it.label }}</span>
+              <em v-if="it.name === 'storage' && orphanBadge">{{ orphanBadge }}</em>
+            </button>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <div class="toolbar">
+          <el-select v-model="currentProfile" placeholder="选择账户" style="width:220px;" size="default"
+                     :loading="profilesLoading" @change="onProfileChange">
+            <el-option v-for="p in profiles" :key="p.name" :value="p.name"
+                       :label="p.name + (p.region ? ' · ' + p.region : '')" />
+          </el-select>
+          <el-select v-model="compartmentId" placeholder="全部 compartment" style="width:280px;"
+                     clearable filterable :loading="compsLoading">
+            <el-option v-for="c in compartments" :key="c.id" :value="c.id" :label="c.path" />
+          </el-select>
+          <el-tooltip content="同时查询所有子 compartment，关掉会明显更快" placement="bottom">
+            <el-checkbox v-model="subtree" label="含子 compartment" />
+          </el-tooltip>
+          <el-button type="primary" @click="refreshActive" :loading="loading">刷新</el-button>
+          <span class="who" v-if="lastUpdated">更新于 {{ lastUpdated }}</span>
+        </div>
+
+        <el-alert v-if="!profiles.length && !profilesLoading" type="warning" show-icon :closable="false"
+                  title="还没有任何账户" description="到「账户配置」粘贴一份 ~/.oci/config 并附上私钥即可开始。" />
+
+        <!-- 全部账户 -->
+        <section class="pane" v-show="activeTab === 'all'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">跨账户实例总览</div>
+              <el-checkbox v-model="allWithIp" @change="loadAll" label="查询公网 IP（较慢）" />
+            </div>
+            <div class="stats" style="margin-bottom:16px;">
+              <div class="stat"><div class="v">{{ allSummary.accounts }}</div><div class="k">账户</div></div>
+              <div class="stat"><div class="v">{{ allSummary.instances }}</div><div class="k">实例</div></div>
+              <div class="stat ok"><div class="v">{{ allSummary.running }}</div><div class="k">运行中</div></div>
+              <div class="stat idle"><div class="v">{{ allSummary.stopped }}</div><div class="k">已停止</div></div>
+              <div class="stat crit" v-if="allSummary.failed_accounts"><div class="v">{{ allSummary.failed_accounts }}</div><div class="k">账户异常</div></div>
+            </div>
+
+            <el-alert v-for="a in failedAccounts" :key="a.profile" type="error" show-icon :closable="false"
+                      style="margin-bottom:8px;" :title="'账户 ' + a.profile + ' 查询失败'" :description="a.error" />
+
+            <div class="bulkbar" v-if="allSelection.length">
+              <span class="count">已选 {{ allSelection.length }} 台</span>
+              <el-button size="small" type="success" @click="batchAct(allSelection,'START')">开机</el-button>
+              <el-button size="small" @click="batchAct(allSelection,'SOFTSTOP')">关机</el-button>
+              <el-button size="small" type="warning" @click="batchAct(allSelection,'SOFTRESET')">重启</el-button>
+              <el-button size="small" text @click="clearAllSelection">取消选择</el-button>
+            </div>
+
+            <div class="table-wrap" v-if="allFlat.length">
+              <el-table ref="allTableRef" :data="allFlat" size="small" stripe border row-key="id"
+                        @selection-change="allSelection = $event" style="width:100%;">
+                <el-table-column type="selection" width="42" />
+                <el-table-column prop="profile" label="账户" width="120" />
+                <el-table-column label="状态" width="118">
+                  <template #default="{row}">
+                    <span class="state">
+                      <i :class="['dot', stateTone(row.state)]"></i>
+                      <span class="state-label">{{ stateText(row.state) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="display_name" label="名称" min-width="150" show-overflow-tooltip />
+                <el-table-column label="规格" min-width="180">
+                  <template #default="{row}"><span class="mono">{{ specText(row) }}</span></template>
+                </el-table-column>
+                <el-table-column label="公网 IP" width="150" v-if="allWithIp">
+                  <template #default="{row}">
+                    <span class="ip-cell" v-if="row.public_ip">
+                      <span class="mono">{{ row.public_ip }}</span>
+                      <button class="copy-btn" @click="copy(row.public_ip)" :aria-label="'复制 ' + row.public_ip">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                      </button>
+                    </span>
+                    <span v-else class="mono" style="color:var(--muted);">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="region" label="区域" width="120">
+                  <template #default="{row}"><span class="mono">{{ row.region || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="操作" width="196" fixed="right">
+                  <template #default="{row}">
+                    <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
+                    <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
+                    <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div class="empty" v-else-if="!loading">
+              <b>没有查到实例</b>
+              所有账户下都没有存活的实例。若确认实例存在，试试勾选「含子 compartment」。
+            </div>
+          </div>
+        </section>
+
+        <!-- 单账户实例 -->
+        <section class="pane" v-show="activeTab === 'instances'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">{{ currentProfile || '未选择账户' }} 的实例</div>
+              <span class="who">{{ instances.length }} 台</span>
+            </div>
+
+            <div class="bulkbar" v-if="instSelection.length">
+              <span class="count">已选 {{ instSelection.length }} 台</span>
+              <el-button size="small" type="success" @click="batchAct(instSelection,'START')">开机</el-button>
+              <el-button size="small" @click="batchAct(instSelection,'SOFTSTOP')">关机</el-button>
+              <el-button size="small" type="warning" @click="batchAct(instSelection,'SOFTRESET')">重启</el-button>
+              <el-button size="small" text @click="clearInstSelection">取消选择</el-button>
+            </div>
+
+            <div class="table-wrap" v-if="instances.length">
+              <el-table ref="instTableRef" :data="instances" size="small" stripe border row-key="id"
+                        @selection-change="instSelection = $event" style="width:100%;">
+                <el-table-column type="selection" width="42" />
+                <el-table-column label="状态" width="118">
+                  <template #default="{row}">
+                    <span class="state">
+                      <i :class="['dot', stateTone(row.state)]"></i>
+                      <span class="state-label">{{ stateText(row.state) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="display_name" label="名称" min-width="150" show-overflow-tooltip />
+                <el-table-column label="规格" min-width="190">
+                  <template #default="{row}"><span class="mono">{{ specText(row) }}</span></template>
+                </el-table-column>
+                <el-table-column label="公网 IP" width="150">
+                  <template #default="{row}">
+                    <span class="ip-cell" v-if="row.public_ip">
+                      <span class="mono">{{ row.public_ip }}</span>
+                      <button class="copy-btn" @click="copy(row.public_ip)" :aria-label="'复制 ' + row.public_ip">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                      </button>
+                    </span>
+                    <span v-else class="mono" style="color:var(--muted);">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="IPv6" width="180">
+                  <template #default="{row}">
+                    <span class="ip-cell" v-if="row.ipv6">
+                      <span class="mono">{{ row.ipv6 }}</span>
+                      <button class="copy-btn" @click="copy(row.ipv6)" :aria-label="'复制 ' + row.ipv6">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                      </button>
+                    </span>
+                    <span v-else class="mono" style="color:var(--muted);">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="内网 IP" width="130">
+                  <template #default="{row}"><span class="mono">{{ row.private_ip || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="创建于" width="110">
+                  <template #default="{row}"><span class="mono">{{ fmtDate(row.time_created) }}</span></template>
+                </el-table-column>
+                <el-table-column label="操作" width="330" fixed="right">
+                  <template #default="{row}">
+                    <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
+                    <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
+                    <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
+                    <el-button size="small" @click="changeIp(row)">换 IP</el-button>
+                    <el-button size="small" type="danger" plain @click="terminate(row)">终止</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div class="empty" v-else-if="!loading">
+              <b>这个账户下没有实例</b>
+              换个 compartment，或勾选「含子 compartment」再查一次。
+            </div>
+            <p class="hint">被 Oracle 回收或停掉的免费实例不会自动重开，需要你手动点「开机」——这是为了守住 Oracle 的回收策略，不做抢机。</p>
+          </div>
+        </section>
+
+        <!-- 新建实例 -->
+        <section class="pane" v-show="activeTab === 'create'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">新建实例</div>
+              <span class="who">仅提供 Always Free 规格</span>
+            </div>
+
+            <el-alert v-if="opts.needs_network" type="warning" show-icon :closable="false"
+                      style="margin-bottom:14px;" title="这个账户还没有可用子网"
+                      description="开机必须要有网络。点下方「一键创建网络」会建一个 VCN + 互联网网关 + 公共子网。" />
+
+            <div class="create-grid">
+              <div>
+                <el-form label-position="top">
+                  <el-form-item label="实例名称">
+                    <div style="display:flex; gap:8px; width:100%;">
+                      <el-input v-model="createForm.display_name" style="flex:1;" placeholder="例如 payments-api-01" />
+                      <el-button @click="rollName" title="换一个名字">换一个</el-button>
+                    </div>
+                  </el-form-item>
+
+                  <el-form-item label="规格">
+                    <div class="seg" role="group" aria-label="规格">
+                      <button v-for="s in opts.shapes" :key="s.shape" type="button"
+                              :class="{ on: createForm.shape === s.shape }"
+                              :aria-pressed="createForm.shape === s.shape"
+                              @click="pickShape(s)">{{ s.label }}</button>
+                    </div>
+                  </el-form-item>
+
+                  <template v-if="isArm">
+                    <el-form-item :label="'OCPU：' + createForm.ocpus + ' 核'">
+                      <el-slider v-model="createForm.ocpus" :min="1" :max="4" :step="1"
+                                 show-stops @change="onOcpuChange" style="width:100%;" />
+                    </el-form-item>
+                    <el-form-item :label="'内存：' + createForm.memory_gb + ' GB（每 OCPU 最多 ' + opts.arm_gb_per_ocpu + 'GB）'">
+                      <el-slider v-model="createForm.memory_gb" :min="1" :max="24" :step="1"
+                                 @change="runPreflight" style="width:100%;" />
+                    </el-form-item>
+                  </template>
+                  <el-form-item v-else label="规格配置">
+                    <span class="mono" style="color:var(--muted);">1 OCPU / 1 GB（AMD 微型规格固定，不可调）</span>
+                  </el-form-item>
+
+                  <el-form-item :label="'引导卷：' + createForm.boot_gb + ' GB（最小 ' + opts.min_boot_gb + 'GB）'">
+                    <el-slider v-model="createForm.boot_gb" :min="50" :max="200" :step="5"
+                               @change="runPreflight" style="width:100%;" />
+                  </el-form-item>
+
+                  <el-form-item label="可用域">
+                    <el-select v-model="createForm.availability_domain" style="width:100%;"
+                               placeholder="选择可用域">
+                      <el-option v-for="ad in opts.availability_domains" :key="ad" :value="ad" :label="ad" />
+                    </el-select>
+                  </el-form-item>
+
+                  <el-form-item label="系统镜像（只列 Ubuntu）">
+                    <el-select v-model="createForm.image_id" style="width:100%;" filterable
+                               :loading="optsLoading" placeholder="选择 Ubuntu 镜像">
+                      <el-option v-for="im in opts.images" :key="im.id" :value="im.id"
+                                 :label="im.display_name" />
+                    </el-select>
+                  </el-form-item>
+
+                  <el-form-item label="子网">
+                    <div style="display:flex; gap:8px; width:100%;">
+                      <el-select v-model="createForm.subnet_id" style="flex:1;" placeholder="选择子网">
+                        <el-option v-for="s in opts.subnets" :key="s.id" :value="s.id"
+                                   :label="s.vcn_name + ' / ' + s.display_name + ' (' + s.cidr_block + ')'" />
+                      </el-select>
+                      <el-button v-if="opts.needs_network" type="primary" plain
+                                 :loading="netCreating" @click="makeNetwork">一键创建网络</el-button>
+                    </div>
+                  </el-form-item>
+
+                  <el-form-item label="网络">
+                    <el-checkbox v-model="createForm.assign_ipv6" :disabled="!selectedSubnetIpv6 && !ipv6Ready"
+                                 label="同时分配 IPv6 地址" />
+                    <el-button v-if="createForm.subnet_id && !selectedSubnetIpv6" size="small"
+                               style="margin-left:10px;" :loading="ipv6Busy" @click="enableIpv6">
+                      为该子网开通 IPv6
+                    </el-button>
+                    <span class="hint" v-else-if="selectedSubnetIpv6" style="margin-left:10px;">
+                      该子网已开通 IPv6
+                    </span>
+                  </el-form-item>
+
+                  <el-form-item label="SSH 公钥">
+                    <div style="width:100%;">
+                      <el-input v-model="createForm.ssh_public_key" type="textarea" :rows="3" class="mono"
+                                placeholder="ssh-ed25519 AAAA... 或 ssh-rsa AAAA..." />
+                      <div style="margin-top:8px; display:flex; align-items:center; gap:10px;">
+                        <el-button size="small" @click="$refs.pubkeyInput.click()">从文件导入</el-button>
+                        <input ref="pubkeyInput" type="file" accept=".pub,.txt,text/plain"
+                               style="display:none;" @change="onPubKeyFile" />
+                        <span class="hint" v-if="pubKeyName">已导入 {{ pubKeyName }}</span>
+                      </div>
+                    </div>
+                  </el-form-item>
+                </el-form>
+                <p class="hint">
+                  选 <code>~/.ssh/id_ed25519.pub</code> 这类 .pub 文件，不是私钥。建好后用
+                  <code class="mono">ssh ubuntu@公网IP</code> 登录。
+                </p>
+              </div>
+
+              <!-- 额度预检 -->
+              <div>
+                <div class="pf-card" :class="preflight && preflight.allow ? 'ok' : (preflight ? 'bad' : '')">
+                  <div class="pf-head">
+                    <span class="card-title">额度预检</span>
+                    <span class="state" v-if="preflight">
+                      <i :class="['dot', preflight.allow ? 'ok' : 'crit']"></i>
+                      <span class="state-label">{{ preflight.allow ? '可以创建' : '超出额度' }}</span>
+                    </span>
+                    <span class="who" v-else-if="preflightLoading">核算中…</span>
+                  </div>
+
+                  <template v-if="preflight">
+                    <div class="pf-row" v-for="c in preflight.checks" :key="c.key">
+                      <i :class="['dot', c.ok ? 'ok' : 'crit']"></i>
+                      <span class="pf-label">{{ c.label }}</span>
+                      <span class="pf-calc mono">
+                        {{ c.current }} <em>+{{ c.adding }}</em> = <b>{{ c.after }}</b> / {{ c.limit }}{{ c.unit }}
+                      </span>
+                    </div>
+
+                    <div class="pf-msg crit" v-for="(b,i) in preflight.blockers" :key="'b'+i">{{ b }}</div>
+                    <div class="pf-msg warn" v-for="(w,i) in preflight.warnings" :key="'w'+i">{{ w }}</div>
+                  </template>
+                  <div class="empty" v-else-if="!preflightLoading" style="padding:20px 8px;">
+                    填好规格后自动核算
+                  </div>
+                </div>
+
+                <el-button type="primary" size="large" style="width:100%; margin-top:14px;"
+                           :disabled="!canCreate" :loading="creating" @click="createInstance">
+                  {{ preflight && !preflight.allow ? '超出免费额度，无法创建' : '创建实例' }}
+                </el-button>
+                <p class="hint">
+                  创建前后端会**再核算一次**额度，超额一律拒绝——即使你绕过界面直接调接口也拦得住。
+                  ARM 遇到「Out of host capacity」是 Oracle 侧没库存，面板只报错，不会自动循环重试。
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 免费额度 -->
+        <section class="pane" v-show="activeTab === 'usage'">
+          <div class="card" v-if="usage">
+            <div class="card-head">
+              <div class="card-title">当前用量 / Always Free 上限</div>
+            </div>
+            <el-alert v-for="(w,i) in usage.warnings" :key="i" type="error" show-icon :closable="false"
+                      :title="w" style="margin-bottom:8px;" />
+            <div class="quota" v-for="it in usage.items" :key="it.label">
+              <div class="label">{{ it.label }}</div>
+              <div :class="['bar', it.over ? 'over' : (it.percent >= 80 ? 'warn' : '')]">
+                <i :style="{ width: Math.min(it.percent,100) + '%' }"></i>
+              </div>
+              <div class="num"><b>{{ it.used }}</b> / {{ it.limit }} {{ it.unit }}</div>
+            </div>
+            <p class="hint">
+              上限对照 Oracle Always Free 公开文档，仅供参考，以控制台实际配额为准。
+              引导卷同样占用 200GB 存储额度，所以这里把引导卷和块存储合并计算。
+            </p>
+          </div>
+          <div class="card empty" v-else-if="!loading">
+            <b>还没有额度数据</b>
+            选一个账户后点「刷新」。
+          </div>
+        </section>
+
+        <!-- 存储 -->
+        <section class="pane" v-show="activeTab === 'storage'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">卷与 200GB 额度</div>
+              <el-button size="small" @click="loadStorage" :loading="storageLoading">刷新</el-button>
+            </div>
+
+            <template v-if="storage">
+              <div class="stats" style="margin-bottom:14px;">
+                <div class="stat" :class="storage.summary.total_gb > storage.summary.limit_gb ? 'crit' : ''">
+                  <div class="v">{{ storage.summary.total_gb }}</div>
+                  <div class="k">已用 GB / {{ storage.summary.limit_gb }}</div>
+                </div>
+                <div class="stat"><div class="v">{{ storage.summary.boot_count }}</div><div class="k">引导卷</div></div>
+                <div class="stat"><div class="v">{{ storage.summary.block_count }}</div><div class="k">块存储卷</div></div>
+                <div class="stat" :class="storage.summary.orphan_count ? 'crit' : 'idle'">
+                  <div class="v">{{ storage.summary.orphan_gb }}</div>
+                  <div class="k">孤儿卷占用 GB</div>
+                </div>
+              </div>
+
+              <el-alert v-if="storage.summary.orphan_count" type="warning" show-icon :closable="false"
+                        style="margin-bottom:12px;"
+                        :title="'有 ' + storage.summary.orphan_count + ' 个孤儿卷，白占 ' + storage.summary.orphan_gb + 'GB 额度'"
+                        description="这些卷没挂在任何实例上——通常是终止实例时勾了「保留引导卷」留下的。删掉即可释放额度，但卷里的数据会一并消失。" />
+
+              <div class="table-wrap" v-if="storage.volumes.length">
+                <el-table :data="storage.volumes" size="small" stripe border style="width:100%;"
+                          :row-class-name="volRowClass">
+                  <el-table-column label="挂载" width="150">
+                    <template #default="{row}">
+                      <span class="state">
+                        <i :class="['dot', row.orphan ? 'crit' : 'ok']"></i>
+                        <span class="state-label">{{ row.orphan ? '孤儿（没挂载）' : (row.attached_to || '已挂载') }}</span>
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="display_name" label="名称" min-width="170" show-overflow-tooltip />
+                  <el-table-column label="类型" width="90">
+                    <template #default="{row}">{{ row.kind === 'boot' ? '引导卷' : '块存储' }}</template>
+                  </el-table-column>
+                  <el-table-column label="大小" width="90">
+                    <template #default="{row}"><span class="mono">{{ row.size_gb }} GB</span></template>
+                  </el-table-column>
+                  <el-table-column label="性能" width="190">
+                    <template #default="{row}">
+                      <el-select :model-value="row.vpus_per_gb" size="small" style="width:100%;"
+                                 @change="v => changePerformance(row, v)">
+                        <el-option v-for="o in (opts.vpu_options || [])" :key="o.vpus" :value="o.vpus"
+                                   :label="o.label + (o.free ? '' : '（计费）')" />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="创建于" width="110">
+                    <template #default="{row}"><span class="mono">{{ fmtDate(row.time_created) }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="100" fixed="right">
+                    <template #default="{row}">
+                      <el-button size="small" type="danger" :disabled="!row.orphan"
+                                 @click="deleteVolume(row)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+              <div class="empty" v-else><b>这个账户下没有卷</b>建实例后引导卷会出现在这里。</div>
+              <p class="hint">
+                只有孤儿卷可以删。要删仍挂载的引导卷，请先到「实例」页终止对应实例。
+              </p>
+            </template>
+            <div class="empty" v-else-if="!storageLoading"><b>还没有存储数据</b>点「刷新」加载。</div>
+          </div>
+        </section>
+
+        <!-- 防火墙 -->
+        <section class="pane" v-show="activeTab === 'firewall'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">云端防火墙（VCN 安全列表）</div>
+            </div>
+            <div class="toolbar">
+              <el-select v-model="fwInstance" placeholder="选择实例" style="width:280px;" @change="loadFirewall">
+                <el-option v-for="i in instances" :key="i.id" :value="i.id"
+                           :label="i.display_name + (i.public_ip ? ' · ' + i.public_ip : '')" />
+              </el-select>
+              <el-button @click="loadFirewall" :loading="fwLoading" :disabled="!fwInstance">刷新</el-button>
+            </div>
+
+            <template v-if="firewall">
+              <div class="fw-verdict" :class="firewall.all_open_v4 ? 'open' : 'partial'">
+                <i :class="['dot', firewall.all_open_v4 ? 'warn' : 'ok']"></i>
+                <div>
+                  <b>{{ firewall.verdict }}</b>
+                  <span class="mono">子网 {{ firewall.subnet_name }}
+                    · IPv6 {{ firewall.ipv6_enabled ? '已开通' : '未开通' }}</span>
+                </div>
+                <div class="fw-actions">
+                  <el-button v-if="!firewall.all_open_v4" type="warning" :loading="fwBusy"
+                             @click="allowAll">一键放行所有端口</el-button>
+                  <el-button v-else type="primary" plain :loading="fwBusy"
+                             @click="revokeAll">移除全放行规则</el-button>
+                </div>
+              </div>
+
+              <div class="table-wrap" v-if="firewall.ingress_rules.length">
+                <el-table :data="firewall.ingress_rules" size="small" stripe border style="width:100%;">
+                  <el-table-column label="协议" width="110">
+                    <template #default="{row}"><span class="mono">{{ row.protocol }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="来源" width="160">
+                    <template #default="{row}"><span class="mono">{{ row.source }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="端口" width="140">
+                    <template #default="{row}"><span class="mono">{{ row.ports }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="说明" min-width="200">
+                    <template #default="{row}">{{ row.description || '—' }}</template>
+                  </el-table-column>
+                </el-table>
+              </div>
+              <div class="empty" v-else><b>没有任何入站规则</b>这台机器目前从公网完全不可达。</div>
+
+              <el-alert type="warning" show-icon :closable="false" style="margin-top:14px;"
+                        title="放行后如果端口还是不通，是实例内部的防火墙在挡"
+                        description="Oracle 的 Ubuntu 镜像自带 iptables 规则，默认只放 22。安全列表只是云端这一层，两层都要开。" />
+              <p class="hint">
+                实例内执行（Ubuntu）：<br />
+                <code>sudo iptables -I INPUT -j ACCEPT &amp;&amp; sudo netfilter-persistent save</code><br />
+                只想开单个端口更稳妥：<code>sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT</code>
+              </p>
+            </template>
+            <div class="empty" v-else-if="!fwLoading">
+              <b>选一台实例查看防火墙状态</b>
+              这里读的是 OCI 云端的安全列表，换机器部署面板也照样看得到。
+            </div>
+          </div>
+        </section>
+
+        <!-- 监控 -->
+        <section class="pane" v-show="activeTab === 'metrics'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">实例指标</div>
+            </div>
+            <div class="toolbar">
+              <el-select v-model="metricInstance" placeholder="选择实例" style="width:260px;" @change="loadMetrics">
+                <el-option v-for="i in instances" :key="i.id" :value="i.id" :label="i.display_name" />
+              </el-select>
+              <div class="seg" role="group" aria-label="时间范围">
+                <button v-for="h in HOUR_RANGES" :key="h.v" type="button"
+                        :class="{ on: metricHours === h.v }" :aria-pressed="metricHours === h.v"
+                        @click="metricHours = h.v; loadMetrics()">{{ h.t }}</button>
+              </div>
+              <el-button @click="loadMetrics" :loading="metricsLoading" :disabled="!metricInstance">查询</el-button>
+            </div>
+
+            <template v-if="hasMetricPoints">
+              <div class="legend">
+                <span v-for="s in chartSeries" :key="s.metric">
+                  <i :style="{ borderTopStyle: s.dash ? 'dashed' : 'solid', borderTopColor: s.color }"></i>{{ s.name }}
+                </span>
+              </div>
+              <div class="chart" @mousemove="onChartMove" @mouseleave="hoverIdx = -1">
+                <svg :viewBox="'0 0 ' + CW + ' ' + CH" role="img"
+                     :aria-label="'过去 ' + metricHours + ' 小时的 CPU 与内存利用率折线图'">
+                  <line class="grid" v-for="g in gridLines" :key="g.y" x1="46" :y1="g.y" :x2="CW-8" :y2="g.y" />
+                  <text class="axis-t" v-for="g in gridLines" :key="'t'+g.y" x="40" :y="g.y+3" text-anchor="end">{{ g.label }}</text>
+                  <path v-for="s in areaSeries" :key="'a'+s.metric" :d="s.area" :fill="s.color" fill-opacity="0.16" />
+                  <path v-for="s in chartSeries" :key="'l'+s.metric" :d="s.line" fill="none" :stroke="s.color"
+                        stroke-width="1.8" :stroke-dasharray="s.dash ? '5 4' : ''" vector-effect="non-scaling-stroke"
+                        stroke-linejoin="round" />
+                  <line v-if="hoverIdx >= 0" class="grid" :x1="hoverX" y1="8" :x2="hoverX" :y2="CH-20"
+                        stroke="#38bdf8" stroke-dasharray="3 3" />
+                  <text class="axis-t" x="46" :y="CH-6">{{ axisStart }}</text>
+                  <text class="axis-t" :x="CW-8" :y="CH-6" text-anchor="end">{{ axisEnd }}</text>
+                </svg>
+                <div class="readout" v-if="hoverIdx >= 0">
+                  <div style="color:var(--muted);">{{ hoverTime }}</div>
+                  <div v-for="s in chartSeries" :key="'r'+s.metric" :style="{ color: s.color }">
+                    {{ s.name }} {{ hoverValue(s) }}
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <div class="table-wrap" style="margin-top:16px;" v-if="metrics.length">
+              <el-table :data="metrics" size="small" stripe border style="width:100%;">
+                <el-table-column prop="name" label="指标" width="120" />
+                <el-table-column label="最新" width="90">
+                  <template #default="{row}"><span class="mono">{{ fmtPct(row.latest) }}</span></template>
+                </el-table-column>
+                <el-table-column label="平均" width="90">
+                  <template #default="{row}"><span class="mono">{{ fmtPct(row.avg) }}</span></template>
+                </el-table-column>
+                <el-table-column label="峰值" width="90">
+                  <template #default="{row}"><span class="mono">{{ fmtPct(row.max) }}</span></template>
+                </el-table-column>
+                <el-table-column label="数据点" width="90">
+                  <template #default="{row}"><span class="mono">{{ row.count }}</span></template>
+                </el-table-column>
+                <el-table-column label="说明" min-width="220">
+                  <template #default="{row}">
+                    <span style="color:var(--crit);" v-if="row.error">{{ row.error }}</span>
+                    <span class="mono" style="color:var(--muted);" v-else-if="row.latest_time">{{ fmtTime(row.latest_time) }}</span>
+                    <span style="color:var(--muted);" v-else>该指标没有数据</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div class="empty" v-else-if="!metricsLoading">
+              <b>选一台实例查看 CPU 与内存</b>
+              指标来自 oci_computeagent，需要实例上的 Oracle Cloud Agent 已启用监控插件。
+            </div>
+            <p class="hint">CPU 无需额外配置。内存要求实例已安装并启用 Oracle Cloud Agent 的「Compute Instance Monitoring」插件。</p>
+          </div>
+        </section>
+
+        <!-- 配置 -->
+        <section class="pane" v-show="activeTab === 'profile'">
+          <div class="card">
+            <div class="card-head"><div class="card-title">导入账户</div></div>
+            <el-alert type="info" :closable="false" show-icon
+                      title="原样粘贴 ~/.oci/config 里的段落"
+                      description="面板跑在容器里，读不到你本机的私钥文件，所以私钥必须上传或粘贴一份。" />
+            <div style="margin:16px 0;">
+              <el-form label-position="top">
+                <el-form-item label="Profile 名称">
+                  <el-input v-model="importForm.profile_name" placeholder="留空则用粘贴文本里的段名" />
+                </el-form-item>
+                <el-form-item label="配置内容">
+                  <el-input v-model="importForm.config_text" type="textarea" :rows="9" class="mono"
+                            placeholder="[DEFAULT]&#10;user=ocid1.user.oc1..xxxx&#10;fingerprint=xx:xx:xx&#10;key_file=~/.oci/oci_api_key.pem&#10;tenancy=ocid1.tenancy.oc1..xxxx&#10;region=us-ashburn-1" />
+                </el-form-item>
+                <el-form-item label="私钥">
+                  <div style="width:100%;">
+                    <div class="seg" role="group" aria-label="私钥提供方式" style="margin-bottom:10px;">
+                      <button type="button" :class="{ on: importForm.key_mode === 'file' }"
+                              :aria-pressed="importForm.key_mode === 'file'"
+                              @click="importForm.key_mode = 'file'">上传 PEM 文件</button>
+                      <button type="button" :class="{ on: importForm.key_mode === 'text' }"
+                              :aria-pressed="importForm.key_mode === 'text'"
+                              @click="importForm.key_mode = 'text'">粘贴私钥内容</button>
+                    </div>
+                    <el-upload v-if="importForm.key_mode === 'file'" :auto-upload="false" :limit="1"
+                               :on-change="onKeyFile" :on-remove="() => importForm.file = null" accept=".pem,.key">
+                      <el-button>选择 PEM 文件</el-button>
+                    </el-upload>
+                    <el-input v-else v-model="importForm.key_text" type="textarea" :rows="5" class="mono"
+                              placeholder="-----BEGIN PRIVATE KEY-----" />
+                  </div>
+                </el-form-item>
+                <el-form-item label="私钥口令（没有就留空）">
+                  <el-input v-model="importForm.pass_phrase" type="password" show-password style="max-width:320px;" />
+                </el-form-item>
+              </el-form>
+              <el-button type="primary" @click="importProfile" :loading="importing">导入并校验</el-button>
+              <span class="hint" style="margin-left:12px;">导入时会立刻调用 oci iam user get 验证，失败会自动回滚。</span>
+            </div>
+
+            <el-divider />
+            <div class="card-head"><div class="card-title">已配置账户</div></div>
+            <div class="table-wrap">
+              <el-table :data="profiles" size="small" stripe border style="width:100%;">
+                <el-table-column prop="name" label="名称" width="130" />
+                <el-table-column label="区域" width="130">
+                  <template #default="{row}"><span class="mono">{{ row.region || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="User OCID" min-width="200" show-overflow-tooltip>
+                  <template #default="{row}"><span class="mono">{{ row.user_ocid || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="Fingerprint" min-width="150" show-overflow-tooltip>
+                  <template #default="{row}"><span class="mono">{{ row.fingerprint || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="私钥" width="92">
+                  <template #default="{row}">
+                    <span class="state">
+                      <i :class="['dot', row.key_exists ? 'ok' : 'crit']"></i>
+                      <span class="state-label">{{ row.key_exists ? '在位' : '缺失' }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="150" fixed="right">
+                  <template #default="{row}">
+                    <el-button size="small" @click="testProfile(row.name)">校验</el-button>
+                    <el-button size="small" type="danger" @click="delProfile(row.name)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 审计 -->
+        <section class="pane" v-show="activeTab === 'audit'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">操作记录</div>
+              <span class="who">共 {{ auditTotal }} 条</span>
+            </div>
+            <div class="toolbar">
+              <el-select v-model="auditFilter.action" placeholder="全部操作" clearable style="width:180px;" @change="loadAudit(1)">
+                <el-option v-for="a in auditActions" :key="a" :value="a" :label="a" />
+              </el-select>
+              <el-select v-model="auditFilter.result" placeholder="全部结果" clearable style="width:140px;" @change="loadAudit(1)">
+                <el-option value="ok" label="成功" />
+                <el-option value="fail" label="失败" />
+              </el-select>
+              <el-button @click="loadAudit(auditPage)" :loading="auditLoading">刷新</el-button>
+              <el-button type="danger" plain @click="purgeAudit">清空日志</el-button>
+            </div>
+            <div class="table-wrap" v-if="auditLogs.length">
+              <el-table :data="auditLogs" size="small" stripe border style="width:100%;">
+                <el-table-column label="时间" width="160">
+                  <template #default="{row}"><span class="mono">{{ fmtUtc(row.ts) }}</span></template>
+                </el-table-column>
+                <el-table-column prop="action" label="操作" width="140" />
+                <el-table-column label="结果" width="90">
+                  <template #default="{row}">
+                    <span class="state">
+                      <i :class="['dot', row.result === 'ok' ? 'ok' : (row.result === 'fail' ? 'crit' : 'idle')]"></i>
+                      <span class="state-label">{{ row.result === 'ok' ? '成功' : (row.result === 'fail' ? '失败' : row.result) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="username" label="用户" width="100" />
+                <el-table-column prop="profile" label="账户" width="110" />
+                <el-table-column label="目标" min-width="170" show-overflow-tooltip>
+                  <template #default="{row}"><span class="mono">{{ row.target || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column prop="detail" label="详情" min-width="190" show-overflow-tooltip />
+                <el-table-column label="来源 IP" width="130">
+                  <template #default="{row}"><span class="mono">{{ row.ip || '—' }}</span></template>
+                </el-table-column>
+              </el-table>
+              <el-pagination style="margin-top:14px;" layout="prev, pager, next, total" background
+                             :total="auditTotal" :page-size="auditSize" :current-page="auditPage"
+                             @current-change="loadAudit" />
+            </div>
+            <div class="empty" v-else-if="!auditLoading"><b>还没有记录</b>登录、改密、开关机和账户变更都会写到这里。</div>
+          </div>
+        </section>
+
+        <!-- 密码 -->
+        <section class="pane" v-show="activeTab === 'password'">
+          <div class="card" style="max-width:420px;">
+            <div class="card-head"><div class="card-title">修改登录密码</div></div>
+            <el-form label-position="top" @submit.prevent>
+              <el-form-item label="当前密码">
+                <el-input v-model="pw.old_password" type="password" show-password autocomplete="current-password" />
+              </el-form-item>
+              <el-form-item label="新密码">
+                <el-input v-model="pw.new_password" type="password" show-password placeholder="至少 8 位"
+                          autocomplete="new-password" />
+              </el-form-item>
+              <el-button type="primary" @click="changePw" :loading="loading">保存新密码</el-button>
+            </el-form>
+            <p class="hint">改密后所有已登录的会话立即失效，需要重新登录。密码存在数据卷里，重启容器不会丢。</p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</script>
+
+<script>
+// 本地资源优先；下不到再退到公共 CDN，保证离线构建和本地开发都能起来。
+(function () {
+  var CDN = {
+    'vue.global.prod.js': ['https://unpkg.com/vue@3/dist/vue.global.prod.js',
+                           'https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js'],
+    'element-plus.full.min.js': ['https://unpkg.com/element-plus/dist/index.full.min.js',
+                                 'https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.min.js'],
+    'axios.min.js': ['https://unpkg.com/axios/dist/axios.min.js',
+                     'https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js'],
+    'element-plus.css': ['https://unpkg.com/element-plus/dist/index.css'],
+    'element-plus-dark.css': ['https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css']
+  };
+  function loadScript(url) {
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = url; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  function chain(urls) {
+    return urls.reduce(function (p, u) {
+      return p.catch(function () { return loadScript(u); });
+    }, Promise.reject());
+  }
+  window.__ocixBoot = (async function () {
+    for (var name of ['vue.global.prod.js', 'element-plus.full.min.js', 'axios.min.js']) {
+      try { await loadScript('/assets/' + name); } catch (e) { await chain(CDN[name]); }
+    }
+    // 本地样式没下到时补 CDN 样式
+    if (!document.querySelector('link[href="/assets/element-plus.css"]').sheet) {
+      ['element-plus.css', 'element-plus-dark.css'].forEach(function (n) {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = CDN[n][0];
+        document.head.appendChild(l);
+      });
+    }
+  })();
+})();
+</script>
+
+<script>
+window.__ocixBoot.then(function () {
+const { createApp, ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } = Vue;
+const { ElMessage, ElMessageBox } = ElementPlus;
+
+const CW = 720, CH = 200, PAD_L = 46, PAD_R = 8, PAD_T = 8, PAD_B = 26;
+
+const NAV = [
+  { title: '总览', items: [
+    { name: 'all', label: '全部账户', icon: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z' },
+    { name: 'instances', label: '实例', icon: 'M4 5h16v6H4zM4 13h16v6H4zM7.5 8h.01M7.5 16h.01' },
+  ]},
+  { title: '资源', items: [
+    { name: 'create', label: '新建实例', icon: 'M12 5v14M5 12h14' },
+    { name: 'storage', label: '存储', icon: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3' },
+    { name: 'firewall', label: '防火墙', icon: 'M12 3l8 3v6c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V6z' },
+  ]},
+  { title: '观测', items: [
+    { name: 'usage', label: '免费额度', icon: 'M20 12a8 8 0 1 0-8 8M12 12l4.5-3M12 20v.01' },
+    { name: 'metrics', label: '监控', icon: 'M3 12h4l3 8 4-16 3 8h4' },
+    { name: 'audit', label: '审计', icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
+  ]},
+  { title: '设置', items: [
+    { name: 'profile', label: '账户配置', icon: 'M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4' },
+    { name: 'password', label: '密码', icon: 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3' },
+  ]},
+];
+
+// 生成像真实项目的实例名，而不是 instance-20240101
+const NAME_DOMAIN = ['payments', 'orders', 'search', 'media', 'notify', 'billing', 'analytics',
+  'identity', 'inventory', 'chat', 'ledger', 'catalog', 'session', 'webhook', 'report'];
+const NAME_ROLE = ['api', 'worker', 'gateway', 'cache', 'proxy', 'edge', 'relay', 'queue',
+  'sync', 'ingest', 'render', 'cron'];
+const NAME_ENV = ['prod', 'stg', 'live', 'core', 'main'];
+function randomName() {
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const nn = String(Math.floor(Math.random() * 8) + 1).padStart(2, '0');
+  const d = pick(NAME_DOMAIN), r = pick(NAME_ROLE);
+  switch (Math.floor(Math.random() * 3)) {
+    case 0: return `${d}-${r}-${nn}`;
+    case 1: return `${d}-${r}-${pick(NAME_ENV)}`;
+    default: return `${r}-${d}-${nn}`;
+  }
+}
+
+createApp({
+  template: document.getElementById('app-tpl').innerHTML,
+  setup() {
+    // ---- 会话 ----
+    const token = ref(localStorage.getItem('ocix_token') || '');
+    const user = ref(localStorage.getItem('ocix_user') || '');
+    const loginForm = reactive({ username: '', password: '' });
+    const loginErr = ref('');
+    const loading = ref(false);
+
+    // ---- 账户 / 范围 ----
+    const profiles = ref([]);
+    const profilesLoading = ref(false);
+    const currentProfile = ref(localStorage.getItem('ocix_profile') || '');
+    const compartments = ref([]);
+    const compsLoading = ref(false);
+    const compartmentId = ref('');
+    const subtree = ref(true);
+    const activeTab = ref('all');
+    const lastUpdated = ref('');
+
+    // ---- 数据 ----
+    const instances = ref([]);
+    const instSelection = ref([]);
+    const instTableRef = ref(null);
+    const usage = ref(null);
+    const allAccounts = ref([]);
+    const allWithIp = ref(false);
+    const allSelection = ref([]);
+    const allTableRef = ref(null);
+    const allSummary = ref({ accounts: 0, instances: 0, running: 0, stopped: 0, failed_accounts: 0 });
+
+    const metrics = ref([]);
+    const metricInstance = ref('');
+    const metricHours = ref(1);
+    const metricsLoading = ref(false);
+    const hoverIdx = ref(-1);
+
+    const importForm = reactive({
+      profile_name: '', config_text: '', key_mode: 'file',
+      key_text: '', pass_phrase: '', file: null,
+    });
+    const importing = ref(false);
+    const pw = reactive({ old_password: '', new_password: '' });
+
+    // ---- 新建实例 ----
+    const AMD_SHAPE = 'VM.Standard.E2.1.Micro';
+    const opts = ref({
+      availability_domains: [], images: [], subnets: [], shapes: [],
+      limits: {}, min_boot_gb: 50, arm_gb_per_ocpu: 6, needs_network: false,
+    });
+    const optsLoading = ref(false);
+    const netCreating = ref(false);
+    const creating = ref(false);
+    const preflight = ref(null);
+    const preflightLoading = ref(false);
+    const createForm = reactive({
+      display_name: randomName(), shape: 'VM.Standard.A1.Flex',
+      ocpus: 4, memory_gb: 24, boot_gb: 50,
+      availability_domain: '', image_id: '', subnet_id: '', ssh_public_key: '',
+      assign_ipv6: false,
+    });
+    const pubKeyName = ref('');
+    const ipv6Busy = ref(false);
+    const selectedSubnet = computed(() =>
+      (opts.value.subnets || []).find(s => s.id === createForm.subnet_id) || null);
+    const selectedSubnetIpv6 = computed(() => !!(selectedSubnet.value && selectedSubnet.value.ipv6_enabled));
+    const ipv6Ready = computed(() => selectedSubnetIpv6.value);
+
+    function rollName() { createForm.display_name = randomName(); }
+
+    function onPubKeyFile(e) {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || '').trim();
+        if (text.includes('PRIVATE KEY')) {
+          ElMessage.error('这是私钥文件，请选 .pub 结尾的公钥');
+          e.target.value = '';
+          return;
+        }
+        createForm.ssh_public_key = text;
+        pubKeyName.value = f.name;
+        ElMessage.success(`已导入 ${f.name}`);
+      };
+      reader.onerror = () => ElMessage.error('读取文件失败');
+      reader.readAsText(f);
+      e.target.value = '';
+    }
+
+    async function enableIpv6() {
+      if (!createForm.subnet_id) { ElMessage.warning('请先选择子网'); return; }
+      ipv6Busy.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/ipv6', {
+          profile: currentProfile.value,
+          subnet_id: createForm.subnet_id,
+          compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
+        });
+        ElMessage.success(data.changed
+          ? `子网已开通 IPv6：${data.ipv6_cidr_block}`
+          : '该子网本来就已开通 IPv6');
+        createForm.assign_ipv6 = true;
+        await loadCreateOptions();
+      } catch (e) {
+        ElMessage.error(errMsg(e, '开通 IPv6 失败'));
+      } finally { ipv6Busy.value = false; }
+    }
+
+    // ---- 防火墙 ----
+    const firewall = ref(null);
+    const fwInstance = ref('');
+    const fwLoading = ref(false);
+    const fwBusy = ref(false);
+    const isArm = computed(() => createForm.shape !== AMD_SHAPE);
+    const canCreate = computed(() =>
+      !!(preflight.value && preflight.value.allow && createForm.display_name &&
+         createForm.availability_domain && createForm.image_id &&
+         createForm.subnet_id && createForm.ssh_public_key));
+
+    // ---- 存储 ----
+    const storage = ref(null);
+    const storageLoading = ref(false);
+
+    const auditLogs = ref([]);
+    const auditTotal = ref(0);
+    const auditActions = ref([]);
+    const auditPage = ref(1);
+    const auditSize = 20;
+    const auditLoading = ref(false);
+    const auditFilter = reactive({ action: '', result: '' });
+
+    // ---- HTTP ----
+    function applyToken(t) {
+      axios.defaults.headers.common['Authorization'] = t ? 'Bearer ' + t : '';
+    }
+    applyToken(token.value);
+    axios.interceptors.response.use(null, (err) => {
+      if (err.response && err.response.status === 401 && token.value) {
+        clearSession();
+        ElMessage.warning('登录已失效，请重新登录');
+      }
+      return Promise.reject(err);
+    });
+    const errMsg = (e, fallback) =>
+      (e && e.response && e.response.data && e.response.data.detail) || fallback;
+
+    // ---- 登录 ----
+    async function doLogin() {
+      if (!loginForm.username || !loginForm.password) {
+        loginErr.value = '请填写用户名和密码'; return;
+      }
+      loginErr.value = ''; loading.value = true;
+      try {
+        const { data } = await axios.post('/api/auth/login', { ...loginForm });
+        token.value = data.token; user.value = data.user;
+        localStorage.setItem('ocix_token', data.token);
+        localStorage.setItem('ocix_user', data.user);
+        applyToken(data.token);
+        loginForm.password = '';
+        await bootData();
+      } catch (e) {
+        loginErr.value = errMsg(e, '登录失败，请检查用户名和密码');
+      } finally { loading.value = false; }
+    }
+    function clearSession() {
+      token.value = ''; user.value = '';
+      localStorage.removeItem('ocix_token'); localStorage.removeItem('ocix_user');
+      applyToken('');
+    }
+    function logout() { clearSession(); ElMessage.success('已退出'); }
+
+    // ---- 加载 ----
+    async function loadProfiles() {
+      profilesLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/profiles');
+        profiles.value = data.profiles;
+        const names = profiles.value.map(p => p.name);
+        if (!names.includes(currentProfile.value)) currentProfile.value = names[0] || '';
+      } catch (e) {
+        ElMessage.error(errMsg(e, '账户列表加载失败'));
+      } finally { profilesLoading.value = false; }
+    }
+
+    async function loadCompartments() {
+      compartments.value = [];
+      if (!currentProfile.value) return;
+      compsLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/instances/compartments', {
+          params: { profile: currentProfile.value },
+        });
+        compartments.value = data.compartments;
+      } catch (e) { /* compartment 拿不到不阻塞主流程，留空即按租户根查 */ }
+      finally { compsLoading.value = false; }
+    }
+
+    function scopeParams() {
+      const p = { profile: currentProfile.value, subtree: subtree.value };
+      if (compartmentId.value) p.compartment_id = compartmentId.value;
+      return p;
+    }
+
+    async function loadSingle() {
+      if (!currentProfile.value) { instances.value = []; usage.value = null; return; }
+      loading.value = true;
+      try {
+        const [inst, usg] = await Promise.all([
+          axios.get('/api/instances', { params: { ...scopeParams(), with_ip: true } }),
+          axios.get('/api/monitor/usage', { params: scopeParams() }).catch(() => ({ data: null })),
+        ]);
+        instances.value = inst.data.instances;
+        usage.value = usg.data;
+        stamp();
+      } catch (e) {
+        ElMessage.error(errMsg(e, '实例加载失败'));
+      } finally { loading.value = false; }
+    }
+
+    async function loadAll() {
+      loading.value = true;
+      try {
+        const { data } = await axios.get('/api/instances/all', {
+          params: { subtree: subtree.value, with_ip: allWithIp.value },
+        });
+        allAccounts.value = data.accounts;
+        allSummary.value = data.summary;
+        stamp();
+      } catch (e) {
+        ElMessage.error(errMsg(e, '多账户总览加载失败'));
+      } finally { loading.value = false; }
+    }
+
+    async function loadMetrics() {
+      if (!metricInstance.value || !currentProfile.value) return;
+      metricsLoading.value = true; hoverIdx.value = -1;
+      try {
+        const inst = instances.value.find(i => i.id === metricInstance.value);
+        const { data } = await axios.get('/api/monitor/metrics', {
+          params: {
+            profile: currentProfile.value,
+            instance_id: metricInstance.value,
+            compartment_id: inst ? inst.compartment_id : undefined,
+            hours: metricHours.value,
+          },
+        });
+        metrics.value = data.metrics;
+      } catch (e) {
+        metrics.value = [];
+        ElMessage.error(errMsg(e, '指标查询失败'));
+      } finally { metricsLoading.value = false; }
+    }
+
+    async function loadAudit(page) {
+      auditPage.value = page || 1;
+      auditLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/audit', {
+          params: {
+            limit: auditSize, offset: (auditPage.value - 1) * auditSize,
+            action: auditFilter.action || '', result: auditFilter.result || '',
+          },
+        });
+        auditLogs.value = data.logs;
+        auditTotal.value = data.total;
+        auditActions.value = data.actions;
+      } catch (e) {
+        ElMessage.error(errMsg(e, '审计日志加载失败'));
+      } finally { auditLoading.value = false; }
+    }
+
+    async function loadCreateOptions() {
+      if (!currentProfile.value) return;
+      optsLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/provision/options', {
+          params: {
+            profile: currentProfile.value,
+            compartment_id: compartmentId.value || undefined,
+            shape: createForm.shape,
+          },
+        });
+        opts.value = data;
+        if (!createForm.availability_domain && data.availability_domains.length) {
+          createForm.availability_domain = data.availability_domains[0];
+        }
+        // 镜像随规格变（ARM 要 aarch64），旧选择失效就重挑最新的一版
+        if (!data.images.some(i => i.id === createForm.image_id)) {
+          const clean = data.images.filter(i => !i.minimal);
+          createForm.image_id = (clean[0] || data.images[0] || {}).id || '';
+        }
+        if (!data.subnets.some(s => s.id === createForm.subnet_id)) {
+          createForm.subnet_id = (data.subnets[0] || {}).id || '';
+        }
+      } catch (e) {
+        ElMessage.error(errMsg(e, '创建选项加载失败'));
+      } finally { optsLoading.value = false; }
+    }
+
+    let pfTimer = null;
+    function runPreflight() {
+      clearTimeout(pfTimer);
+      pfTimer = setTimeout(doPreflight, 250);
+    }
+    async function doPreflight() {
+      if (!currentProfile.value || !createForm.shape) return;
+      preflightLoading.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/preflight', {
+          profile: currentProfile.value,
+          compartment_id: compartmentId.value || undefined,
+          shape: createForm.shape,
+          ocpus: createForm.ocpus,
+          memory_gb: createForm.memory_gb,
+          boot_gb: createForm.boot_gb,
+        });
+        preflight.value = data;
+      } catch (e) {
+        preflight.value = null;
+        ElMessage.error(errMsg(e, '额度核算失败'));
+      } finally { preflightLoading.value = false; }
+    }
+
+    function pickShape(s) {
+      createForm.shape = s.shape;
+      if (s.family === 'amd') { createForm.ocpus = 1; createForm.memory_gb = 1; }
+      else { createForm.ocpus = 4; createForm.memory_gb = 24; }
+      loadCreateOptions();
+      runPreflight();
+    }
+    function onOcpuChange() {
+      // 内存默认跟着 OCPU 走满配，用户仍可手动下调
+      createForm.memory_gb = Math.min(24, createForm.ocpus * (opts.value.arm_gb_per_ocpu || 6));
+      runPreflight();
+    }
+
+    async function makeNetwork() {
+      netCreating.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/network', {
+          profile: currentProfile.value,
+          compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
+          name: 'ocix-vcn',
+        });
+        ElMessage.success(`网络已创建：${data.vcn_name} / ${data.subnet_name}`);
+        await loadCreateOptions();
+        createForm.subnet_id = data.subnet_id;
+      } catch (e) {
+        ElMessage.error(errMsg(e, '创建网络失败'));
+      } finally { netCreating.value = false; }
+    }
+
+    async function createInstance() {
+      const p = preflight.value;
+      const spec = isArm.value
+        ? `${createForm.ocpus} OCPU / ${createForm.memory_gb} GB`
+        : '1 OCPU / 1 GB';
+      try {
+        await ElMessageBox.confirm(
+          `创建「${createForm.display_name}」？\n规格 ${spec}，引导卷 ${createForm.boot_gb}GB。\n` +
+          `创建后存储将占用 ${p.checks.find(c => c.key === 'storage_gb').after}/200 GB。`,
+          '确认创建',
+          { type: 'info', confirmButtonText: '创建', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+
+      creating.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/instances', {
+          profile: currentProfile.value,
+          compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
+          display_name: createForm.display_name,
+          availability_domain: createForm.availability_domain,
+          image_id: createForm.image_id,
+          subnet_id: createForm.subnet_id,
+          shape: createForm.shape,
+          ocpus: createForm.ocpus,
+          memory_gb: createForm.memory_gb,
+          boot_gb: createForm.boot_gb,
+          ssh_public_key: createForm.ssh_public_key,
+          assign_ipv6: createForm.assign_ipv6,
+        });
+        ElMessage.success(`${data.display_name} 已创建，正在初始化`);
+        createForm.display_name = randomName();
+        activeTab.value = 'instances';
+        await loadSingle();
+        doPreflight();
+      } catch (e) {
+        const d = e.response && e.response.data && e.response.data.detail;
+        if (d && typeof d === 'object' && d.blockers) {
+          ElMessageBox.alert(d.blockers.join('\n'), '超出免费额度，已阻止创建',
+            { type: 'error', customStyle: { whiteSpace: 'pre-wrap' } });
+        } else {
+          ElMessageBox.alert(errMsg(e, '创建失败'), '创建失败',
+            { type: 'error', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '560px' } });
+        }
+      } finally { creating.value = false; }
+    }
+
+    async function terminate(row) {
+      try {
+        await ElMessageBox.prompt(
+          `终止后实例和它的引导卷都会被删除，数据无法恢复，释放的额度会还给你。\n` +
+          `确认请输入实例名 ${row.display_name}`,
+          '终止实例',
+          {
+            type: 'error', confirmButtonText: '永久终止', cancelButtonText: '取消',
+            inputPlaceholder: row.display_name,
+            inputValidator: (v) => (v || '').trim() === row.display_name || '名称不一致',
+            customStyle: { whiteSpace: 'pre-wrap' },
+          });
+      } catch { return; }
+      loading.value = true;
+      try {
+        await axios.post('/api/provision/instances/terminate', {
+          profile: row.profile || currentProfile.value,
+          instance_id: row.id,
+          preserve_boot_volume: false,
+        });
+        ElMessage.success(`${row.display_name} 已终止`);
+        await loadSingle();
+        if (storage.value) loadStorage();
+      } catch (e) {
+        ElMessage.error(errMsg(e, '终止失败'));
+      } finally { loading.value = false; }
+    }
+
+    async function loadStorage() {
+      if (!currentProfile.value) return;
+      storageLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/provision/storage', { params: scopeParams() });
+        storage.value = data;
+      } catch (e) {
+        ElMessage.error(errMsg(e, '存储信息加载失败'));
+      } finally { storageLoading.value = false; }
+    }
+
+    async function deleteVolume(row) {
+      try {
+        await ElMessageBox.confirm(
+          `删除${row.kind === 'boot' ? '引导卷' : '块存储卷'}「${row.display_name}」？\n` +
+          `会释放 ${row.size_gb}GB 额度，卷内数据无法恢复。`,
+          '确认删除卷',
+          { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      try {
+        await axios.post('/api/provision/storage/delete', {
+          profile: currentProfile.value, volume_id: row.id, kind: row.kind,
+        });
+        ElMessage.success(`已删除，释放 ${row.size_gb}GB`);
+        await loadStorage();
+        doPreflight();
+      } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+    }
+
+    const volRowClass = ({ row }) => (row.orphan ? 'orphan-row' : '');
+
+    async function changePerformance(row, vpus) {
+      const opt = (opts.value.vpu_options || []).find(o => o.vpus === vpus) || {};
+      if (opt.free === false) {
+        try {
+          await ElMessageBox.confirm(
+            `「${opt.label}」超出 Always Free 覆盖范围，这块卷会开始计费。\n确定要改吗？`,
+            '这会产生费用',
+            { type: 'warning', confirmButtonText: '仍然修改', cancelButtonText: '取消',
+              customStyle: { whiteSpace: 'pre-wrap' } });
+        } catch { loadStorage(); return; }
+      }
+      try {
+        await axios.post('/api/provision/storage/performance', {
+          profile: currentProfile.value, volume_id: row.id, kind: row.kind, vpus,
+        });
+        ElMessage.success(`${row.display_name} 性能已改为「${opt.label || vpus}」`);
+        await loadStorage();
+      } catch (e) {
+        ElMessage.error(errMsg(e, '修改性能失败'));
+        loadStorage();
+      }
+    }
+
+    async function changeIp(row) {
+      try {
+        await ElMessageBox.confirm(
+          `给「${row.display_name}」换一个公网 IPv4？\n` +
+          `当前 ${row.public_ip || '（无）'}。旧地址会被立刻释放且拿不回来，` +
+          `更换过程中有几秒钟无法访问。`,
+          '更换公网 IP',
+          { type: 'warning', confirmButtonText: '更换', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      loading.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/instances/change-ip', {
+          profile: row.profile || currentProfile.value,
+          instance_id: row.id,
+          compartment_id: row.compartment_id,
+        });
+        ElMessage.success(`新公网 IP：${data.new_ip}`);
+        await loadSingle();
+      } catch (e) {
+        ElMessage.error(errMsg(e, '更换 IP 失败'));
+      } finally { loading.value = false; }
+    }
+
+    async function loadFirewall() {
+      if (!fwInstance.value) return;
+      fwLoading.value = true;
+      try {
+        const inst = instances.value.find(i => i.id === fwInstance.value);
+        const { data } = await axios.get('/api/provision/firewall', {
+          params: {
+            profile: currentProfile.value,
+            instance_id: fwInstance.value,
+            compartment_id: inst ? inst.compartment_id : undefined,
+          },
+        });
+        firewall.value = data;
+      } catch (e) {
+        firewall.value = null;
+        ElMessage.error(errMsg(e, '防火墙状态读取失败'));
+      } finally { fwLoading.value = false; }
+    }
+
+    async function allowAll() {
+      try {
+        await ElMessageBox.confirm(
+          '这会给子网加一条「任何来源、任何协议、任何端口」的入站规则。\n' +
+          '同一子网下的所有实例都会被放开，请确认这些机器上没有不该暴露的服务。',
+          '放行所有端口',
+          { type: 'warning', confirmButtonText: '确认放行', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      fwBusy.value = true;
+      try {
+        const inst = instances.value.find(i => i.id === fwInstance.value);
+        const { data } = await axios.post('/api/provision/firewall/allow-all', {
+          profile: currentProfile.value, instance_id: fwInstance.value,
+          compartment_id: inst ? inst.compartment_id : undefined, include_ipv6: true,
+        });
+        firewall.value = data.status;
+        ElMessage.success(data.added.length ? `已放行 ${data.added.join('、')}` : '本来就是全放行状态');
+      } catch (e) {
+        ElMessage.error(errMsg(e, '放行失败'));
+      } finally { fwBusy.value = false; }
+    }
+
+    async function revokeAll() {
+      try {
+        await ElMessageBox.confirm(
+          '移除全放行规则后，只剩下具体端口的规则。\n如果一条都不剩，面板会保留 22 端口，避免你被关在门外。',
+          '移除全放行规则',
+          { type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      fwBusy.value = true;
+      try {
+        const inst = instances.value.find(i => i.id === fwInstance.value);
+        const { data } = await axios.post('/api/provision/firewall/revoke-all', {
+          profile: currentProfile.value, instance_id: fwInstance.value,
+          compartment_id: inst ? inst.compartment_id : undefined,
+        });
+        firewall.value = data.status;
+        ElMessage.success(`已移除 ${data.removed} 条全放行规则`);
+      } catch (e) {
+        ElMessage.error(errMsg(e, '移除失败'));
+      } finally { fwBusy.value = false; }
+    }
+
+    const orphanBadge = computed(() =>
+      (storage.value && storage.value.summary.orphan_count) || 0);
+
+    function go(name) {
+      activeTab.value = name;
+      onTabChange(name);
+    }
+
+    function stamp() {
+      lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    }
+
+    function refreshActive() {
+      if (activeTab.value === 'all') return loadAll();
+      if (activeTab.value === 'audit') return loadAudit(auditPage.value);
+      if (activeTab.value === 'storage') return loadStorage();
+      if (activeTab.value === 'firewall') { loadSingle(); return loadFirewall(); }
+      if (activeTab.value === 'create') { loadCreateOptions(); return doPreflight(); }
+      if (activeTab.value === 'metrics') { loadSingle(); return loadMetrics(); }
+      return loadSingle();
+    }
+
+    async function bootData() {
+      await loadProfiles();
+      await Promise.all([loadCompartments(), loadAll(), loadSingle()]);
+    }
+
+    function onProfileChange() {
+      localStorage.setItem('ocix_profile', currentProfile.value);
+      compartmentId.value = '';
+      metricInstance.value = ''; metrics.value = []; usage.value = null;
+      storage.value = null; preflight.value = null;
+      firewall.value = null; fwInstance.value = '';
+      opts.value = { ...opts.value, availability_domains: [], images: [], subnets: [] };
+      createForm.availability_domain = ''; createForm.image_id = ''; createForm.subnet_id = '';
+      createForm.assign_ipv6 = false;
+      loadCompartments();
+      loadSingle();
+      if (activeTab.value === 'create') { loadCreateOptions(); doPreflight(); }
+      if (activeTab.value === 'storage') loadStorage();
+    }
+
+    function onTabChange(name) {
+      if (name === 'audit' && !auditLogs.value.length) loadAudit(1);
+      if (name === 'all' && !allAccounts.value.length) loadAll();
+      if (name === 'storage' && !storage.value) loadStorage();
+      if (name === 'create') {
+        if (!opts.value.availability_domains.length) loadCreateOptions();
+        doPreflight();
+      }
+      if (name === 'firewall') {
+        if (!instances.value.length) loadSingle();
+        if (!fwInstance.value && instances.value.length) {
+          fwInstance.value = instances.value[0].id;
+        }
+        if (fwInstance.value && !firewall.value) loadFirewall();
+      }
+    }
+
+    watch([compartmentId, subtree], () => { if (currentProfile.value) loadSingle(); });
+
+    // ---- 操作 ----
+    const ACTION_LABEL = { START: '开机', SOFTSTOP: '关机', STOP: '强制关机', SOFTRESET: '重启', RESET: '强制重启' };
+    const canStart = (r) => r.state === 'STOPPED';
+    const canStop = (r) => r.state === 'RUNNING';
+    const canReset = (r) => r.state === 'RUNNING';
+
+    async function act(row, action) {
+      const label = ACTION_LABEL[action] || action;
+      const profile = row.profile || currentProfile.value;
+      try {
+        await ElMessageBox.confirm(
+          `对「${row.display_name}」（账户 ${profile}）执行${label}？`, `确认${label}`,
+          { type: 'warning', confirmButtonText: label, cancelButtonText: '取消' });
+      } catch { return; }
+      loading.value = true;
+      try {
+        await axios.post('/api/instances/action', {
+          profile, instance_id: row.id, action,
+        });
+        ElMessage.success(`已发送${label}指令，实例状态稍后更新`);
+        await refreshAfterAction();
+      } catch (e) {
+        ElMessage.error(errMsg(e, `${label}失败`));
+      } finally { loading.value = false; }
+    }
+
+    async function batchAct(rows, action) {
+      const label = ACTION_LABEL[action] || action;
+      const targets = rows.map(r => ({
+        profile: r.profile || currentProfile.value,
+        instance_id: r.id,
+        display_name: r.display_name,
+      }));
+      try {
+        await ElMessageBox.confirm(
+          `对选中的 ${targets.length} 台实例执行${label}？`, `确认批量${label}`,
+          { type: 'warning', confirmButtonText: `${label} ${targets.length} 台`, cancelButtonText: '取消' });
+      } catch { return; }
+      loading.value = true;
+      try {
+        const { data } = await axios.post('/api/instances/batch-action', { action, targets });
+        if (data.failed === 0) {
+          ElMessage.success(`${targets.length} 台已发送${label}指令`);
+        } else {
+          const bad = data.results.filter(r => !r.ok);
+          ElMessageBox.alert(
+            bad.map(r => `${r.display_name || r.instance_id}：${r.error}`).join('\n'),
+            `${data.succeeded} 台成功，${data.failed} 台失败`,
+            { type: 'warning', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '560px' } });
+        }
+        clearAllSelection(); clearInstSelection();
+        await refreshAfterAction();
+      } catch (e) {
+        ElMessage.error(errMsg(e, `批量${label}失败`));
+      } finally { loading.value = false; }
+    }
+
+    async function refreshAfterAction() {
+      if (activeTab.value === 'all') return loadAll();
+      return loadSingle();
+    }
+
+    function clearInstSelection() { instSelection.value = []; instTableRef.value?.clearSelection(); }
+    function clearAllSelection() { allSelection.value = []; allTableRef.value?.clearSelection(); }
+
+    // ---- 配置管理 ----
+    function onKeyFile(file) { importForm.file = file.raw; }
+
+    async function importProfile() {
+      if (!importForm.config_text.trim()) { ElMessage.warning('请先粘贴配置内容'); return; }
+      importing.value = true;
+      const fd = new FormData();
+      fd.append('config_text', importForm.config_text);
+      if (importForm.profile_name) fd.append('profile_name', importForm.profile_name);
+      if (importForm.pass_phrase) fd.append('pass_phrase', importForm.pass_phrase);
+      if (importForm.key_mode === 'file' && importForm.file) fd.append('key_file', importForm.file);
+      if (importForm.key_mode === 'text' && importForm.key_text.trim()) fd.append('key_text', importForm.key_text);
+      try {
+        const { data } = await axios.post('/api/profiles/import', fd);
+        ElMessage.success(`账户 ${data.profile} 已导入并校验通过`);
+        importForm.config_text = ''; importForm.profile_name = '';
+        importForm.key_text = ''; importForm.pass_phrase = ''; importForm.file = null;
+        await loadProfiles();
+        currentProfile.value = data.profile;
+        onProfileChange();
+        loadAll();
+      } catch (e) {
+        ElMessage.error(errMsg(e, '导入失败'));
+      } finally { importing.value = false; }
+    }
+
+    async function testProfile(name) {
+      loading.value = true;
+      try {
+        const { data } = await axios.post(`/api/profiles/${encodeURIComponent(name)}/test`);
+        ElMessage.success(`${name} 可用${data.user_name ? '，当前用户 ' + data.user_name : ''}`);
+        await loadProfiles();
+      } catch (e) {
+        ElMessage.error(errMsg(e, `${name} 校验失败`));
+      } finally { loading.value = false; }
+    }
+
+    async function delProfile(name) {
+      try {
+        await ElMessageBox.confirm(
+          `删除账户「${name}」？面板里的配置和私钥会一起清掉，OCI 上的资源不受影响。`,
+          '确认删除', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
+      } catch { return; }
+      try {
+        await axios.delete('/api/profiles/' + encodeURIComponent(name));
+        ElMessage.success(`账户 ${name} 已删除`);
+        await loadProfiles();
+        onProfileChange();
+        loadAll();
+      } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+    }
+
+    async function purgeAudit() {
+      try {
+        await ElMessageBox.confirm('清空全部审计日志？这一步不可撤销。', '确认清空',
+          { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' });
+      } catch { return; }
+      try {
+        const { data } = await axios.delete('/api/audit', { params: { keep_days: 0 } });
+        ElMessage.success(`已清空 ${data.deleted} 条记录`);
+        loadAudit(1);
+      } catch (e) { ElMessage.error(errMsg(e, '清空失败')); }
+    }
+
+    async function changePw() {
+      if (pw.new_password.length < 8) { ElMessage.warning('新密码至少 8 位'); return; }
+      loading.value = true;
+      try {
+        await axios.post('/api/auth/change-password', { ...pw });
+        ElMessage.success('密码已更新，请用新密码重新登录');
+        pw.old_password = ''; pw.new_password = '';
+        clearSession();
+      } catch (e) { ElMessage.error(errMsg(e, '修改失败')); }
+      finally { loading.value = false; }
+    }
+
+    // ---- 展示 ----
+    const allFlat = computed(() =>
+      allAccounts.value.flatMap(a => a.instances.map(i => ({ ...i, profile: a.profile }))));
+    const failedAccounts = computed(() => allAccounts.value.filter(a => a.error));
+
+    const STATE_TONE = {
+      RUNNING: 'ok', STOPPED: 'idle',
+      STARTING: 'warn', STOPPING: 'warn', PROVISIONING: 'warn', CREATING_IMAGE: 'warn', MOVING: 'warn',
+    };
+    const STATE_TEXT = {
+      RUNNING: '运行中', STOPPED: '已停止', STARTING: '启动中', STOPPING: '停止中',
+      PROVISIONING: '创建中', TERMINATED: '已终止', TERMINATING: '终止中', MOVING: '迁移中',
+      CREATING_IMAGE: '制作镜像',
+    };
+    const stateTone = (s) => STATE_TONE[s] || 'crit';
+    const stateText = (s) => STATE_TEXT[s] || s || '未知';
+
+    function specText(row) {
+      const parts = [row.shape || '—'];
+      if (row.ocpus) parts.push(`${row.ocpus} OCPU`);
+      if (row.memory_gb) parts.push(`${row.memory_gb} GB`);
+      return parts.join(' · ');
+    }
+    const fmtPct = (v) => (v === null || v === undefined ? '—' : v.toFixed(1) + '%');
+    function fmtDate(s) {
+      if (!s) return '—';
+      const d = new Date(s);
+      return isNaN(d) ? '—' : d.toLocaleDateString('zh-CN');
+    }
+    function fmtTime(s) {
+      if (!s) return '—';
+      const d = new Date(s);
+      return isNaN(d) ? '—' : d.toLocaleString('zh-CN', { hour12: false });
+    }
+    function fmtUtc(s) {
+      if (!s) return '—';
+      // SQLite datetime('now') 是 UTC，补上时区标记再转本地
+      const d = new Date(s.replace(' ', 'T') + 'Z');
+      return isNaN(d) ? s : d.toLocaleString('zh-CN', { hour12: false });
+    }
+    async function copy(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        ElMessage.success(`已复制 ${text}`);
+      } catch {
+        ElMessage.warning('浏览器拒绝了复制，请手动选中');
+      }
+    }
+
+    // ---- 折线图（点数不过千，内联 SVG 足够，也免掉一个图表库依赖）----
+    const SERIES_STYLE = {
+      CpuUtilization: { color: '#38bdf8', dash: false },
+      MemoryUtilization: { color: '#a78bfa', dash: true },
+    };
+    const withPoints = computed(() => metrics.value.filter(m => m.points && m.points.length > 1));
+    const hasMetricPoints = computed(() => withPoints.value.length > 0);
+    const axisPoints = computed(() => {
+      let best = [];
+      withPoints.value.forEach(m => { if (m.points.length > best.length) best = m.points; });
+      return best;
+    });
+    const yMax = computed(() => {
+      let max = 0;
+      withPoints.value.forEach(m => m.points.forEach(p => { if (p.v > max) max = p.v; }));
+      return Math.max(100, Math.ceil(max / 20) * 20);
+    });
+    const xAt = (i, n) => PAD_L + (n <= 1 ? 0 : (i / (n - 1)) * (CW - PAD_L - PAD_R));
+    const yAt = (v) => PAD_T + (1 - v / yMax.value) * (CH - PAD_T - PAD_B);
+
+    const chartSeries = computed(() => withPoints.value.map(m => {
+      const style = SERIES_STYLE[m.metric] || { color: '#94a3b8', dash: false };
+      const n = m.points.length;
+      const coords = m.points.map((p, i) => [xAt(i, n), yAt(p.v)]);
+      const line = coords.map((c, i) => (i ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1)).join(' ');
+      const base = (CH - PAD_B).toFixed(1);
+      const area = `${line} L${coords[n - 1][0].toFixed(1)} ${base} L${coords[0][0].toFixed(1)} ${base} Z`;
+      return { metric: m.metric, name: m.name, color: style.color, dash: style.dash, line, area, points: m.points };
+    }));
+
+    // 只给实线系列铺面积，虚线系列叠面积会糊成一片
+    const areaSeries = computed(() => chartSeries.value.filter(s => !s.dash));
+
+    const gridLines = computed(() => {
+      const step = yMax.value / 4;
+      return [0, 1, 2, 3, 4].map(k => ({
+        y: +yAt(k * step).toFixed(1),
+        label: Math.round(k * step) + '%',
+      }));
+    });
+    const axisStart = computed(() => {
+      const p = axisPoints.value[0];
+      return p ? shortTime(p.t) : '';
+    });
+    const axisEnd = computed(() => {
+      const p = axisPoints.value[axisPoints.value.length - 1];
+      return p ? shortTime(p.t) : '';
+    });
+    function shortTime(t) {
+      const d = new Date(t);
+      if (isNaN(d)) return '';
+      return metricHours.value > 24
+        ? d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+        : d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    function onChartMove(e) {
+      const n = axisPoints.value.length;
+      if (n < 2) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ratio = (e.clientX - rect.left) / rect.width;
+      const x = ratio * CW;
+      const i = Math.round(((x - PAD_L) / (CW - PAD_L - PAD_R)) * (n - 1));
+      hoverIdx.value = Math.max(0, Math.min(n - 1, i));
+    }
+    const hoverX = computed(() => xAt(hoverIdx.value, axisPoints.value.length).toFixed(1));
+    const hoverTime = computed(() => {
+      const p = axisPoints.value[hoverIdx.value];
+      return p ? fmtTime(p.t) : '';
+    });
+    function hoverValue(s) {
+      const p = s.points[hoverIdx.value];
+      return p ? p.v.toFixed(1) + '%' : '—';
+    }
+
+    // ---- 自动刷新 ----
+    const autoRefresh = ref(localStorage.getItem('ocix_auto') === '1');
+    const countdown = ref(30);
+    let timer = null;
+    watch(autoRefresh, (on) => {
+      localStorage.setItem('ocix_auto', on ? '1' : '0');
+      countdown.value = 30;
+    });
+    onMounted(() => {
+      timer = setInterval(() => {
+        if (!autoRefresh.value || !token.value || document.hidden) { countdown.value = 30; return; }
+        countdown.value -= 1;
+        if (countdown.value <= 0) { countdown.value = 30; if (!loading.value) refreshActive(); }
+      }, 1000);
+    });
+    onUnmounted(() => clearInterval(timer));
+
+    onMounted(async () => {
+      if (!token.value) return;
+      try {
+        const { data } = await axios.get('/api/auth/me');
+        user.value = data.user;
+        await bootData();
+      } catch { /* 401 已由拦截器处理 */ }
+    });
+
+    const HOUR_RANGES = [
+      { v: 1, t: '1 小时' }, { v: 6, t: '6 小时' }, { v: 24, t: '24 小时' }, { v: 168, t: '7 天' },
+    ];
+
+    return {
+      CW, CH, HOUR_RANGES, areaSeries, NAV, go, orphanBadge,
+      pubKeyName, ipv6Busy, selectedSubnetIpv6, ipv6Ready,
+      rollName, onPubKeyFile, enableIpv6,
+      firewall, fwInstance, fwLoading, fwBusy, loadFirewall, allowAll, revokeAll,
+      changeIp, changePerformance,
+      token, user, loginForm, loginErr, loading,
+      profiles, profilesLoading, currentProfile, compartments, compsLoading, compartmentId,
+      subtree, activeTab, lastUpdated, autoRefresh, countdown,
+      instances, instSelection, instTableRef, usage,
+      allAccounts, allFlat, allSummary, allWithIp, allSelection, allTableRef, failedAccounts,
+      metrics, metricInstance, metricHours, metricsLoading,
+      chartSeries, gridLines, hasMetricPoints, axisStart, axisEnd, hoverIdx, hoverX, hoverTime,
+      importForm, importing, pw,
+      auditLogs, auditTotal, auditActions, auditPage, auditSize, auditLoading, auditFilter,
+      opts, optsLoading, createForm, isArm, canCreate, creating, netCreating,
+      preflight, preflightLoading, storage, storageLoading,
+      doLogin, logout, refreshActive, loadAll, loadMetrics, loadAudit,
+      onProfileChange, onTabChange, act, batchAct, clearInstSelection, clearAllSelection,
+      canStart, canStop, canReset, stateTone, stateText, specText,
+      fmtPct, fmtDate, fmtTime, fmtUtc, copy, onChartMove, hoverValue,
+      onKeyFile, importProfile, testProfile, delProfile, purgeAudit, changePw,
+      pickShape, onOcpuChange, runPreflight, makeNetwork, createInstance,
+      terminate, loadStorage, deleteVolume, volRowClass,
+    };
+  },
+}).use(ElementPlus).mount('#app');
+});
+</script>
+</body>
+</html>

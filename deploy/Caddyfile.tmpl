@@ -1,0 +1,32 @@
+# OCIX 反向代理 + 自动 HTTPS
+# 由 scripts/install.sh 渲染成 deploy/Caddyfile，{$OCIX_DOMAIN} / {$OCIX_ACME_EMAIL} 来自 .env。
+{
+	email {$OCIX_ACME_EMAIL}
+	# 显式关闭按需签发：证书必须在启动时就申请好，而不是等第一个访客来触发。
+	# 这样域名或 DNS 配错会在 docker compose up 阶段直接报错，而不是等到访问时才发现。
+	auto_https disable_redirects
+}
+
+{$OCIX_DOMAIN} {
+	encode gzip
+
+	# 面板是自用后台，不给搜索引擎收录
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	reverse_proxy backend:8000 {
+		health_uri /api/health
+		health_interval 30s
+	}
+}
+
+# http 明确跳转到 https（上面关了 Caddy 自带的重定向，这里自己写，行为更可控）
+http://{$OCIX_DOMAIN} {
+	redir https://{host}{uri} permanent
+}

@@ -1,0 +1,29 @@
+# 域名模式叠加层：加 Caddy 做 HTTPS 反代，并收回后端的宿主机端口映射
+# 用法：docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+services:
+  backend:
+    # 基础文件不映射端口，这里也不加——后端只在 docker 网络内可达
+    environment:
+      # Caddy 在前面，必须信任 X-Forwarded-For，否则限流会把所有人算成同一个 IP
+      - OCIX_TRUST_PROXY=true
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - OCIX_DOMAIN=${OCIX_DOMAIN:?OCIX_DOMAIN 未设置}
+      - OCIX_ACME_EMAIL=${OCIX_ACME_EMAIL:?OCIX_ACME_EMAIL 未设置}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,13 @@
+# 仓库内一律以 LF 存储，避免 Windows 上开发出来的脚本在 Linux 上跑不了
+* text=auto eol=lf
+
+# 这几类文件带上 CRLF 会直接报 "bad interpreter: /usr/bin/env bash^M"
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Caddyfile*  text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,26 @@
+# 密钥与本地配置
+.env
+.env.bak.*
+*.pem
+*.key
+
+# 部署时生成
+deploy/Caddyfile
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

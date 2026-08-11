@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.bak.*
+*.pem
+*.key
+data/
+deploy/Caddyfile
+tests/
+scripts/
+docs/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
