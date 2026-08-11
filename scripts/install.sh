@@ -133,8 +133,11 @@ fi
 if [[ -f "$ENV_FILE" ]]; then
   # 已有配置就复用密钥和密码，避免重新部署把管理员密码重置了
   ok "复用已有的 .env（密钥与管理员密码保持不变）"
-  # shellcheck source=/dev/null  # .env 是运行时生成的，静态分析跟不进去
-  set -a; . "$ENV_FILE"; set +a
+  # .env 是运行时生成的，静态分析跟不进去
+  set -a
+  # shellcheck source=/dev/null
+  . "$ENV_FILE"
+  set +a
   SESSION_SECRET="${OCIX_SESSION_SECRET:-$(rand_hex 32)}"
   ADMIN_USER="${OCIX_ADMIN_USER:-$ADMIN_USER}"
   ADMIN_PASSWORD="${ADMIN_PASSWORD:-${OCIX_ADMIN_PASSWORD:-}}"
