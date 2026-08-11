@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# OCIX 一键部署。域名(HTTPS) 与 IP+端口(HTTP) 二选一。
+# OCIX 一键部署。默认装到 /opt/ocix，域名(HTTPS) 与 IP+端口(HTTP) 二选一。
 #
-#   交互式:  bash scripts/install.sh
-#   域名:    bash scripts/install.sh --domain panel.example.com --email me@example.com
-#   直连:    bash scripts/install.sh --port 8000
+#   交互式:  sudo bash scripts/install.sh
+#   域名:    sudo bash scripts/install.sh --domain panel.example.com --email me@example.com
+#   直连:    sudo bash scripts/install.sh --port 8000
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEPLOY_DIR="$REPO_ROOT/deploy"
-ENV_FILE="$REPO_ROOT/.env"
+ORIG_ARGS=("$@")
+SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INSTALL_DIR="${OCIX_HOME:-/opt/ocix}"
 
-DOMAIN=""; EMAIL=""; PORT=""; BIND=""; ADMIN_USER="admin"; ADMIN_PASSWORD=""
-MODE=""; ASSUME_YES=0
+DOMAIN=""; EMAIL=""; PORT=""; BIND=""; ADMIN_USER=""; ADMIN_PASSWORD=""
+MODE=""; ASSUME_YES=0; STAY_HERE=0
 
-c_red=$'\033[31m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
+c_red=$'\033[31m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_cyn=$'\033[36m'
+c_dim=$'\033[2m'; c_bold=$'\033[1m'; c_off=$'\033[0m'
 info() { printf '%s\n' "$*"; }
 ok()   { printf '%s✓%s %s\n' "$c_grn" "$c_off" "$*"; }
 warn() { printf '%s!%s %s\n' "$c_ylw" "$c_off" "$*"; }
@@ -21,18 +22,20 @@ die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_off" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-用法: bash scripts/install.sh [选项]
+用法: sudo bash scripts/install.sh [选项]
 
-  --domain <域名>     用域名访问，自动申请 Let's Encrypt 证书（需 80/443 可达）
-  --email  <邮箱>     证书通知邮箱，配合 --domain 使用
-  --port   <端口>     用 IP+端口 直连访问（默认 8000）
-  --bind   <地址>     端口绑定地址，默认 0.0.0.0；填 127.0.0.1 则只允许本机
-  --admin-user <名>   管理员用户名，默认 admin
-  --admin-password <密码>  管理员密码，留空则自动生成
-  -y, --yes           不交互，缺省项用默认值
-  -h, --help          显示本帮助
+  --domain <域名>          用域名访问，部署时就申请 Let's Encrypt 证书（需 80/443 可达）
+  --email  <邮箱>          证书通知邮箱，配合 --domain 使用
+  --port   <端口>          用 IP+端口 直连访问（默认 8000）
+  --bind   <地址>          端口绑定地址，默认 0.0.0.0；填 127.0.0.1 则只允许本机
+  --admin-user <名>        管理员用户名，不给会在安装过程中问你
+  --admin-password <密码>  管理员密码，不给会在安装过程中问你
+  --dir <路径>             安装目录，默认 /opt/ocix
+  --here                   就地安装，不搬到 /opt/ocix
+  -y, --yes                不交互，缺省项用默认值（密码随机生成）
+  -h, --help               显示本帮助
 
-两种模式二选一：给了 --domain 走 HTTPS 域名模式，否则走 IP+端口 直连模式。
+两种访问方式二选一：给了 --domain 走 HTTPS 域名模式，否则走 IP+端口 直连模式。
 EOF
 }
 
@@ -44,11 +47,42 @@ while [[ $# -gt 0 ]]; do
     --bind) BIND="${2:-}"; shift 2 ;;
     --admin-user) ADMIN_USER="${2:-}"; shift 2 ;;
     --admin-password) ADMIN_PASSWORD="${2:-}"; shift 2 ;;
+    --dir) INSTALL_DIR="${2:-}"; shift 2 ;;
+    --here) STAY_HERE=1; shift ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "未知参数: $1（用 --help 查看用法）" ;;
   esac
 done
+
+# ---------- 搬到 /opt/ocix ----------
+# 统一安装位置，之后升级、看日志都在同一个地方，不用记当初 clone 到哪了。
+if [[ $STAY_HERE -eq 0 && "$SRC_ROOT" != "$INSTALL_DIR" ]]; then
+  parent="$(dirname "$INSTALL_DIR")"
+  if [[ ! -d "$INSTALL_DIR" && ! -w "$parent" ]] || [[ -d "$INSTALL_DIR" && ! -w "$INSTALL_DIR" ]]; then
+    die "没有权限写 ${INSTALL_DIR}。请用 sudo 重跑，或加 --here 就地安装。"
+  fi
+  info "把项目安装到 ${c_bold}${INSTALL_DIR}${c_off} …"
+  mkdir -p "$INSTALL_DIR"
+  # 连 .git 一起复制（网页端「检查更新」和 update.sh 都依赖它），
+  # 但本地状态和密钥一律不带过去：.env / data / 私钥 / pyc 缓存
+  EXCLUDES=(.env '.env.bak.*' data __pycache__ '*.pyc' '*.pem' '*.key' .venv .pytest_cache)
+  if command -v rsync >/dev/null 2>&1; then
+    rsync_args=()
+    for e in "${EXCLUDES[@]}"; do rsync_args+=(--exclude="$e"); done
+    rsync -a "${rsync_args[@]}" "$SRC_ROOT"/ "$INSTALL_DIR"/
+  else
+    tar_args=()
+    for e in "${EXCLUDES[@]}"; do tar_args+=(--exclude="$e"); done
+    (cd "$SRC_ROOT" && tar "${tar_args[@]}" -cf - .) | (cd "$INSTALL_DIR" && tar -xf -)
+  fi
+  ok "已复制到 ${INSTALL_DIR}"
+  exec bash "$INSTALL_DIR/scripts/install.sh" "${ORIG_ARGS[@]}" --here
+fi
+
+REPO_ROOT="$SRC_ROOT"
+DEPLOY_DIR="$REPO_ROOT/deploy"
+ENV_FILE="$REPO_ROOT/.env"
 
 # ---------- 依赖检查 ----------
 command -v docker >/dev/null 2>&1 || die "没装 docker。Ubuntu/Debian 可执行: curl -fsSL https://get.docker.com | sh"
@@ -65,6 +99,24 @@ rand_hex() {
   if command -v openssl >/dev/null 2>&1; then openssl rand -hex "$1"
   else head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; fi
 }
+
+# ---------- 读取已有配置 ----------
+OLD_SECRET=""; OLD_USER=""; OLD_PASSWORD=""; OLD_TTL=""
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "$ENV_FILE"
+  set +a
+  OLD_SECRET="${OCIX_SESSION_SECRET:-}"
+  OLD_USER="${OCIX_ADMIN_USER:-}"
+  OLD_PASSWORD="${OCIX_ADMIN_PASSWORD:-}"
+  OLD_TTL="${OCIX_TOKEN_TTL:-}"
+  cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%s)"
+  ok "发现已有 .env，密钥会沿用（备份已保存）"
+fi
+
+# 会话密钥永远自动生成，不需要你操心
+SESSION_SECRET="${OLD_SECRET:-$(rand_hex 32)}"
 
 # ---------- 选择访问方式 ----------
 if [[ -n "$DOMAIN" ]]; then
@@ -87,9 +139,7 @@ else
 fi
 
 if [[ "$MODE" == "domain" ]]; then
-  if [[ -z "$DOMAIN" ]]; then
-    read -r -p "域名（例如 panel.example.com）: " DOMAIN
-  fi
+  [[ -n "$DOMAIN" ]] || read -r -p "域名（例如 panel.example.com）: " DOMAIN
   [[ -n "$DOMAIN" ]] || die "域名不能为空"
   [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "域名格式看着不对: $DOMAIN"
   if [[ -z "$EMAIL" && $ASSUME_YES -eq 0 ]]; then
@@ -129,58 +179,81 @@ else
   BIND="${BIND:-0.0.0.0}"
 fi
 
-# ---------- 生成 .env ----------
-if [[ -f "$ENV_FILE" ]]; then
-  # 已有配置就复用密钥和密码，避免重新部署把管理员密码重置了
-  ok "复用已有的 .env（密钥与管理员密码保持不变）"
-  # .env 是运行时生成的，静态分析跟不进去
-  set -a
-  # shellcheck source=/dev/null
-  . "$ENV_FILE"
-  set +a
-  SESSION_SECRET="${OCIX_SESSION_SECRET:-$(rand_hex 32)}"
-  ADMIN_USER="${OCIX_ADMIN_USER:-$ADMIN_USER}"
-  ADMIN_PASSWORD="${ADMIN_PASSWORD:-${OCIX_ADMIN_PASSWORD:-}}"
-  cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%s)"
-else
-  SESSION_SECRET="$(rand_hex 32)"
+# ---------- 管理员账号 ----------
+# 密码全程明文回显，方便你当场核对——装完记得别把终端记录留给别人看。
+GENERATED_PW=0
+if [[ -z "$ADMIN_USER" ]]; then
+  if [[ $ASSUME_YES -eq 1 ]]; then
+    ADMIN_USER="${OLD_USER:-admin}"
+  else
+    info ""
+    read -r -p "管理员用户名 [${OLD_USER:-admin}]: " _u
+    ADMIN_USER="${_u:-${OLD_USER:-admin}}"
+  fi
 fi
-[[ -n "$ADMIN_PASSWORD" ]] || { ADMIN_PASSWORD="$(rand_hex 9)"; GENERATED_PW=1; }
+
+if [[ -z "$ADMIN_PASSWORD" ]]; then
+  if [[ $ASSUME_YES -eq 1 ]]; then
+    ADMIN_PASSWORD="${OLD_PASSWORD:-$(rand_hex 9)}"
+    [[ -n "$OLD_PASSWORD" ]] || GENERATED_PW=1
+  else
+    while true; do
+      read -r -p "管理员密码（至少 8 位，明文显示便于核对）: " _p1
+      if [[ -z "$_p1" && -n "$OLD_PASSWORD" ]]; then
+        ADMIN_PASSWORD="$OLD_PASSWORD"
+        info "  ${c_dim}留空，沿用原密码${c_off}"
+        break
+      fi
+      if [[ ${#_p1} -lt 8 ]]; then
+        warn "至少 8 位，再来一次"; continue
+      fi
+      read -r -p "再输一次确认: " _p2
+      if [[ "$_p1" != "$_p2" ]]; then
+        warn "两次输入不一致，再来一次"; continue
+      fi
+      ADMIN_PASSWORD="$_p1"
+      break
+    done
+  fi
+fi
 
 VERSION="$(cat "$REPO_ROOT/VERSION" 2>/dev/null || echo dev)"
 
+# ---------- 写 .env ----------
 umask 077
-cat > "$ENV_FILE" <<EOF
-# 由 scripts/install.sh 生成于 $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-# 这个文件含密钥，已被 .gitignore 排除，请勿提交或外传。
-OCIX_VERSION=${VERSION}
-OCIX_SESSION_SECRET=${SESSION_SECRET}
-OCIX_ADMIN_USER=${ADMIN_USER}
-OCIX_ADMIN_PASSWORD=${ADMIN_PASSWORD}
-OCIX_TOKEN_TTL=${OCIX_TOKEN_TTL:-1440}
-EOF
+{
+  echo "# 由 scripts/install.sh 生成于 $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+  echo "# 这个文件含密钥，已被 .gitignore 排除，请勿提交或外传。"
+  echo "OCIX_VERSION=${VERSION}"
+  echo "OCIX_SESSION_SECRET=${SESSION_SECRET}"
+  echo "OCIX_ADMIN_USER=${ADMIN_USER}"
+  echo "OCIX_ADMIN_PASSWORD=${ADMIN_PASSWORD}"
+  echo "OCIX_TOKEN_TTL=${OLD_TTL:-1440}"
+  echo "OCIX_HOME=${REPO_ROOT}"
+  if [[ "$MODE" == "domain" ]]; then
+    echo "OCIX_DOMAIN=${DOMAIN}"
+    echo "OCIX_ACME_EMAIL=${EMAIL}"
+    echo "OCIX_TRUST_PROXY=true"
+  else
+    echo "OCIX_PORT=${PORT}"
+    echo "OCIX_BIND=${BIND}"
+    echo "OCIX_TRUST_PROXY=false"
+  fi
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+ok "已写入 ${ENV_FILE}（权限 600）"
 
 if [[ "$MODE" == "domain" ]]; then
-  cat >> "$ENV_FILE" <<EOF
-OCIX_DOMAIN=${DOMAIN}
-OCIX_ACME_EMAIL=${EMAIL}
-OCIX_TRUST_PROXY=true
-EOF
   cp "$DEPLOY_DIR/Caddyfile.tmpl" "$DEPLOY_DIR/Caddyfile"
-  COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.caddy.yml)
+  # compose 的项目目录是 deploy/，而 .env 在仓库根，必须显式指定 --env-file，
+  # 否则所有变量都插值不到，报 "required variable OCIX_SESSION_SECRET is missing a value"
+  COMPOSE_FILES=(--env-file "$ENV_FILE" -f docker-compose.yml -f docker-compose.caddy.yml)
   URL="https://${DOMAIN}"
 else
-  cat >> "$ENV_FILE" <<EOF
-OCIX_PORT=${PORT}
-OCIX_BIND=${BIND}
-OCIX_TRUST_PROXY=false
-EOF
-  COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.direct.yml)
+  COMPOSE_FILES=(--env-file "$ENV_FILE" -f docker-compose.yml -f docker-compose.direct.yml)
   host_ip="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo '本机IP')"
   URL="http://${host_ip}:${PORT}"
 fi
-chmod 600 "$ENV_FILE"
-ok "已写入 .env（权限 600）"
 
 # ---------- 构建并启动 ----------
 info ""
@@ -223,7 +296,7 @@ if [[ "$MODE" == "domain" ]]; then
     ok "证书已签发并落盘，首次访问不需要再等"
   else
     warn "证书还没签发成功。常见原因：DNS 没生效、80/443 被防火墙挡、或云厂商安全组没放行。"
-    warn "看日志定位： cd deploy && $DC ${COMPOSE_FILES[*]} logs caddy"
+    warn "看日志定位： bash ${REPO_ROOT}/scripts/ocix.sh logs caddy"
     warn "面板本身已经在跑，DNS 修好后 Caddy 会自动重试。"
   fi
 fi
@@ -233,15 +306,16 @@ info ""
 info "──────────────────────────────────────────"
 ok "OCIX v${VERSION} 部署完成"
 info ""
-info "  访问地址   ${URL}"
-info "  用户名     ${ADMIN_USER}"
-if [[ "${GENERATED_PW:-0}" == "1" ]]; then
-  info "  密码       ${ADMIN_PASSWORD}   ${c_ylw}← 随机生成，请立刻记下并登录后修改${c_off}"
-else
-  info "  密码       （沿用你设置的密码）"
+info "  安装目录   ${REPO_ROOT}"
+info "  访问地址   ${c_cyn}${URL}${c_off}"
+info "  用户名     ${c_bold}${ADMIN_USER}${c_off}"
+info "  密码       ${c_bold}${ADMIN_PASSWORD}${c_off}"
+if [[ $GENERATED_PW -eq 1 ]]; then
+  warn "  上面这个密码是随机生成的，请立刻记下来"
 fi
 info ""
-info "  ${c_dim}密码也存在 .env 里；登录后到「密码」页改掉更稳妥。${c_off}"
+info "  ${c_dim}日常操作： bash ${REPO_ROOT}/scripts/ocix.sh {logs|restart|ps|stop|start}${c_off}"
+info "  ${c_dim}在线更新： bash ${REPO_ROOT}/scripts/update.sh${c_off}"
 if [[ "$MODE" == "direct" ]]; then
   info "  ${c_ylw}直连模式没有 HTTPS，密码是明文传输的，不建议长期公网使用。${c_off}"
   info "  ${c_dim}记得在云厂商安全组放行 ${PORT} 端口。${c_off}"

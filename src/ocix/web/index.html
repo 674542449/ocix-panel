@@ -194,6 +194,21 @@
     .fw-verdict span { font-size:12px; color:var(--muted); }
     .fw-actions { margin-left:auto; }
 
+    /* 版本对比与命令块 */
+    .ver-row { display:flex; align-items:center; gap:var(--sp-4); margin-bottom:var(--sp-4); }
+    .ver-box { background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+               padding:var(--sp-3) var(--sp-4); min-width:130px; }
+    .ver-box .k { font-size:11.5px; color:var(--muted); }
+    .ver-box .v { font-size:19px; font-weight:600; margin-top:2px; }
+    .ver-arrow { color:var(--muted); font-size:18px; }
+    .cmd-box { display:flex; align-items:center; gap:var(--sp-2); background:#0b1220;
+               border:1px solid var(--line); border-radius:7px; padding:10px 12px;
+               margin:var(--sp-2) 0 var(--sp-3); overflow-x:auto; }
+    .cmd-box code { background:none; padding:0; color:#cbd5e1; white-space:nowrap; font-size:12.5px; }
+    .cmd-box .copy-btn { margin-left:auto; flex:none; }
+    .link { color:var(--accent); text-decoration:none; }
+    .link:hover { text-decoration:underline; }
+
     .empty { text-align:center; color:var(--muted); padding:var(--sp-6) var(--sp-4); font-size:13px; }
     .empty b { display:block; color:var(--text); font-size:14px; margin-bottom:6px; font-weight:600; }
     .ip-cell { display:inline-flex; align-items:center; gap:6px; max-width:100%; }
@@ -993,6 +1008,69 @@
           </div>
         </section>
 
+        <!-- 更新 -->
+        <section class="pane" v-show="activeTab === 'update'">
+          <div class="card" style="max-width:720px;">
+            <div class="card-head">
+              <div class="card-title">版本与更新</div>
+              <el-button size="small" @click="loadSystem(true)" :loading="sysLoading">检查更新</el-button>
+            </div>
+
+            <div class="ver-row">
+              <div class="ver-box">
+                <div class="k">当前版本</div>
+                <div class="v mono">v{{ sys.current || '—' }}</div>
+              </div>
+              <div class="ver-arrow" v-if="sys.update_available">→</div>
+              <div class="ver-box" v-if="sys.update_available">
+                <div class="k">最新版本</div>
+                <div class="v mono" style="color:var(--ok);">v{{ sys.latest }}</div>
+              </div>
+            </div>
+
+            <el-alert v-if="sys.check_error" type="info" show-icon :closable="false"
+                      style="margin-bottom:12px;" title="查不到最新版本"
+                      :description="sys.check_error" />
+            <el-alert v-else-if="sys.update_available" type="warning" show-icon :closable="false"
+                      style="margin-bottom:12px;"
+                      :title="'有新版本 v' + sys.latest + ' 可用'"
+                      description="更新只拉代码并重建容器，你的配置、密码和审计记录都不会动。" />
+            <el-alert v-else-if="sys.latest" type="success" show-icon :closable="false"
+                      style="margin-bottom:12px;" title="已经是最新版本" />
+
+            <div class="card-head" style="margin-top:18px;">
+              <div class="card-title">更新方式</div>
+            </div>
+            <p class="hint" style="margin-top:0;">
+              在服务器上执行下面这条命令即可。面板不会自己动宿主机上的代码——那需要把
+              docker 控制权交给容器，风险比省这一步大得多。
+            </p>
+            <div class="cmd-box">
+              <code class="mono">{{ sys.update_command }}</code>
+              <button class="copy-btn" @click="copy(sys.update_command)" aria-label="复制更新命令">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
+            <p class="hint">
+              只想看看有什么变化、先不更新：
+            </p>
+            <div class="cmd-box">
+              <code class="mono">{{ sys.check_command }}</code>
+              <button class="copy-btn" @click="copy(sys.check_command)" aria-label="复制检查命令">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
+
+            <p class="hint">
+              安装目录 <code class="mono">{{ sys.install_dir }}</code> ·
+              <a :href="sys.repo_url" target="_blank" rel="noopener noreferrer" class="link">项目主页</a>
+              <template v-if="sys.compare_url">
+                · <a :href="sys.compare_url" target="_blank" rel="noopener noreferrer" class="link">看看这版改了什么</a>
+              </template>
+            </p>
+          </div>
+        </section>
+
         <!-- 密码 -->
         <section class="pane" v-show="activeTab === 'password'">
           <div class="card" style="max-width:420px;">
@@ -1081,6 +1159,7 @@ const NAV = [
   { title: '设置', items: [
     { name: 'profile', label: '账户配置', icon: 'M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4' },
     { name: 'password', label: '密码', icon: 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3' },
+    { name: 'update', label: '更新', icon: 'M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6' },
   ]},
 ];
 
@@ -1231,6 +1310,11 @@ createApp({
       !!(preflight.value && preflight.value.allow && createForm.display_name &&
          createForm.availability_domain && createForm.image_id &&
          createForm.ssh_public_key));
+
+    // ---- 版本 / 更新 ----
+    const sys = ref({ current: '', latest: null, update_available: false,
+                      install_dir: '/opt/ocix', update_command: '', check_command: '' });
+    const sysLoading = ref(false);
 
     // ---- 存储 ----
     const storage = ref(null);
@@ -1520,6 +1604,20 @@ createApp({
       } finally { loading.value = false; }
     }
 
+    async function loadSystem(force) {
+      sysLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/system/info', { params: { refresh: !!force } });
+        sys.value = data;
+        if (force) {
+          ElMessage[data.update_available ? 'warning' : 'success'](
+            data.update_available ? `有新版本 v${data.latest}` : '已经是最新版本');
+        }
+      } catch (e) {
+        ElMessage.error(errMsg(e, '版本信息获取失败'));
+      } finally { sysLoading.value = false; }
+    }
+
     async function loadStorage() {
       if (!currentProfile.value) return;
       storageLoading.value = true;
@@ -1679,6 +1777,7 @@ createApp({
       if (activeTab.value === 'all') return loadAll();
       if (activeTab.value === 'audit') return loadAudit(auditPage.value);
       if (activeTab.value === 'storage') return loadStorage();
+      if (activeTab.value === 'update') return loadSystem(true);
       if (activeTab.value === 'firewall') { loadSingle(); return loadFirewall(); }
       if (activeTab.value === 'create') { loadCreateOptions(); return doPreflight(); }
       if (activeTab.value === 'metrics') { loadSingle(); return loadMetrics(); }
@@ -1713,6 +1812,7 @@ createApp({
         if (!opts.value.availability_domains.length) loadCreateOptions();
         doPreflight();
       }
+      if (name === 'update' && !sys.value.current) loadSystem(false);
       if (name === 'firewall') {
         if (!instances.value.length) loadSingle();
         if (!fwInstance.value && instances.value.length) {
@@ -2023,6 +2123,7 @@ createApp({
       pubKeyName, ipv6Busy,
       rollName, onPubKeyFile, addIpv6,
       firewall, fwInstance, fwLoading, fwBusy, loadFirewall, allowAll, revokeAll,
+      sys, sysLoading, loadSystem,
       changeIp, changePerformance,
       token, user, loginForm, loginErr, loading,
       profiles, profilesLoading, currentProfile, compartments, compsLoading, compartmentId,

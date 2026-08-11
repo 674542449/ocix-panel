@@ -10,7 +10,7 @@ from . import __version__, security
 from .config import CORS_ORIGINS, DEV_MODE, FRONTEND_DIR, OCI_CONFIG_PATH
 from .db import init_db
 from .oci_cli import cli_version, list_profiles_from_config
-from .routers import audit, auth, instances, monitor, profiles, provision
+from .routers import audit, auth, instances, monitor, profiles, provision, system
 
 VERSION = __version__
 
@@ -40,6 +40,7 @@ app.include_router(instances.router)
 app.include_router(monitor.router)
 app.include_router(provision.router)
 app.include_router(audit.router)
+app.include_router(system.router)
 
 
 @app.get("/api/health")

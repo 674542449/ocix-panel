@@ -342,6 +342,70 @@ def test_metrics_failure_is_400_not_500(app_client):
     assert r.status_code == 400
 
 
+# ── 版本 / 在线更新 ──
+
+def test_system_info_reports_current_version(app_client, monkeypatch):
+    from ocix.routers import system
+    monkeypatch.setattr(system, "_latest_cached", lambda force=False: {"latest": None, "error": "离线"})
+
+    r = app_client.get("/api/system/info")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["current"]
+    assert body["update_available"] is False
+
+
+def test_system_info_detects_newer_version(app_client, monkeypatch):
+    from ocix.routers import system
+    monkeypatch.setattr(system, "_latest_cached", lambda force=False: {"latest": "99.0.0", "error": None})
+
+    body = app_client.get("/api/system/info").json()
+    assert body["update_available"] is True
+    assert body["latest"] == "99.0.0"
+    assert body["compare_url"]
+
+
+def test_system_info_survives_github_being_unreachable(app_client, monkeypatch):
+    """查不到就如实说查不到，不能让整个页面 500。"""
+    from ocix.routers import system
+
+    def boom(*a, **kw):
+        raise OSError("name resolution failed")
+
+    monkeypatch.setattr(system, "_fetch_latest", boom)
+    monkeypatch.setattr(system, "_cache", {"ts": 0.0, "data": None})
+
+    r = app_client.get("/api/system/info?refresh=true")
+    assert r.status_code == 200
+    assert r.json()["latest"] is None
+    assert r.json()["check_error"]
+
+
+def test_update_command_points_at_the_install_dir(app_client, monkeypatch):
+    from ocix.routers import system
+    monkeypatch.setattr(system, "INSTALL_DIR", "/opt/ocix")
+    monkeypatch.setattr(system, "_latest_cached", lambda force=False: {"latest": None, "error": None})
+
+    body = app_client.get("/api/system/info").json()
+    assert body["update_command"] == "bash /opt/ocix/scripts/update.sh"
+
+
+@pytest.mark.parametrize("a,b,newer", [
+    ("0.4.0", "0.4.1", True),
+    ("0.4.0", "0.10.0", True),
+    ("1.0.0", "0.9.9", False),
+    ("0.4.0", "0.4.0", False),
+    ("v0.4.0", "0.4.1", True),
+])
+def test_version_comparison(a, b, newer):
+    from ocix.routers.system import _version_tuple
+    assert (_version_tuple(b) > _version_tuple(a)) is newer
+
+
+def test_system_info_requires_auth(anon_client):
+    assert anon_client.get("/api/system/info").status_code == 401
+
+
 # ── 静态文件与 SPA 回退 ──
 
 def test_spa_root_is_served(anon_client):

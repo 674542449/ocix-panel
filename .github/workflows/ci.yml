@@ -34,6 +34,33 @@ jobs:
       - name: 测试
         run: pytest
 
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 编排插值必须成功（回归：.env 在仓库根，compose 项目目录却是 deploy/）
+        run: |
+          cat > .env <<'EOF'
+          OCIX_SESSION_SECRET=testsecret
+          OCIX_ADMIN_PASSWORD=testpass123
+          OCIX_DOMAIN=example.com
+          OCIX_ACME_EMAIL=a@example.com
+          EOF
+          cd deploy
+          docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.caddy.yml config >/dev/null
+          docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.direct.yml config >/dev/null
+          echo "两种模式插值均正常"
+
+      - name: 不带 --env-file 必须失败（证明这个参数不是可有可无）
+        run: |
+          cd deploy
+          if docker compose -f docker-compose.yml -f docker-compose.direct.yml config >/dev/null 2>&1; then
+            echo "预期应报缺少变量却成功了——说明必填校验失效" >&2
+            exit 1
+          fi
+          echo "符合预期：缺 --env-file 时报错"
+
   docker:
     runs-on: ubuntu-latest
     steps:

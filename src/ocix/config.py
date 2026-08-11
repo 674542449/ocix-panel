@@ -68,6 +68,11 @@ TRUST_PROXY = _bool_env("OCIX_TRUST_PROXY", True)
 # 允许跨域的来源；留空表示只允许同源（默认部署由 Caddy 同源反代，无需 CORS）
 CORS_ORIGINS = [o.strip() for o in os.getenv("OCIX_CORS_ORIGINS", "").split(",") if o.strip()]
 
+# ---- 在线更新 ----
+# 宿主机上的安装目录，用于在网页上给出正确的更新命令
+INSTALL_DIR = os.getenv("OCIX_HOME", "/opt/ocix")
+GITHUB_REPO = os.getenv("OCIX_GITHUB_REPO", "674542449/ocix-panel")
+
 # ---- 运行模式 ----
 # 当 SESSION_SECRET 为空时，开发模式允许启动但不允许登录
 DEV_MODE = SESSION_SECRET == ""

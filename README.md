@@ -19,29 +19,32 @@
 在一台 Ubuntu / Debian 服务器上执行（需要 Docker）：
 
 ```bash
-git clone https://github.com/674542449/ocix-panel.git && cd ocix-panel && bash scripts/install.sh
+sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && sudo bash scripts/install.sh
 ```
 
-脚本会问你**用域名还是 IP+端口**访问，然后自动生成密钥、构建镜像、拉起服务。装完直接给你访问地址和随机管理员密码。
+装到 **`/opt/ocix`**。脚本会依次问你：**用域名还是 IP+端口**访问、**管理员用户名和密码**（明文显示便于核对）。会话密钥自动生成，不用你填任何密钥类的东西。
 
 **不想交互，一条命令装完：**
 
 ```bash
 # 方式 A：域名 + 自动 HTTPS（证书在部署时就申请好）
-git clone https://github.com/674542449/ocix-panel.git && cd ocix-panel && \
-  bash scripts/install.sh --domain panel.example.com --email you@example.com
+sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && \
+  sudo bash scripts/install.sh --domain panel.example.com --email you@example.com \
+    --admin-user admin --admin-password 你的密码
 ```
 
 ```bash
 # 方式 B：IP + 端口 直连（无 HTTPS，适合内网或临时使用）
-git clone https://github.com/674542449/ocix-panel.git && cd ocix-panel && \
-  bash scripts/install.sh --port 8000
+sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && \
+  sudo bash scripts/install.sh --port 8000 --admin-user admin --admin-password 你的密码
 ```
 
 > **域名模式**需要域名的 A 记录已指向本机公网 IP，且 80 / 443 没被占用、安全组已放行。
 > 脚本会**先查 DNS 再部署**，并在部署阶段等到证书真正签发落盘才算成功——不会等你第一次访问时才去申请。
 >
 > **直连模式**没有 HTTPS，密码是明文传输，别长期挂公网。记得在云厂商安全组放行你选的端口。
+
+> 从别的目录跑也行，脚本会自动把项目搬到 `/opt/ocix` 再继续；加 `--dir /其他/路径` 可改位置，`--here` 则就地安装。
 
 没装 Docker 的话先跑：`curl -fsSL https://get.docker.com | sh`
 
@@ -152,25 +155,37 @@ ocix-panel/
 ├── docker/Dockerfile
 ├── scripts/
 │   ├── install.sh       一键部署（域名 / IP 二选一）
-│   └── release.sh       提版本号 + 打 tag + 推送
+│   ├── release.sh       提版本号 + 打 tag + 推送
+│   ├── update.sh        在线更新（拉代码 + 重建 + 重启）
+│   └── ocix.sh          docker compose 包装
 ├── tests/               pytest
 └── VERSION              唯一版本号来源
 ```
 
 ## 常用命令
 
+`ocix.sh` 会自动带上正确的 compose 参数，不用管当前是域名模式还是直连模式：
+
 ```bash
-cd deploy
-
-# 域名模式
-docker compose -f docker-compose.yml -f docker-compose.caddy.yml logs -f
-docker compose -f docker-compose.yml -f docker-compose.caddy.yml restart
-
-# 直连模式
-docker compose -f docker-compose.yml -f docker-compose.direct.yml logs -f
+bash /opt/ocix/scripts/ocix.sh logs -f      # 跟踪日志
+bash /opt/ocix/scripts/ocix.sh restart      # 重启
+bash /opt/ocix/scripts/ocix.sh ps           # 看状态
 ```
 
-升级：`git pull && bash scripts/install.sh`（会复用已有 `.env`，密码不变）
+## 更新
+
+面板「更新」页会显示当前版本、检查 GitHub 上有没有新版本，并给出该执行的命令。
+在服务器上跑这一条即可，配置、密码、审计记录都不动：
+
+```bash
+bash /opt/ocix/scripts/update.sh
+```
+
+```bash
+bash /opt/ocix/scripts/update.sh --check    # 只看有没有新版本和改了什么
+```
+
+> 面板**不会**自己去改宿主机上的代码——那需要把 docker 控制权交给容器，风险远大于省这一步。
 
 ## 本地开发
 
@@ -218,6 +233,7 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 | GET/POST | `/api/provision/storage*` | 卷清单 / 删除 / 性能 |
 | GET | `/api/monitor/usage` · `/metrics` | 额度 / 监控 |
 | GET | `/api/audit` | 审计日志 |
+| GET | `/api/system/info` | 版本信息与更新指引 |
 
 完整交互式文档：部署后访问 `/docs`。
 
