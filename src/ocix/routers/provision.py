@@ -5,6 +5,7 @@ from ..db import audit
 from ..oci_cli import OCICLIError
 from ..oci_helpers import (
     VPU_OPTIONS,
+    add_ipv6_to_instance,
     change_public_ip,
     create_network,
     delete_volume,
@@ -16,6 +17,7 @@ from ..oci_helpers import (
     list_subnets,
     open_all_ports,
     preflight_create,
+    resolve_subnet,
     revoke_all_ports,
     storage_overview,
     terminate_instance,
@@ -110,6 +112,28 @@ def create_instance(
             "checks": check["checks"],
         })
 
+    # 子网：用户不用选，这里自动定位；账户第一次开机时顺手把网络建出来
+    network_created = False
+    try:
+        subnet = resolve_subnet(req.profile, req.compartment_id)
+        params["subnet_id"] = subnet["id"]
+        network_created = subnet.get("created", False)
+    except OCICLIError as e:
+        raise HTTPException(status_code=400, detail=f"没能准备好网络，未创建任何实例: {e.message}")
+
+    # 勾了 IPv6 就在这里把子网的 IPv6 一并开通，用户不用再点一次
+    ipv6_warnings = []
+    if req.assign_ipv6:
+        try:
+            net = ensure_subnet_ipv6(req.profile, params["subnet_id"], req.compartment_id)
+            ipv6_warnings = net.get("warnings", [])
+        except OCICLIError as e:
+            audit(user, "create-instance", profile=req.profile, target=req.display_name,
+                  detail=f"IPv6 开通失败: {e.message}", result="fail", ip=ip)
+            raise HTTPException(
+                status_code=400,
+                detail=f"子网 IPv6 开通失败，未创建实例: {e.message}")
+
     try:
         data = launch_instance(req.profile, params)
     except OCICLIError as e:
@@ -131,7 +155,30 @@ def create_instance(
         "display_name": data.get("display-name") or data.get("display_name"),
         "state": data.get("lifecycle-state") or data.get("lifecycle_state"),
         "preflight": check,
+        "network_created": network_created,
+        "ipv6": req.assign_ipv6,
+        "warnings": ipv6_warnings,
     }
+
+
+@router.post("/instances/add-ipv6")
+def add_ipv6(
+    req: InstanceRefRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """给已有实例补一个 IPv6 地址；子网没开通 IPv6 会一并开通。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        res = add_ipv6_to_instance(req.profile, req.instance_id, _compartment_of(req))
+    except OCICLIError as e:
+        audit(user, "add-ipv6", profile=req.profile, target=req.instance_id,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "add-ipv6", profile=req.profile, target=req.instance_id,
+          detail=res.get("ipv6") or "", result="ok", ip=ip)
+    return {"ok": True, **res}
 
 
 @router.post("/instances/terminate")

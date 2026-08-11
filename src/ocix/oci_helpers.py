@@ -526,6 +526,36 @@ def list_subnets(profile: str, compartment_id: str = None) -> list:
     return [s for s in out if s["public"]] + [s for s in out if not s["public"]]
 
 
+DEFAULT_NETWORK_NAME = "ocix-vcn"
+
+
+def resolve_subnet(profile: str, compartment_id: str = None, create_if_missing: bool = True) -> dict:
+    """定位这个账户开机用的子网，没有就建一个默认的。
+
+    面板不让用户选子网——所有机器共用一个，省掉一堆网络概念。
+    优先挑能分配公网 IP 的子网；一个都没有才新建 VCN + 网关 + 公共子网。
+    """
+    cid = compartment_id or tenancy_of(profile)
+    subnets = list_subnets(profile, cid)
+    public = [s for s in subnets if s.get("public")]
+    if public:
+        return {**public[0], "created": False}
+    if subnets:
+        return {**subnets[0], "created": False}
+    if not create_if_missing:
+        raise OCICLIError("这个账户还没有可用子网")
+    net = create_network(profile, cid, DEFAULT_NETWORK_NAME)
+    return {
+        "id": net["subnet_id"],
+        "display_name": net["subnet_name"],
+        "vcn_id": net["vcn_id"],
+        "vcn_name": net["vcn_name"],
+        "ipv6_enabled": False,
+        "public": True,
+        "created": True,
+    }
+
+
 def create_network(profile: str, compartment_id: str = None, name: str = "ocix-vcn") -> dict:
     """给全新租户一键建 VCN + 互联网网关 + 公共子网，否则没法开第一台机器。"""
     cid = compartment_id or tenancy_of(profile)
@@ -680,55 +710,146 @@ def subnet_ipv6_status(profile: str, subnet_id: str) -> dict:
     }
 
 
+def _vcn_ipv6_blocks(profile: str, vcn_id: str) -> tuple:
+    vcn = run_oci(profile, "network", "vcn", "get", "--vcn-id", vcn_id).get("data", {}) or {}
+    blocks = _get(vcn, "ipv6-cidr-blocks", "ipv6_cidr_blocks", default=[]) or []
+    return vcn, blocks
+
+
+def _add_vcn_ipv6(profile: str, vcn_id: str) -> None:
+    """给 VCN 申请一段 Oracle 分配的 /56。
+
+    AddVcnIpv6CidrDetails 要么给显式 ipv6CidrBlock，要么把 isOracleGuaAllocationEnabled
+    置为 true——两个都不给会被服务端拒掉，这正是之前 IPv6 一直开不起来的原因。
+    老版本 CLI 没有这个参数，所以失败后再退回不带参数的写法。
+    """
+    try:
+        run_oci(profile, "network", "vcn", "add-ipv6-vcn-cidr", "--vcn-id", vcn_id,
+                "--is-oracle-gua-allocation-enabled", "true", timeout=OCI_LAUNCH_TIMEOUT)
+        return
+    except OCICLIError as e:
+        msg = (e.message or "").lower()
+        if "already" in msg or "limitexceeded" in msg or "conflict" in msg:
+            return
+        if "no such option" not in msg and "unrecognized" not in msg and "usage:" not in msg:
+            raise
+    run_oci(profile, "network", "vcn", "add-ipv6-vcn-cidr", "--vcn-id", vcn_id,
+            timeout=OCI_LAUNCH_TIMEOUT)
+
+
+def _ensure_ipv6_route(profile: str, vcn_id: str, compartment_id: str, route_table_id: str) -> None:
+    """补一条 ::/0 → 互联网网关的默认路由，否则 IPv6 出不去。"""
+    igs = run_oci(profile, "network", "internet-gateway", "list",
+                  "--compartment-id", compartment_id, "--vcn-id", vcn_id,
+                  "--all").get("data", []) or []
+    ig_id = next((g.get("id") for g in igs
+                  if _get(g, "lifecycle-state", "lifecycle_state") == "AVAILABLE"), None)
+    if not ig_id or not route_table_id:
+        return
+    rt = run_oci(profile, "network", "route-table", "get",
+                 "--rt-id", route_table_id).get("data", {}) or {}
+    rules = _get(rt, "route-rules", "route_rules", default=[]) or []
+    norm = []
+    for r in rules:
+        rule = {
+            "destination": _get(r, "destination"),
+            "destinationType": _get(r, "destination-type", "destinationType") or "CIDR_BLOCK",
+            "networkEntityId": _get(r, "network-entity-id", "networkEntityId"),
+        }
+        if _get(r, "description"):
+            rule["description"] = _get(r, "description")
+        norm.append(rule)
+    if any(r["destination"] == "::/0" for r in norm):
+        return
+    norm.append({"destination": "::/0", "destinationType": "CIDR_BLOCK",
+                 "networkEntityId": ig_id, "description": "ocix: ipv6 default route"})
+    run_oci(profile, "network", "route-table", "update", "--rt-id", route_table_id,
+            "--force", "--route-rules", json.dumps(norm), timeout=OCI_LAUNCH_TIMEOUT)
+
+
+def _ensure_ipv6_ingress(profile: str, subnet_id: str) -> None:
+    """放行 ::/0 的 SSH 入站。
+
+    OCI 默认安全列表只写了 IPv4 的规则，不补这一条的话 IPv6 地址分下来也连不上，
+    看起来就像「IPv6 不好使」。
+    """
+    sub = run_oci(profile, "network", "subnet", "get",
+                  "--subnet-id", subnet_id).get("data", {}) or {}
+    sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
+    if not sl_ids:
+        return
+    sid = sl_ids[0]
+    rules = _raw_ingress(profile, sid)
+    if any(r.get("source") == _ALL_V6 for r in rules):
+        return
+    rules.append({
+        "protocol": "6", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
+        "isStateless": False, "description": "ocix: ssh over ipv6",
+        "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}},
+    })
+    _set_ingress(profile, sid, rules)
+
+
 def ensure_subnet_ipv6(profile: str, subnet_id: str, compartment_id: str) -> dict:
-    """给子网开通 IPv6：VCN 申请 /56 → 子网切一个 /64 → 补 ::/0 默认路由。"""
+    """给子网开通 IPv6：VCN 申请 /56 → 子网切一个 /64 → 补 ::/0 路由与入站规则。
+
+    幂等：已经开通过就直接返回，不会重复申请。
+    """
     st = subnet_ipv6_status(profile, subnet_id)
+    vcn_id = st["vcn_id"]
+
     if st["enabled"]:
+        # 子网已有 IPv6，但路由/安全组可能是缺的，补齐后再返回
+        try:
+            _ensure_ipv6_route(profile, vcn_id, compartment_id, st["route_table_id"])
+            _ensure_ipv6_ingress(profile, subnet_id)
+        except OCICLIError:
+            pass
         return {**st, "changed": False}
 
-    vcn_id = st["vcn_id"]
-    vcn = run_oci(profile, "network", "vcn", "get", "--vcn-id", vcn_id).get("data", {}) or {}
-    v6 = _get(vcn, "ipv6-cidr-blocks", "ipv6_cidr_blocks", default=[]) or []
+    vcn, v6 = _vcn_ipv6_blocks(profile, vcn_id)
     if not v6:
-        run_oci(profile, "network", "vcn", "add-ipv6-vcn-cidr", "--vcn-id", vcn_id,
-                timeout=OCI_LAUNCH_TIMEOUT)
-        vcn = run_oci(profile, "network", "vcn", "get", "--vcn-id", vcn_id).get("data", {}) or {}
-        v6 = _get(vcn, "ipv6-cidr-blocks", "ipv6_cidr_blocks", default=[]) or []
+        _add_vcn_ipv6(profile, vcn_id)
+        vcn, v6 = _vcn_ipv6_blocks(profile, vcn_id)
     if not v6:
-        raise OCICLIError("VCN 没能拿到 IPv6 地址段，可能该区域暂不支持 IPv6")
+        raise OCICLIError(
+            "VCN 没能拿到 IPv6 地址段。请确认该区域支持 IPv6，"
+            "以及你的用户对 VCN 有 manage 权限。")
 
     # /56 里切第一个 /64 给子网
     subnet_cidr = v6[0].rsplit("/", 1)[0] + "/64"
-    run_oci(profile, "network", "subnet", "update", "--subnet-id", subnet_id,
-            "--ipv6-cidr-block", subnet_cidr, "--force", timeout=OCI_LAUNCH_TIMEOUT)
-
-    # 默认路由指向互联网网关，否则 IPv6 出不去
     try:
-        igs = run_oci(profile, "network", "internet-gateway", "list",
-                      "--compartment-id", compartment_id, "--vcn-id", vcn_id,
-                      "--all").get("data", []) or []
-        ig_id = igs[0].get("id") if igs else None
-        rt_id = st["route_table_id"] or _get(vcn, "default-route-table-id", "default_route_table_id")
-        if ig_id and rt_id:
-            rt = run_oci(profile, "network", "route-table", "get",
-                         "--rt-id", rt_id).get("data", {}) or {}
-            rules = _get(rt, "route-rules", "route_rules", default=[]) or []
-            norm = [{
-                "destination": _get(r, "destination"),
-                "destinationType": _get(r, "destination-type", "destinationType") or "CIDR_BLOCK",
-                "networkEntityId": _get(r, "network-entity-id", "networkEntityId"),
-            } for r in rules]
-            if not any(r["destination"] == "::/0" for r in norm):
-                norm.append({"destination": "::/0", "destinationType": "CIDR_BLOCK",
-                             "networkEntityId": ig_id})
-                run_oci(profile, "network", "route-table", "update", "--rt-id", rt_id,
-                        "--force", "--route-rules", json.dumps(norm),
-                        timeout=OCI_LAUNCH_TIMEOUT)
-    except OCICLIError:
-        # 路由补不上不影响子网已开通 IPv6，交给防火墙页提示
-        pass
+        run_oci(profile, "network", "subnet", "update", "--subnet-id", subnet_id,
+                "--ipv6-cidr-block", subnet_cidr, "--force", timeout=OCI_LAUNCH_TIMEOUT)
+    except OCICLIError as e:
+        if "already" not in (e.message or "").lower():
+            raise
 
-    return {**subnet_ipv6_status(profile, subnet_id), "changed": True}
+    # 路由和安全组补不上不影响地址已分配，但要让调用方知道
+    warnings = []
+    for step, fn in (("默认路由", lambda: _ensure_ipv6_route(
+                          profile, vcn_id, compartment_id, st["route_table_id"])),
+                     ("安全列表入站规则", lambda: _ensure_ipv6_ingress(profile, subnet_id))):
+        try:
+            fn()
+        except OCICLIError as e:
+            warnings.append(f"{step}没能自动补上：{e.message}")
+
+    return {**subnet_ipv6_status(profile, subnet_id), "changed": True, "warnings": warnings}
+
+
+def add_ipv6_to_instance(profile: str, instance_id: str, compartment_id: str) -> dict:
+    """给已有实例加一个 IPv6 地址（子网没开通 IPv6 就顺手开通）。"""
+    vnic = primary_vnic(profile, instance_id, compartment_id)
+    if vnic["ipv6_addresses"]:
+        return {"ipv6": vnic["ipv6_addresses"][0], "changed": False, "warnings": []}
+
+    net = ensure_subnet_ipv6(profile, vnic["subnet_id"], compartment_id)
+
+    data = run_oci(profile, "network", "ipv6", "create",
+                   "--vnic-id", vnic["vnic_id"], timeout=OCI_LAUNCH_TIMEOUT)
+    addr = _get(data.get("data", {}) or {}, "ip-address", "ip_address")
+    return {"ipv6": addr, "changed": True, "warnings": net.get("warnings", [])}
 
 
 # ---- 卷性能 ----

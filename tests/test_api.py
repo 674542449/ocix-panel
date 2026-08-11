@@ -184,6 +184,140 @@ def test_bad_ssh_keys_are_rejected(app_client, key):
     assert r.status_code == 422
 
 
+# ── 子网自动化：前端不再让用户选子网 ──
+
+@pytest.fixture()
+def stub_launch(monkeypatch, stub_usage):
+    """把用量清零并接管 launch，用来观察后端到底往下传了什么。"""
+    from ocix import freetier as ft
+    from ocix.routers import provision
+
+    stub_usage(ft.summarize([], [], []))
+    captured = {}
+
+    def fake_launch(profile, params):
+        captured.update(params)
+        return {"id": "ocid1.instance.oc1..new", "display-name": params["display_name"],
+                "lifecycle-state": "PROVISIONING"}
+
+    monkeypatch.setattr(provision, "launch_instance", fake_launch)
+    return captured
+
+
+def test_subnet_is_resolved_when_client_omits_it(app_client, stub_launch, monkeypatch):
+    from ocix.routers import provision
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "ocid1.subnet.oc1..auto", "created": False})
+
+    payload = _create_payload()
+    payload.pop("subnet_id")
+    r = app_client.post("/api/provision/instances", json=payload)
+    assert r.status_code == 200, r.text
+    assert stub_launch["subnet_id"] == "ocid1.subnet.oc1..auto"
+
+
+def test_first_instance_creates_the_network(app_client, stub_launch, monkeypatch):
+    """账户第一次开机时后台自动建 VCN + 子网，前端不用管。"""
+    from ocix.routers import provision
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "ocid1.subnet.oc1..fresh", "created": True})
+
+    payload = _create_payload()
+    payload.pop("subnet_id")
+    r = app_client.post("/api/provision/instances", json=payload)
+    assert r.status_code == 200
+    assert r.json()["network_created"] is True
+
+
+def test_network_failure_creates_nothing(app_client, stub_launch, monkeypatch):
+    from ocix.oci_cli import OCICLIError
+    from ocix.routers import provision
+
+    def boom(*a, **kw):
+        raise OCICLIError("配额不足，无法创建 VCN")
+
+    monkeypatch.setattr(provision, "resolve_subnet", boom)
+    r = app_client.post("/api/provision/instances", json=_create_payload())
+    assert r.status_code == 400
+    assert "未创建任何实例" in r.json()["detail"]
+    assert not stub_launch
+
+
+# ── IPv6 ──
+
+def test_checking_ipv6_enables_the_subnet_automatically(app_client, stub_launch, monkeypatch):
+    """勾一下就够了，不需要用户再点一次「开通 IPv6」。"""
+    from ocix.routers import provision
+    calls = []
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "ocid1.subnet.oc1..auto", "created": False})
+    monkeypatch.setattr(provision, "ensure_subnet_ipv6",
+                        lambda p, s, c: calls.append(s) or {"enabled": True, "warnings": []})
+
+    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
+    assert r.status_code == 200
+    assert calls == ["ocid1.subnet.oc1..auto"]
+    assert stub_launch["assign_ipv6"] is True
+
+
+def test_ipv6_is_not_touched_when_unchecked(app_client, stub_launch, monkeypatch):
+    from ocix.routers import provision
+    calls = []
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "s", "created": False})
+    monkeypatch.setattr(provision, "ensure_subnet_ipv6",
+                        lambda p, s, c: calls.append(s) or {"enabled": True})
+
+    app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=False))
+    assert calls == []
+
+
+def test_ipv6_failure_aborts_before_creating_the_instance(app_client, stub_launch, monkeypatch):
+    from ocix.oci_cli import OCICLIError
+    from ocix.routers import provision
+
+    def boom(*a, **kw):
+        raise OCICLIError("该区域不支持 IPv6")
+
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "s", "created": False})
+    monkeypatch.setattr(provision, "ensure_subnet_ipv6", boom)
+
+    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
+    assert r.status_code == 400
+    assert "未创建实例" in r.json()["detail"]
+    assert not stub_launch
+
+
+def test_add_ipv6_to_existing_instance(app_client, monkeypatch):
+    from ocix.routers import provision
+    monkeypatch.setattr(provision, "add_ipv6_to_instance",
+                        lambda p, i, c: {"ipv6": "2603:c020::1", "changed": True, "warnings": []})
+
+    r = app_client.post("/api/provision/instances/add-ipv6",
+                        json={"profile": "EXISTING", "instance_id": "ocid1.instance.oc1..x"})
+    assert r.status_code == 200
+    assert r.json()["ipv6"] == "2603:c020::1"
+
+
+def test_add_ipv6_is_idempotent(app_client, monkeypatch):
+    from ocix.routers import provision
+    monkeypatch.setattr(provision, "add_ipv6_to_instance",
+                        lambda p, i, c: {"ipv6": "2603:c020::1", "changed": False, "warnings": []})
+
+    r = app_client.post("/api/provision/instances/add-ipv6",
+                        json={"profile": "EXISTING", "instance_id": "ocid1.instance.oc1..x"})
+    assert r.status_code == 200
+    assert r.json()["changed"] is False
+
+
+def test_add_ipv6_failure_is_400(app_client):
+    """没有 oci CLI 时应报可读错误而不是 500。"""
+    r = app_client.post("/api/provision/instances/add-ipv6",
+                        json={"profile": "EXISTING", "instance_id": "ocid1.instance.oc1..x"})
+    assert r.status_code == 400
+
+
 def test_invalid_instance_action_is_rejected(app_client):
     r = app_client.post("/api/instances/action",
                         json={"profile": "EXISTING", "instance_id": "x", "action": "DROP"})

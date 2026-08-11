@@ -196,7 +196,18 @@
 
     .empty { text-align:center; color:var(--muted); padding:var(--sp-6) var(--sp-4); font-size:13px; }
     .empty b { display:block; color:var(--text); font-size:14px; margin-bottom:6px; font-weight:600; }
-    .ip-cell { display:inline-flex; align-items:center; gap:6px; }
+    .ip-cell { display:inline-flex; align-items:center; gap:6px; max-width:100%; }
+    /* 公网 IP 为主、内网 IP 作次要行，比单开一列省 130px，表格就不会宽到被固定列盖住 */
+    .ip-stack { display:flex; flex-direction:column; gap:1px; line-height:1.35; }
+    .ip-sub { font-size:11px; color:var(--muted); }
+    .ip-trunc { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* 地址旁边的迷你操作按钮 */
+    .mini-btn { background:#1d2740; border:1px solid var(--line); color:var(--muted);
+                font-family:var(--sans); font-size:11px; line-height:1; padding:3px 6px;
+                border-radius:4px; cursor:pointer; transition:color .18s ease, border-color .18s ease; }
+    .mini-btn:hover { color:var(--accent); border-color:var(--accent); }
+    .el-button.term-btn { color:var(--crit); padding-left:6px; padding-right:6px; }
+    .el-button.term-btn:hover { color:var(--crit); background:rgba(239,68,68,.12); }
     .copy-btn { background:none; border:0; color:var(--muted); cursor:pointer; padding:2px;
                 border-radius:4px; line-height:0; transition:color .18s ease, background .18s ease; }
     .copy-btn:hover { color:var(--accent); background:#1d2740; }
@@ -420,45 +431,51 @@
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="display_name" label="名称" min-width="150" show-overflow-tooltip />
-                <el-table-column label="规格" min-width="190">
+                <el-table-column prop="display_name" label="名称" min-width="125" show-overflow-tooltip />
+                <el-table-column label="规格" min-width="150">
                   <template #default="{row}"><span class="mono">{{ specText(row) }}</span></template>
                 </el-table-column>
-                <el-table-column label="公网 IP" width="150">
+                <!-- 改地址的操作就放在地址旁边，操作列只留开关机，表格才不会宽到被固定列盖住 -->
+                <el-table-column label="公网 IP" min-width="195">
                   <template #default="{row}">
-                    <span class="ip-cell" v-if="row.public_ip">
-                      <span class="mono">{{ row.public_ip }}</span>
-                      <button class="copy-btn" @click="copy(row.public_ip)" :aria-label="'复制 ' + row.public_ip">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-                      </button>
-                    </span>
-                    <span v-else class="mono" style="color:var(--muted);">—</span>
+                    <div class="ip-stack">
+                      <span class="ip-cell">
+                        <template v-if="row.public_ip">
+                          <span class="mono">{{ row.public_ip }}</span>
+                          <button class="copy-btn" @click="copy(row.public_ip)" :aria-label="'复制 ' + row.public_ip">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                          </button>
+                          <el-tooltip content="换一个公网 IPv4" placement="top">
+                            <button class="mini-btn" @click="changeIp(row)" aria-label="更换公网 IP">换</button>
+                          </el-tooltip>
+                        </template>
+                        <span v-else class="mono" style="color:var(--muted);">无公网 IP</span>
+                      </span>
+                      <span class="ip-sub mono" v-if="row.private_ip">内网 {{ row.private_ip }}</span>
+                    </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="IPv6" width="180">
+                <el-table-column label="IPv6" min-width="165">
                   <template #default="{row}">
                     <span class="ip-cell" v-if="row.ipv6">
-                      <span class="mono">{{ row.ipv6 }}</span>
+                      <span class="mono ip-trunc" :title="row.ipv6">{{ row.ipv6 }}</span>
                       <button class="copy-btn" @click="copy(row.ipv6)" :aria-label="'复制 ' + row.ipv6">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
                       </button>
                     </span>
-                    <span v-else class="mono" style="color:var(--muted);">—</span>
+                    <el-button v-else size="small" text type="primary" :loading="ipv6Busy === row.id"
+                               @click="addIpv6(row)">+ 添加</el-button>
                   </template>
                 </el-table-column>
-                <el-table-column label="内网 IP" width="130">
-                  <template #default="{row}"><span class="mono">{{ row.private_ip || '—' }}</span></template>
-                </el-table-column>
-                <el-table-column label="创建于" width="110">
+                <el-table-column label="创建于" width="100">
                   <template #default="{row}"><span class="mono">{{ fmtDate(row.time_created) }}</span></template>
                 </el-table-column>
-                <el-table-column label="操作" width="330" fixed="right">
+                <el-table-column label="操作" width="232" fixed="right">
                   <template #default="{row}">
                     <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
                     <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
                     <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
-                    <el-button size="small" @click="changeIp(row)">换 IP</el-button>
-                    <el-button size="small" type="danger" plain @click="terminate(row)">终止</el-button>
+                    <el-button size="small" text class="term-btn" @click="terminate(row)">终止</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -479,9 +496,9 @@
               <span class="who">仅提供 Always Free 规格</span>
             </div>
 
-            <el-alert v-if="opts.needs_network" type="warning" show-icon :closable="false"
-                      style="margin-bottom:14px;" title="这个账户还没有可用子网"
-                      description="开机必须要有网络。点下方「一键创建网络」会建一个 VCN + 互联网网关 + 公共子网。" />
+            <el-alert v-if="opts.needs_network" type="info" show-icon :closable="false"
+                      style="margin-bottom:14px;" title="这个账户还没有网络，创建第一台机器时会自动建好"
+                      description="面板会建一个 VCN + 互联网网关 + 公共子网，之后所有机器都用它，不用你操心。" />
 
             <div class="create-grid">
               <div>
@@ -536,27 +553,15 @@
                     </el-select>
                   </el-form-item>
 
-                  <el-form-item label="子网">
-                    <div style="display:flex; gap:8px; width:100%;">
-                      <el-select v-model="createForm.subnet_id" style="flex:1;" placeholder="选择子网">
-                        <el-option v-for="s in opts.subnets" :key="s.id" :value="s.id"
-                                   :label="s.vcn_name + ' / ' + s.display_name + ' (' + s.cidr_block + ')'" />
-                      </el-select>
-                      <el-button v-if="opts.needs_network" type="primary" plain
-                                 :loading="netCreating" @click="makeNetwork">一键创建网络</el-button>
-                    </div>
-                  </el-form-item>
-
                   <el-form-item label="网络">
-                    <el-checkbox v-model="createForm.assign_ipv6" :disabled="!selectedSubnetIpv6 && !ipv6Ready"
-                                 label="同时分配 IPv6 地址" />
-                    <el-button v-if="createForm.subnet_id && !selectedSubnetIpv6" size="small"
-                               style="margin-left:10px;" :loading="ipv6Busy" @click="enableIpv6">
-                      为该子网开通 IPv6
-                    </el-button>
-                    <span class="hint" v-else-if="selectedSubnetIpv6" style="margin-left:10px;">
-                      该子网已开通 IPv6
-                    </span>
+                    <div style="width:100%;">
+                      <el-checkbox v-model="createForm.assign_ipv6" label="同时分配 IPv6 地址" />
+                      <p class="hint" style="margin-top:4px;">
+                        子网由面板统一管理，所有机器共用一个。这个账户还没有网络的话，
+                        创建时会自动建好 VCN、网关和子网。勾选 IPv6 会自动开通子网的 IPv6
+                        并放行 <code>::/0</code> 的 SSH 入站。
+                      </p>
+                    </div>
                   </el-form-item>
 
                   <el-form-item label="SSH 公钥">
@@ -1148,22 +1153,18 @@ createApp({
       limits: {}, min_boot_gb: 50, arm_gb_per_ocpu: 6, needs_network: false,
     });
     const optsLoading = ref(false);
-    const netCreating = ref(false);
     const creating = ref(false);
     const preflight = ref(null);
     const preflightLoading = ref(false);
     const createForm = reactive({
       display_name: randomName(), shape: 'VM.Standard.A1.Flex',
       ocpus: 4, memory_gb: 24, boot_gb: 50,
-      availability_domain: '', image_id: '', subnet_id: '', ssh_public_key: '',
+      availability_domain: '', image_id: '', ssh_public_key: '',
       assign_ipv6: false,
     });
     const pubKeyName = ref('');
-    const ipv6Busy = ref(false);
-    const selectedSubnet = computed(() =>
-      (opts.value.subnets || []).find(s => s.id === createForm.subnet_id) || null);
-    const selectedSubnetIpv6 = computed(() => !!(selectedSubnet.value && selectedSubnet.value.ipv6_enabled));
-    const ipv6Ready = computed(() => selectedSubnetIpv6.value);
+    // 存的是正在加 IPv6 的实例 id，用来只给那一行显示 loading
+    const ipv6Busy = ref('');
 
     function rollName() { createForm.display_name = randomName(); }
 
@@ -1187,23 +1188,37 @@ createApp({
       e.target.value = '';
     }
 
-    async function enableIpv6() {
-      if (!createForm.subnet_id) { ElMessage.warning('请先选择子网'); return; }
-      ipv6Busy.value = true;
+    async function addIpv6(row) {
+      const profile = row.profile || currentProfile.value;
       try {
-        const { data } = await axios.post('/api/provision/ipv6', {
-          profile: currentProfile.value,
-          subnet_id: createForm.subnet_id,
-          compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
+        await ElMessageBox.confirm(
+          `给「${row.display_name}」添加 IPv6 地址？\n` +
+          `子网还没开通 IPv6 的话会一并开通，并放行 ::/0 的 SSH 入站。`,
+          '添加 IPv6',
+          { type: 'info', confirmButtonText: '添加', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      ipv6Busy.value = row.id;
+      try {
+        const { data } = await axios.post('/api/provision/instances/add-ipv6', {
+          profile, instance_id: row.id, compartment_id: row.compartment_id,
         });
-        ElMessage.success(data.changed
-          ? `子网已开通 IPv6：${data.ipv6_cidr_block}`
-          : '该子网本来就已开通 IPv6');
-        createForm.assign_ipv6 = true;
-        await loadCreateOptions();
+        if (data.changed) {
+          ElMessage.success(`已分配 IPv6：${data.ipv6}`);
+          ElMessageBox.alert(
+            `地址 ${data.ipv6} 已分配到网卡。\n\n` +
+            `如果机器里 ping 不通 IPv6，在实例内执行一次：\n` +
+            `sudo dhclient -6 或直接重启实例。`,
+            'IPv6 已添加',
+            { type: 'success', customStyle: { whiteSpace: 'pre-wrap' } });
+        } else {
+          ElMessage.info(`这台机器已经有 IPv6：${data.ipv6}`);
+        }
+        (data.warnings || []).forEach(w => ElMessage.warning(w));
+        await loadSingle();
       } catch (e) {
-        ElMessage.error(errMsg(e, '开通 IPv6 失败'));
-      } finally { ipv6Busy.value = false; }
+        ElMessage.error(errMsg(e, '添加 IPv6 失败'));
+      } finally { ipv6Busy.value = ''; }
     }
 
     // ---- 防火墙 ----
@@ -1215,7 +1230,7 @@ createApp({
     const canCreate = computed(() =>
       !!(preflight.value && preflight.value.allow && createForm.display_name &&
          createForm.availability_domain && createForm.image_id &&
-         createForm.subnet_id && createForm.ssh_public_key));
+         createForm.ssh_public_key));
 
     // ---- 存储 ----
     const storage = ref(null);
@@ -1389,9 +1404,6 @@ createApp({
           const clean = data.images.filter(i => !i.minimal);
           createForm.image_id = (clean[0] || data.images[0] || {}).id || '';
         }
-        if (!data.subnets.some(s => s.id === createForm.subnet_id)) {
-          createForm.subnet_id = (data.subnets[0] || {}).id || '';
-        }
       } catch (e) {
         ElMessage.error(errMsg(e, '创建选项加载失败'));
       } finally { optsLoading.value = false; }
@@ -1434,22 +1446,6 @@ createApp({
       runPreflight();
     }
 
-    async function makeNetwork() {
-      netCreating.value = true;
-      try {
-        const { data } = await axios.post('/api/provision/network', {
-          profile: currentProfile.value,
-          compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
-          name: 'ocix-vcn',
-        });
-        ElMessage.success(`网络已创建：${data.vcn_name} / ${data.subnet_name}`);
-        await loadCreateOptions();
-        createForm.subnet_id = data.subnet_id;
-      } catch (e) {
-        ElMessage.error(errMsg(e, '创建网络失败'));
-      } finally { netCreating.value = false; }
-    }
-
     async function createInstance() {
       const p = preflight.value;
       const spec = isArm.value
@@ -1472,7 +1468,6 @@ createApp({
           display_name: createForm.display_name,
           availability_domain: createForm.availability_domain,
           image_id: createForm.image_id,
-          subnet_id: createForm.subnet_id,
           shape: createForm.shape,
           ocpus: createForm.ocpus,
           memory_gb: createForm.memory_gb,
@@ -1702,7 +1697,7 @@ createApp({
       storage.value = null; preflight.value = null;
       firewall.value = null; fwInstance.value = '';
       opts.value = { ...opts.value, availability_domains: [], images: [], subnets: [] };
-      createForm.availability_domain = ''; createForm.image_id = ''; createForm.subnet_id = '';
+      createForm.availability_domain = ''; createForm.image_id = '';
       createForm.assign_ipv6 = false;
       loadCompartments();
       loadSingle();
@@ -2025,8 +2020,8 @@ createApp({
 
     return {
       CW, CH, HOUR_RANGES, areaSeries, NAV, go, orphanBadge,
-      pubKeyName, ipv6Busy, selectedSubnetIpv6, ipv6Ready,
-      rollName, onPubKeyFile, enableIpv6,
+      pubKeyName, ipv6Busy,
+      rollName, onPubKeyFile, addIpv6,
       firewall, fwInstance, fwLoading, fwBusy, loadFirewall, allowAll, revokeAll,
       changeIp, changePerformance,
       token, user, loginForm, loginErr, loading,
@@ -2038,14 +2033,14 @@ createApp({
       chartSeries, gridLines, hasMetricPoints, axisStart, axisEnd, hoverIdx, hoverX, hoverTime,
       importForm, importing, pw,
       auditLogs, auditTotal, auditActions, auditPage, auditSize, auditLoading, auditFilter,
-      opts, optsLoading, createForm, isArm, canCreate, creating, netCreating,
+      opts, optsLoading, createForm, isArm, canCreate, creating,
       preflight, preflightLoading, storage, storageLoading,
       doLogin, logout, refreshActive, loadAll, loadMetrics, loadAudit,
       onProfileChange, onTabChange, act, batchAct, clearInstSelection, clearAllSelection,
       canStart, canStop, canReset, stateTone, stateText, specText,
       fmtPct, fmtDate, fmtTime, fmtUtc, copy, onChartMove, hoverValue,
       onKeyFile, importProfile, testProfile, delProfile, purgeAudit, changePw,
-      pickShape, onOcpuChange, runPreflight, makeNetwork, createInstance,
+      pickShape, onOcpuChange, runPreflight, createInstance,
       terminate, loadStorage, deleteVolume, volRowClass,
     };
   },
