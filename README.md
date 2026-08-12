@@ -210,6 +210,18 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 
 版本号只存在 `VERSION` 一处，`/api/health` 会把它报出来。
 
+## 底层实现
+
+面板**不直接调用 OCI Python SDK**，所有操作都通过 Oracle 官方的 `oci` CLI（子进程）完成：
+
+- 唯一出口是 `src/ocix/oci_cli.py` 的 `run_oci()`，统一加 `--config-file` / `--profile` / `--output json`
+- 凭据完全交给 CLI 按官方 `~/.oci/config` 规则处理，面板不自己签名、不自己发 HTTP
+- `oci-cli` 本身依赖官方 `oci` SDK，所以调用链仍是 官方 SDK → OCI REST API，只是多了一层官方 CLI
+- 好处是行为与你在终端手敲 `oci ...` 完全一致，出问题可以直接复制命令自己复现
+
+依赖只设下限 `oci-cli>=3.70,<4`：面板用到的子命令（`network ipv6 create`、
+`network vcn add-ipv6-vcn-cidr` 等）在老版本 CLI 里可能不存在。
+
 ## 安全要点
 
 - OCI 凭据**不入库**：只引用 `~/.oci/config`，私钥落在容器卷并设 `600`

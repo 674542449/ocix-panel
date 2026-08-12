@@ -4,4 +4,6 @@ python-jose[cryptography]==3.3.0
 bcrypt>=4.0.1
 python-multipart==0.0.12
 pydantic==2.9.2
-oci-cli==3.49.0
+# 面板用到的命令（network ipv6 create / add-ipv6-vcn-cidr 等）都对着较新的 CLI 核过，
+# 锁死在老版本会缺子命令，所以只设下限，让镜像构建时取最新的 3.x
+oci-cli>=3.70,<4

@@ -669,7 +669,9 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
     old_ip = vnic.get("public_ip")
     if old_ip:
         try:
-            cur = run_oci(profile, "network", "public-ip", "get-public-ip-by-private-ip-id",
+            # 注意是 `public-ip get --private-ip-id`，
+            # 没有 get-public-ip-by-private-ip-id 这个子命令（写错会直接报 No such command）
+            cur = run_oci(profile, "network", "public-ip", "get",
                           "--private-ip-id", private_ip_id).get("data", {}) or {}
         except OCICLIError:
             cur = {}

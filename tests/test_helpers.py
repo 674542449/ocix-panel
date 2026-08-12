@@ -141,6 +141,65 @@ def test_launch_sends_ssh_key_as_metadata(capture_launch):
     assert "ssh-ed25519" in meta
 
 
+# ── 只使用真实存在的 oci CLI 子命令 ──
+# 这些名字都对着 oci-cli 的 --help 核过；写错会在运行时报 "No such command/option"，
+# 而那是只有真连了 OCI 才会暴露的错误，所以在这里锁住。
+
+def test_change_public_ip_uses_existing_subcommands(monkeypatch):
+    """回归：曾误用不存在的 get-public-ip-by-private-ip-id 子命令。"""
+    calls = []
+
+    def fake_run(profile, *args, **kwargs):
+        calls.append(list(args))
+        joined = " ".join(args)
+        if "vnic-attachment" in joined:
+            return {"data": [{"lifecycle-state": "ATTACHED", "vnic-id": "v1"}]}
+        if "vnic get" in joined:
+            return {"data": {"subnet-id": "s1", "public-ip": "1.2.3.4", "private-ip": "10.0.0.2"}}
+        if "private-ip list" in joined:
+            return {"data": [{"id": "pip1", "is-primary": True}]}
+        if "public-ip get" in joined:
+            return {"data": {"id": "pubid", "lifetime": "EPHEMERAL"}}
+        if "public-ip create" in joined:
+            return {"data": {"ip-address": "5.6.7.8"}}
+        return {"data": {}}
+
+    monkeypatch.setattr(H, "run_oci", fake_run)
+    res = H.change_public_ip("P", "ocid1.instance.oc1..x", "ocid1.compartment.oc1..c")
+
+    assert res["new_ip"] == "5.6.7.8"
+    flat = [" ".join(c) for c in calls]
+    assert not any("get-public-ip-by-private-ip-id" in f for f in flat)
+    assert any(f.startswith("network public-ip get ") and "--private-ip-id" in f for f in flat)
+
+
+def test_reserved_ip_is_refused(monkeypatch):
+    """保留 IP 换掉就找不回来了，必须拒绝而不是照删。"""
+    def fake_run(profile, *args, **kwargs):
+        joined = " ".join(args)
+        if "vnic-attachment" in joined:
+            return {"data": [{"lifecycle-state": "ATTACHED", "vnic-id": "v1"}]}
+        if "vnic get" in joined:
+            return {"data": {"subnet-id": "s1", "public-ip": "1.2.3.4"}}
+        if "private-ip list" in joined:
+            return {"data": [{"id": "pip1", "is-primary": True}]}
+        if "public-ip get" in joined:
+            return {"data": {"id": "pubid", "lifetime": "RESERVED"}}
+        raise AssertionError("保留 IP 不该走到删除/新建：" + joined)
+
+    monkeypatch.setattr(H, "run_oci", fake_run)
+    with pytest.raises(Exception, match="保留"):
+        H.change_public_ip("P", "i", "c")
+
+
+def test_vcn_ipv6_request_declares_oracle_allocation(monkeypatch):
+    """AddVcnIpv6CidrDetails 必须给 isOracleGuaAllocationEnabled，否则服务端拒绝。"""
+    calls = []
+    monkeypatch.setattr(H, "run_oci", lambda p, *a, **k: calls.append(list(a)) or {"data": {}})
+    H._add_vcn_ipv6("P", "vcn1")
+    assert "--is-oracle-gua-allocation-enabled" in calls[0]
+
+
 @pytest.mark.parametrize("rule,expected", [
     ({"tcp-options": {"destination-port-range": {"min": 22, "max": 22}}}, "22"),
     ({"tcp-options": {"destination-port-range": {"min": 80, "max": 443}}}, "80-443"),
