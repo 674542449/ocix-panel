@@ -212,7 +212,7 @@ bash scripts/release.sh minor    # 次版本 +1
 bash scripts/release.sh 1.2.0    # 指定版本号
 ```
 
-版本号只存在 `VERSION` 一处，`/api/health` 会把它报出来。
+版本号只存在 `VERSION` 一处，登录后在「更新」页或 `/api/diagnostics` 可以看到。
 
 ## 底层实现
 
@@ -251,13 +251,27 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 - 面板密码以 bcrypt 持久化在数据卷，重启不丢；改密后已签发的 JWT 立即失效
 - **忘记密码**：改 `.env` 里的 `OCIX_ADMIN_PASSWORD` 再重启即可重置
 - 所有写操作记入审计日志（含来源 IP）；登录与 API 均有限流
-- 反代场景按 `X-Forwarded-For` 识别真实 IP
+- 反代场景按 `X-Forwarded-For` **最右侧**条目识别真实 IP（左侧可被客户端伪造）；
+  `OCIX_TRUST_PROXY` 默认关闭，只有确实在自己的反代后面才该打开
+- 应用自身下发 CSP、`X-Frame-Options: DENY`、`nosniff` 等安全响应头，
+  直连模式（无 Caddy）同样受保护；`/api/*` 一律 `Cache-Control: no-store`
+- `/docs`、`/openapi.json` 默认关闭，需要时用 `OCIX_ENABLE_DOCS=true` 打开
+- 未鉴权只能拿到 `{ok, service}`，版本与配置路径需登录后经 `/api/diagnostics` 获取
+- SQL 全部走参数绑定；需要拼列名的地方（`upsert_profile`）用白名单卡死
+- 前端不使用 `v-html`，全部走 Vue 的 `{{ }}` 转义——实例名、错误信息等
+  来自 OCI 的文本不会被当成 HTML 执行
+- 无命令注入面：改用 OCI Python SDK 后，代码里不存在 `subprocess` / `eval` / `exec`
+
+> JWT 存在 `localStorage`，理论上一旦出现 XSS 就会被读走。
+> 面板已无 HTML 注入点且有 CSP 兜底，风险可控；
+> `tests/test_security.py` 对上述每一条都有回归用例。
 
 ## 主要接口
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/health` | 探活 + 环境自检（无需鉴权） |
+| GET | `/api/health` | 探活（无需鉴权，只回 ok） |
+| GET | `/api/diagnostics` | 环境自检：版本 / SDK / 配置状态（需登录） |
 | POST | `/api/auth/login` | 登录获取 JWT |
 | GET | `/api/profiles` · POST `/api/profiles/import` | 账户管理 |
 | GET | `/api/instances` · `/api/instances/all` | 实例列表 / 跨账户聚合 |

@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 # 容器内固定为 /app；本地开发时回退到仓库目录，免去手工设环境变量。
@@ -61,16 +62,31 @@ COMPARTMENT_CACHE_TTL = int(os.getenv("OCIX_COMPARTMENT_CACHE_TTL", "300"))
 LOGIN_RATE_LIMIT = int(os.getenv("OCIX_LOGIN_LIMIT", "10"))   # 每 60s
 API_RATE_LIMIT = int(os.getenv("OCIX_API_LIMIT", "120"))      # 每 60s
 
-# 默认部署形态就是 Caddy 反代，不取 X-Forwarded-For 的话所有人共用一个限流桶
-TRUST_PROXY = _bool_env("OCIX_TRUST_PROXY", True)
+# 是否信任 X-Forwarded-For。默认 False：这个头是客户端可伪造的，
+# 只有确实部署在自己的反代后面才能打开，否则攻击者可以靠伪造 IP 绕过登录限流。
+# install.sh 在域名（Caddy 反代）模式下会自动置为 true。
+TRUST_PROXY = _bool_env("OCIX_TRUST_PROXY", False)
+# 面板前面有几层可信代理。取 X-Forwarded-For 时从右往左数第 N 个才是代理观测到的真实客户端；
+# 取最左边那个等于直接采信客户端自己写的值。
+TRUSTED_PROXY_HOPS = max(1, int(os.getenv("OCIX_PROXY_HOPS", "1")))
 
 # 允许跨域的来源；留空表示只允许同源（默认部署由 Caddy 同源反代，无需 CORS）
 CORS_ORIGINS = [o.strip() for o in os.getenv("OCIX_CORS_ORIGINS", "").split(",") if o.strip()]
 
+# 交互式 API 文档（/docs、/openapi.json）。默认关闭：面板是自用后台，
+# 对外暴露完整接口结构没有必要。
+ENABLE_DOCS = _bool_env("OCIX_ENABLE_DOCS", False)
+
 # ---- 在线更新 ----
 # 宿主机上的安装目录，用于在网页上给出正确的更新命令
 INSTALL_DIR = os.getenv("OCIX_HOME", "/opt/ocix")
-GITHUB_REPO = os.getenv("OCIX_GITHUB_REPO", "674542449/ocix-panel")
+_DEFAULT_REPO = "674542449/ocix-panel"
+_repo = os.getenv("OCIX_GITHUB_REPO", _DEFAULT_REPO).strip()
+# 只允许 owner/name，防止被塞进 "evil.com/x#" 之类把检查更新的请求引到别处
+GITHUB_REPO = (
+    _repo if re.fullmatch(r"[A-Za-z0-9_.-]{1,64}/[A-Za-z0-9_.-]{1,100}", _repo)
+    else _DEFAULT_REPO
+)
 
 # ---- 运行模式 ----
 # 当 SESSION_SECRET 为空时，开发模式允许启动但不允许登录

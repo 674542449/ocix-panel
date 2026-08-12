@@ -21,8 +21,9 @@ def test_health_is_reachable_without_auth(anon_client):
     assert r.json()["ok"] is True
 
 
-def test_health_reports_config_state(anon_client):
-    assert anon_client.get("/api/health").json()["oci_config"]["profiles"] == 1
+def test_diagnostics_reports_config_state(app_client):
+    # 环境自检要登录才能看：未鉴权的 /api/health 只回 ok，不漏版本与路径
+    assert app_client.get("/api/diagnostics").json()["oci_config"]["profiles"] == 1
 
 
 # ── 鉴权 ──

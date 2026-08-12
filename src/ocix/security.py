@@ -16,6 +16,7 @@ from .config import (
     LOGIN_RATE_LIMIT,
     SESSION_SECRET,
     TRUST_PROXY,
+    TRUSTED_PROXY_HOPS,
 )
 from .db import get_setting, set_setting
 
@@ -133,12 +134,24 @@ def get_current_user(
 
 # ---- 简单内存速率限制器（按客户端 IP） ----
 def client_ip(request: Request | None) -> str:
+    """识别真实客户端 IP，用于限流与审计。
+
+    X-Forwarded-For 是「客户端, 代理1, 代理2…」的追加式列表，**左边的部分完全由
+    客户端伪造**。反代（如 Caddy）会把它实际观测到的对端追加到最右侧，
+    所以只有从右往左数第 TRUSTED_PROXY_HOPS 个才可信。
+
+    早先取的是最左边那个，攻击者只要每次请求换一个伪造 IP，
+    登录限流就形同虚设，可以无限次爆破密码。
+    """
     if request is None:
         return "unknown"
     if TRUST_PROXY:
         xff = request.headers.get("x-forwarded-for")
         if xff:
-            return xff.split(",")[0].strip()
+            parts = [p.strip() for p in xff.split(",") if p.strip()]
+            if parts:
+                idx = max(0, len(parts) - TRUSTED_PROXY_HOPS)
+                return parts[idx]
         xri = request.headers.get("x-real-ip")
         if xri:
             return xri.strip()

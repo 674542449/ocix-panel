@@ -136,7 +136,15 @@ def clear_audit(keep_days: int = 0) -> int:
 
 
 # ---- profile 元数据 ----
+# profiles 表允许写入的列。列名会拼进 SQL（占位符只能绑定值、绑不了列名），
+# 因此必须白名单校验——否则将来有人不慎把用户数据当 kwargs 传进来就是注入。
+_PROFILE_COLUMNS = {"user_ocid", "tenancy_ocid", "region", "fingerprint", "key_file"}
+
+
 def upsert_profile(name, **fields):
+    unknown = set(fields) - _PROFILE_COLUMNS
+    if unknown:
+        raise ValueError(f"profiles 表不存在这些列: {sorted(unknown)}")
     cols = ["name"] + list(fields.keys())
     placeholders = ",".join(["?"] * len(cols))
     updates = ",".join(f"{c}=excluded.{c}" for c in fields.keys())

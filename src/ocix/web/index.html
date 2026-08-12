@@ -1224,17 +1224,38 @@
       return p.catch(function () { return loadScript(u); });
     }, Promise.reject());
   }
+  function loadStyle(url) {
+    return new Promise(function (res) {
+      var l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = url;
+      l.onload = res; l.onerror = res;   // 样式挂了也别卡住启动
+      document.head.appendChild(l);
+    });
+  }
+  // 探针：Element Plus 给 .el-button 的 display 是 inline-flex，
+  // 拿到别的值就说明它的样式压根没加载。
+  function stylesMissing() {
+    var probe = document.createElement('div');
+    probe.className = 'el-button';
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    document.documentElement.appendChild(probe);
+    var display = getComputedStyle(probe).display;
+    probe.remove();
+    return display !== 'inline-flex';
+  }
   window.__ocixBoot = (async function () {
     for (var name of ['vue.global.prod.js', 'element-plus.full.min.js', 'axios.min.js']) {
       try { await loadScript('/assets/' + name); } catch (e) { await chain(CDN[name]); }
     }
-    // 本地样式没下到时补 CDN 样式
-    if (!document.querySelector('link[href="/assets/element-plus.css"]').sheet) {
-      ['element-plus.css', 'element-plus-dark.css'].forEach(function (n) {
-        var l = document.createElement('link');
-        l.rel = 'stylesheet'; l.href = CDN[n][0];
-        document.head.appendChild(l);
-      });
+    // 本地样式没下到时补 CDN 样式。
+    // 注意别用 link.sheet 判断：本地文件 404 时它依然是个非空对象，
+    // 这个判断永远为真，等于回退从来不生效，缺资源时整个面板是裸样式的。
+    // 只能实际量一下样式有没有生效。
+    if (stylesMissing()) {
+      await Promise.all(['element-plus.css', 'element-plus-dark.css'].map(function (n) {
+        return loadStyle(CDN[n][0]);
+      }));
     }
   })();
 })();

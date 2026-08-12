@@ -47,7 +47,9 @@ if command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
   PY="$(command -v python3 || command -v python)"
   if "$PY" -c "import pytest" >/dev/null 2>&1; then
     echo "跑测试…"
-    PYTHONPATH=src "$PY" -m pytest -q || { echo "$CURRENT" > VERSION; echo "测试没过，版本号已还原" >&2; exit 1; }
+    # 依赖装在别处时用 OCIX_TEST_PYTHONPATH 指过去，否则这里会因为缺包而误报失败
+    PYTHONPATH="${OCIX_TEST_PYTHONPATH:-src}" "$PY" -m pytest -q \
+      || { echo "$CURRENT" > VERSION; echo "测试没过，版本号已还原" >&2; exit 1; }
   else
     echo "（没装 pytest，跳过测试）"
   fi

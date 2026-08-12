@@ -10,17 +10,27 @@
 {$OCIX_DOMAIN} {
 	encode gzip
 
-	# 面板是自用后台，不给搜索引擎收录
+	# 面板是自用后台，不给搜索引擎收录。
+	# 注意：CSP 等其余安全头由应用自己下发（直连模式没有 Caddy，只能由应用兜底），
+	# 这里只补 HSTS 这类必须由 TLS 终结点给出的头。
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
-		X-Frame-Options "SAMEORIGIN"
+		# 与应用保持一致：面板不允许被任何页面内嵌（此处若写 SAMEORIGIN
+		# 会把应用下发的 DENY 覆盖成更弱的值）
+		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
 		X-Robots-Tag "noindex, nofollow"
 		-Server
 	}
 
 	reverse_proxy backend:8000 {
+		# 直接用 Caddy 观测到的对端覆盖，而不是在客户端传来的值后面追加。
+		# 追加的话，攻击者自带一个伪造的 X-Forwarded-For 就会混进链条里；
+		# 覆盖后上游拿到的永远是唯一且真实的客户端 IP（对应 OCIX_PROXY_HOPS=1）。
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+
 		health_uri /api/health
 		health_interval 30s
 	}

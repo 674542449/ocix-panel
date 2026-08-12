@@ -18,6 +18,8 @@ services:
       - OCIX_LOGIN_LIMIT=${OCIX_LOGIN_LIMIT:-10}
       - OCIX_API_LIMIT=${OCIX_API_LIMIT:-120}
       - OCIX_TRUST_PROXY=${OCIX_TRUST_PROXY:-false}
+      - OCIX_PROXY_HOPS=${OCIX_PROXY_HOPS:-1}
+      - OCIX_ENABLE_DOCS=${OCIX_ENABLE_DOCS:-false}
       - OCIX_HOME=${OCIX_HOME:-/opt/ocix}
     volumes:
       - oci_config:/root/.oci

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import PurePosixPath
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__, security
 from .backends import get_backend
 from .common import list_profiles_from_config
-from .config import CORS_ORIGINS, DEV_MODE, FRONTEND_DIR, OCI_CONFIG_PATH
+from .config import CORS_ORIGINS, DEV_MODE, ENABLE_DOCS, FRONTEND_DIR, OCI_CONFIG_PATH
 from .db import init_db
 from .routers import audit, auth, instances, monitor, profiles, provision, system
 
@@ -23,7 +23,54 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="OCIX - Oracle Always Free 开机面板", version=VERSION, lifespan=lifespan)
+app = FastAPI(
+    title="OCIX - Oracle Always Free 开机面板",
+    version=VERSION,
+    lifespan=lifespan,
+    # 自用后台，默认不对外暴露接口结构；需要时用 OCIX_ENABLE_DOCS=true 打开
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
+)
+
+# 前端依赖在构建期落到 /assets；本地开发缺文件时会回退到这几个公共 CDN。
+_CDN = "https://unpkg.com https://cdn.jsdelivr.net https://registry.npmmirror.com"
+# Vue 的运行时模板编译要用 new Function，因此必须留 unsafe-eval；
+# 页面里的应用代码是内联的，故 script 也需要 unsafe-inline。
+# 即便如此，frame-ancestors / base-uri / object-src / connect-src 仍是实打实的收敛。
+_CSP = (
+    "default-src 'self'; "
+    f"script-src 'self' 'unsafe-inline' 'unsafe-eval' {_CDN}; "
+    f"style-src 'self' 'unsafe-inline' {_CDN}; "
+    f"font-src 'self' data: {_CDN}; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "form-action 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """安全响应头。
+
+    域名模式下 Caddy 也会加一部分，但直连（IP+端口）模式没有反代，
+    只能由应用自己保证，否则那条路径完全裸奔。
+    """
+    response = await call_next(request)
+    response.headers.setdefault("Content-Security-Policy", _CSP)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy",
+                                "geolocation=(), microphone=(), camera=(), payment=()")
+    response.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
+    if request.url.path.startswith("/api"):
+        # 接口响应含账户与资源信息，不允许任何中间层或浏览器缓存
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 # 默认部署由 Caddy 同源反代，无需 CORS；仅在显式配置来源时才放开。
 if CORS_ORIGINS:
@@ -46,10 +93,20 @@ app.include_router(system.router)
 
 @app.get("/api/health")
 def health():
-    """探活 + 环境自检，部署完先看这个接口。"""
+    """探活。
+
+    只回最少信息：这个接口不需要鉴权（部署脚本和容器 healthcheck 都要用），
+    版本号、配置路径这些留给下面那个需要登录的自检接口，
+    免得未登录就能看出跑的是哪一版、方便按已知漏洞下手。
+    """
+    return {"ok": True, "service": "ocix"}
+
+
+@app.get("/api/diagnostics")
+def diagnostics(user: str = Depends(security.get_current_user)):
+    """环境自检，部署完登录后看这个。"""
     return {
         "ok": True,
-        "service": "ocix",
         "version": VERSION,
         "dev_mode": DEV_MODE,
         "oci_sdk": get_backend().version(),
