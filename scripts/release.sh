@@ -42,17 +42,26 @@ fi
 echo "$NEW" > VERSION
 echo "版本号 ${CURRENT} → ${NEW}"
 
-# 版本号变了就跑一遍测试，别把坏版本推上去
-if command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
-  PY="$(command -v python3 || command -v python)"
-  if "$PY" -c "import pytest" >/dev/null 2>&1; then
-    echo "跑测试…"
-    # 依赖装在别处时用 OCIX_TEST_PYTHONPATH 指过去，否则这里会因为缺包而误报失败
-    PYTHONPATH="${OCIX_TEST_PYTHONPATH:-src}" "$PY" -m pytest -q \
-      || { echo "$CURRENT" > VERSION; echo "测试没过，版本号已还原" >&2; exit 1; }
-  else
-    echo "（没装 pytest，跳过测试）"
+# 版本号变了就跑一遍测试，别把坏版本推上去。
+# 挑解释器不能只看 `command -v python3`：Windows 上那是应用商店的占位程序，
+# 存在但跑什么都失败，于是这里会一路判成「没装 pytest」，
+# 测试守卫等于形同虚设——要挑真的能 import pytest 的那个。
+PY=""
+for cand in "${OCIX_TEST_PYTHON:-}" python3 python py; do
+  [[ -n "$cand" ]] || continue
+  command -v "$cand" >/dev/null 2>&1 || continue
+  if PYTHONPATH="${OCIX_TEST_PYTHONPATH:-src}" "$cand" -c "import pytest" >/dev/null 2>&1; then
+    PY="$cand"; break
   fi
+done
+
+if [[ -n "$PY" ]]; then
+  echo "跑测试（$PY）…"
+  # 依赖装在别处时用 OCIX_TEST_PYTHONPATH 指过去，否则这里会因为缺包而误报失败
+  PYTHONPATH="${OCIX_TEST_PYTHONPATH:-src}" "$PY" -m pytest -q \
+    || { echo "$CURRENT" > VERSION; echo "测试没过，版本号已还原" >&2; exit 1; }
+else
+  echo "（找不到装了 pytest 的 python，跳过测试）"
 fi
 
 git add -A
