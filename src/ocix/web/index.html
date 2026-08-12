@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <title>OCIX · Oracle Always Free 开机面板</title>
   <link rel="stylesheet" href="/assets/element-plus.css" />
   <link rel="stylesheet" href="/assets/element-plus-dark.css" />
@@ -79,9 +80,12 @@
     .topbar { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
               padding:var(--sp-3) var(--sp-5); background:#0d1526; border-bottom:1px solid var(--line);
               position:sticky; top:0; z-index:20; flex-wrap:wrap; }
-    .brand { font-weight:700; font-size:17px; letter-spacing:.4px; white-space:nowrap; }
-    .brand span { color:var(--accent); }
-    .brand small { display:block; font-weight:400; font-size:11px; color:var(--muted); letter-spacing:0; }
+    .brand { display:flex; align-items:center; gap:9px; white-space:nowrap; }
+    .brand .wordmark { font-family:var(--mono); font-weight:600; font-size:15px;
+                       letter-spacing:.16em; color:var(--text); }
+    .brand .wordmark b { color:var(--accent); font-weight:600; }
+    .brand small { display:block; font-weight:400; font-size:11px; color:var(--muted);
+                   letter-spacing:0; }
     .topbar-right { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; }
     .who { color:var(--muted); font-size:12.5px; }
 
@@ -121,7 +125,70 @@
     .table-wrap { overflow-x:auto; }
 
     /* 登录 */
-    .login-wrap { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:var(--sp-4); }
+    /* ── 标识 ──
+       Always Free 的额度就是「2 台微型 + 1 台 ARM」，标识直接画这三块。
+       通用的云朵/盾牌图标放在任何云面板上都成立，说明不了这个面板管的是什么。 */
+    .mark { flex:none; display:block; }
+    .mark .cell-sm { fill:var(--muted); }
+    .mark .cell-lg { fill:var(--accent); }
+
+    /* ── 登录 ── */
+    .login-wrap { display:grid; place-items:center; min-height:100vh; padding:var(--sp-4); }
+    .login-shell { width:100%; max-width:860px; display:grid; grid-template-columns:1.05fr 1fr;
+                   background:var(--panel); border:1px solid var(--line); border-radius:14px;
+                   overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.45); }
+
+    /* 左栏：把这个面板管的东西直接摆出来 */
+    .login-aside { padding:var(--sp-6) var(--sp-5); background:
+                   linear-gradient(160deg, #101a2c 0%, #0d1526 60%, #0b1220 100%);
+                   border-right:1px solid var(--line); display:flex; flex-direction:column; gap:var(--sp-5); }
+    .login-brand { display:flex; align-items:center; gap:11px; }
+    .login-brand .name { font-family:var(--mono); font-size:19px; font-weight:600;
+                         letter-spacing:.2em; color:var(--text); }
+    .login-brand .name b { color:var(--accent); font-weight:600; }
+    .login-tag { font-size:12px; color:var(--muted); margin:-2px 0 0; }
+
+    /* 额度图：两小一大，就是满配 Always Free 的样子 */
+    .alloc { display:grid; grid-template-columns:1fr 1.25fr; gap:10px; }
+    .alloc-col { display:grid; gap:10px; }
+    .alloc-box { border:1px solid var(--line); border-radius:9px; padding:12px 13px;
+                 background:#0e1728; min-height:62px; display:flex; flex-direction:column;
+                 justify-content:center; gap:3px;
+                 animation:alloc-in .5s cubic-bezier(.2,.7,.3,1) both; }
+    .alloc-box:nth-child(1) { animation-delay:.05s; }
+    .alloc-box:nth-child(2) { animation-delay:.14s; }
+    .alloc-arm { grid-row:span 2; border-color:#1e4a63; background:
+                 linear-gradient(180deg, rgba(56,189,248,.10), rgba(56,189,248,.03));
+                 animation-delay:.23s; }
+    @keyframes alloc-in { from { opacity:0; transform:translateY(6px) scale(.985); }
+                          to   { opacity:1; transform:none; } }
+    .alloc-k { font-family:var(--mono); font-size:10px; letter-spacing:.12em;
+               text-transform:uppercase; color:#64748b; }
+    .alloc-v { font-size:13px; color:var(--text); font-variant-numeric:tabular-nums; }
+    .alloc-arm .alloc-v { color:var(--accent); }
+    .alloc-foot { font-size:11.5px; color:var(--muted); display:flex; align-items:center; gap:7px; }
+
+    .login-form { padding:var(--sp-6) var(--sp-5); display:flex; flex-direction:column;
+                  justify-content:center; }
+    .login-form h2 { margin:0 0 var(--sp-1); font-size:16px; font-weight:600; color:var(--text); }
+    .login-sub { color:var(--muted); font-size:12.5px; margin:0 0 var(--sp-5); }
+
+    @media (max-width: 760px) {
+      .login-shell { grid-template-columns:1fr; max-width:420px; }
+      .login-aside { border-right:0; border-bottom:1px solid var(--line);
+                     padding:var(--sp-5) var(--sp-4); gap:var(--sp-4); }
+      .alloc { grid-template-columns:1fr 1fr 1.2fr; }
+      .alloc-col { grid-column:span 2; grid-template-columns:1fr 1fr; grid-auto-flow:column; }
+      .alloc-arm { grid-row:auto; }
+      .alloc-box { min-height:0; padding:10px 11px; }
+      .login-form { padding:var(--sp-5) var(--sp-4); }
+    }
+
+    /* ── 侧栏页脚：版本号与服务状态 ── */
+    .rail-foot { margin-top:var(--sp-5); padding:var(--sp-3) 10px 0; border-top:1px solid var(--line);
+                 display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
+    .rail-foot .ver { font-family:var(--mono); font-size:11px; color:#64748b; }
+    .rail-foot .svc { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
     .login-card { width:100%; max-width:380px; background:var(--panel); border:1px solid var(--line);
                   padding:var(--sp-6); border-radius:12px; }
     .login-card h1 { margin:0 0 var(--sp-1); font-size:20px; letter-spacing:.4px; }
@@ -334,21 +401,62 @@
 <script type="text/html" id="app-tpl">
   <!-- ── 登录 ── -->
   <div class="login-wrap" v-if="!token">
-    <div class="login-card">
-      <h1>OCI<span>X</span></h1>
-      <p class="login-sub">管理你自己的 Oracle 租户。登录后可查看并开关所有账户下的实例。</p>
-      <el-alert v-if="loginErr" :title="loginErr" type="error" show-icon :closable="false" style="margin-bottom:14px;" />
-      <el-form @submit.prevent="doLogin" label-position="top">
-        <el-form-item label="用户名">
-          <el-input v-model="loginForm.username" size="large" autocomplete="username" @keyup.enter="doLogin" />
-        </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="loginForm.password" type="password" size="large" show-password
-                    autocomplete="current-password" @keyup.enter="doLogin" />
-        </el-form-item>
-        <el-button type="primary" size="large" style="width:100%;" @click="doLogin" :loading="loading">登录</el-button>
-      </el-form>
-      <p class="hint">首次登录后请立刻改密。面板只操作你自己的 OCI 租户，不做注册或抢机。</p>
+    <div class="login-shell">
+      <aside class="login-aside">
+        <div>
+          <div class="login-brand">
+            <svg class="mark" width="30" height="30" viewBox="0 0 24 24" aria-hidden="true">
+              <rect class="cell-sm" x="3.5" y="3.5" width="7" height="7" rx="1.6" />
+              <rect class="cell-sm" x="3.5" y="13.5" width="7" height="7" rx="1.6" />
+              <rect class="cell-lg" x="13.5" y="3.5" width="7" height="17" rx="1.6" />
+            </svg>
+            <span class="name">OCI<b>X</b></span>
+          </div>
+          <p class="login-tag">Oracle Cloud Always Free 开机面板</p>
+        </div>
+
+        <!-- 这三块就是标识的放大版：满配 Always Free 长这样 -->
+        <div class="alloc" aria-label="Always Free 额度">
+          <div class="alloc-col">
+            <div class="alloc-box">
+              <span class="alloc-k">AMD Micro</span>
+              <span class="alloc-v">1 OCPU · 1 GB</span>
+            </div>
+            <div class="alloc-box">
+              <span class="alloc-k">AMD Micro</span>
+              <span class="alloc-v">1 OCPU · 1 GB</span>
+            </div>
+          </div>
+          <div class="alloc-box alloc-arm">
+            <span class="alloc-k">ARM Ampere A1</span>
+            <span class="alloc-v">4 OCPU · 24 GB</span>
+          </div>
+        </div>
+
+        <div class="alloc-foot">
+          <i class="dot idle"></i>合计 200 GB 存储额度，建机前逐项核算，超出即拦下
+        </div>
+      </aside>
+
+      <div class="login-form">
+        <h2>登录</h2>
+        <p class="login-sub">面板只操作你自己的 OCI 租户。</p>
+        <el-alert v-if="loginErr" :title="loginErr" type="error" show-icon :closable="false"
+                  style="margin-bottom:14px;" />
+        <el-form @submit.prevent="doLogin" label-position="top">
+          <el-form-item label="用户名">
+            <el-input v-model="loginForm.username" size="large" autocomplete="username"
+                      @keyup.enter="doLogin" />
+          </el-form-item>
+          <el-form-item label="密码">
+            <el-input v-model="loginForm.password" type="password" size="large" show-password
+                      autocomplete="current-password" @keyup.enter="doLogin" />
+          </el-form-item>
+          <el-button type="primary" size="large" style="width:100%;" @click="doLogin"
+                     :loading="loading">登录</el-button>
+        </el-form>
+        <p class="hint">首次登录后请立刻改密。</p>
+      </div>
     </div>
   </div>
 
@@ -356,7 +464,17 @@
   <div v-else>
     <div class="netbar" v-show="netBusy" aria-hidden="true"><i></i></div>
     <div class="topbar">
-      <div class="brand">OCI<span>X</span><small>Always Free 开机面板</small></div>
+      <div class="brand">
+        <svg class="mark" width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+          <rect class="cell-sm" x="3.5" y="3.5" width="7" height="7" rx="1.6" />
+          <rect class="cell-sm" x="3.5" y="13.5" width="7" height="7" rx="1.6" />
+          <rect class="cell-lg" x="13.5" y="3.5" width="7" height="17" rx="1.6" />
+        </svg>
+        <div>
+          <div class="wordmark">OCI<b>X</b></div>
+          <small>Always Free 开机面板</small>
+        </div>
+      </div>
       <div class="topbar-right">
         <span class="live" v-if="autoRefresh">
           <i class="dot ok"></i>{{ countdown }}s 后自动刷新
@@ -386,6 +504,12 @@
             </button>
           </div>
         </nav>
+        <div class="rail-foot">
+          <span class="ver">v{{ appVersion || '—' }}</span>
+          <span class="svc" :title="serviceHint">
+            <i :class="['dot', serviceOk ? 'ok' : 'crit']"></i>{{ serviceOk ? '服务正常' : '连接异常' }}
+          </span>
+        </div>
       </aside>
 
       <main class="main">
@@ -415,82 +539,6 @@
 
         <el-alert v-if="!profiles.length && !profilesLoading" type="warning" show-icon :closable="false"
                   title="还没有任何账户" description="到「账户配置」粘贴一份 ~/.oci/config 并附上私钥即可开始。" />
-
-        <!-- 全部账户 -->
-        <section class="pane" v-show="activeTab === 'all'">
-          <div class="card">
-            <div class="card-head">
-              <div class="card-title">跨账户实例总览</div>
-              <el-checkbox v-model="allWithIp" @change="loadAll" label="查询公网 IP（较慢）" />
-            </div>
-            <div class="stats" style="margin-bottom:16px;">
-              <div class="stat"><div class="v">{{ allSummary.accounts }}</div><div class="k">账户</div></div>
-              <div class="stat"><div class="v">{{ allSummary.instances }}</div><div class="k">实例</div></div>
-              <div class="stat ok"><div class="v">{{ allSummary.running }}</div><div class="k">运行中</div></div>
-              <div class="stat idle"><div class="v">{{ allSummary.stopped }}</div><div class="k">已停止</div></div>
-              <div class="stat crit" v-if="allSummary.failed_accounts"><div class="v">{{ allSummary.failed_accounts }}</div><div class="k">账户异常</div></div>
-            </div>
-
-            <el-alert v-for="a in failedAccounts" :key="a.profile" type="error" show-icon :closable="false"
-                      style="margin-bottom:8px;" :title="'账户 ' + a.profile + ' 查询失败'" :description="a.error" />
-
-            <div class="bulkbar" v-if="allSelection.length">
-              <span class="count">已选 {{ allSelection.length }} 台</span>
-              <el-button size="small" type="success" @click="batchAct(allSelection,'START')">开机</el-button>
-              <el-button size="small" @click="batchAct(allSelection,'SOFTSTOP')">关机</el-button>
-              <el-button size="small" type="warning" @click="batchAct(allSelection,'SOFTRESET')">重启</el-button>
-              <el-button size="small" text @click="clearAllSelection">取消选择</el-button>
-            </div>
-
-            <div v-if="loading && !allFlat.length" aria-label="加载中">
-              <div class="skel skel-row" v-for="i in 4" :key="i"></div>
-            </div>
-            <div class="table-wrap" v-else-if="allFlat.length" :class="{ stale: loading }">
-              <el-table ref="allTableRef" :data="allFlat" size="small" stripe border row-key="id"
-                        @selection-change="allSelection = $event" style="width:100%;">
-                <el-table-column type="selection" width="42" />
-                <el-table-column prop="profile" label="账户" width="120" />
-                <el-table-column label="状态" width="118">
-                  <template #default="{row}">
-                    <span class="state">
-                      <i :class="['dot', stateTone(row.state)]"></i>
-                      <span class="state-label">{{ stateText(row.state) }}</span>
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="display_name" label="名称" min-width="150" show-overflow-tooltip />
-                <el-table-column label="规格" min-width="180">
-                  <template #default="{row}"><span class="mono">{{ specText(row) }}</span></template>
-                </el-table-column>
-                <el-table-column label="公网 IP" width="150" v-if="allWithIp">
-                  <template #default="{row}">
-                    <span class="ip-cell" v-if="row.public_ip">
-                      <span class="mono">{{ row.public_ip }}</span>
-                      <button class="copy-btn" @click="copy(row.public_ip)" :aria-label="'复制 ' + row.public_ip">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-                      </button>
-                    </span>
-                    <span v-else class="mono" style="color:var(--muted);">—</span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="region" label="区域" width="120">
-                  <template #default="{row}"><span class="mono">{{ row.region || '—' }}</span></template>
-                </el-table-column>
-                <el-table-column label="操作" width="196" fixed="right">
-                  <template #default="{row}">
-                    <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
-                    <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
-                    <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-            <div class="empty" v-else-if="!loading">
-              <b>没有查到实例</b>
-              所有账户下都没有存活的实例。若确认实例存在，试试勾选「含子 compartment」。
-            </div>
-          </div>
-        </section>
 
         <!-- 单账户实例 -->
         <section class="pane" v-show="activeTab === 'instances'">
@@ -1221,17 +1269,18 @@
 
             <template v-if="upd.agent && !upd.agent.online">
               <el-alert type="warning" show-icon :closable="false" style="margin-bottom:10px;"
-                        title="一键更新暂时用不了：宿主机上的更新代理没在运行"
-                        description="面板容器没有 docker 权限，得由宿主机上的代理来执行更新。在服务器上跑一次下面这条就装好了，之后就能一直用。" />
+                        title="一键更新还差最后一步：宿主机上的更新代理没装"
+                        :description="upd.agent.hint" />
               <div class="cmd-box">
-                <code class="mono">{{ 'sudo bash ' + (sys.install_dir || '/opt/ocix') + '/scripts/install.sh' }}</code>
-                <button class="copy-btn" @click="copy('sudo bash ' + (sys.install_dir || '/opt/ocix') + '/scripts/install.sh')"
-                        aria-label="复制安装命令">
+                <code class="mono">{{ upd.agent.fix_command }}</code>
+                <button class="copy-btn" @click="copy(upd.agent.fix_command)"
+                        aria-label="复制命令">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
                 </button>
               </div>
               <p class="hint" style="margin-top:0;">
-                装完刷新本页即可。也可以直接用下面的「手动更新」命令，效果一样。
+                <strong>只需要跑这一次</strong>：这条命令在更新的同时会把代理装成开机自启的服务，
+                以后更新点按钮就行，不用再登服务器。
               </p>
             </template>
 
@@ -1469,7 +1518,6 @@ const CW = 720, CH = 200, PAD_L = 46, PAD_R = 8, PAD_T = 8, PAD_B = 26;
 
 const NAV = [
   { title: '总览', items: [
-    { name: 'all', label: '全部账户', icon: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z' },
     { name: 'instances', label: '实例', icon: 'M4 5h16v6H4zM4 13h16v6H4zM7.5 8h.01M7.5 16h.01' },
   ]},
   { title: '资源', items: [
@@ -1514,6 +1562,12 @@ createApp({
     const user = ref(localStorage.getItem('ocix_user') || '');
     const loginForm = reactive({ username: '', password: '' });
     const loginErr = ref('');
+    // 版本号跟着 /auth/me 一起回来，不额外发请求
+    const appVersion = ref('');
+    // 服务状态：任一请求成功即正常；连不上或 5xx 就标红。
+    // 只反映实际发生过的请求，不为它单独轮询——否则又成了后台偷偷请求。
+    const serviceOk = ref(true);
+    const serviceHint = ref('与面板后端通信正常');
     const loading = ref(false);
 
     // ---- 账户 / 范围 ----
@@ -1524,7 +1578,7 @@ createApp({
     const compsLoading = ref(false);
     const compartmentId = ref('');
     const subtree = ref(false);
-    const activeTab = ref('all');
+    const activeTab = ref('instances');
     const lastUpdated = ref('');
 
     // ---- 数据 ----
@@ -1537,11 +1591,7 @@ createApp({
     // 账户配置页按账户存一份等级结论；额度页那个 tier 是「当前账户」的
     const tiers = ref({});
     const tierBusy = ref(false);
-    const allAccounts = ref([]);
-    const allWithIp = ref(false);
-    const allSelection = ref([]);
-    const allTableRef = ref(null);
-    const allSummary = ref({ accounts: 0, instances: 0, running: 0, stopped: 0, failed_accounts: 0 });
+
 
     const metrics = ref([]);
     const metricInstance = ref('');
@@ -1695,8 +1745,17 @@ createApp({
     };
     axios.interceptors.request.use((cfg) => { inflight++; netBusy.value = true; return cfg; });
     axios.interceptors.response.use(
-      (r) => { settle(); return r; },
-      (e) => { settle(); return Promise.reject(e); });
+      (r) => { settle(); serviceOk.value = true; serviceHint.value = '与面板后端通信正常'; return r; },
+      (e) => {
+        settle();
+        const st = e.response && e.response.status;
+        if (!e.response) {
+          serviceOk.value = false; serviceHint.value = '连不上面板后端，可能正在重启';
+        } else if (st >= 500) {
+          serviceOk.value = false; serviceHint.value = '后端返回 ' + st;
+        }
+        return Promise.reject(e);
+      });
 
     function applyToken(t) {
       axios.defaults.headers.common['Authorization'] = t ? 'Bearer ' + t : '';
@@ -1745,6 +1804,7 @@ createApp({
       try {
         const { data } = await axios.post('/api/auth/login', { ...loginForm });
         token.value = data.token; user.value = data.user;
+        appVersion.value = data.version || '';
         localStorage.setItem('ocix_token', data.token);
         localStorage.setItem('ocix_user', data.user);
         applyToken(data.token);
@@ -1810,20 +1870,6 @@ createApp({
         stamp();
       } catch (e) {
         ElMessage.error(errMsg(e, '实例加载失败'));
-      } finally { loading.value = false; }
-    }
-
-    async function loadAll() {
-      loading.value = true;
-      try {
-        const { data } = await axios.get('/api/instances/all', {
-          params: { subtree: subtree.value, with_ip: allWithIp.value },
-        });
-        allAccounts.value = data.accounts;
-        allSummary.value = data.summary;
-        stamp();
-      } catch (e) {
-        ElMessage.error(errMsg(e, '多账户总览加载失败'));
       } finally { loading.value = false; }
     }
 
@@ -2262,7 +2308,6 @@ createApp({
     }
 
     function refreshActive() {
-      if (activeTab.value === 'all') return loadAll();
       if (activeTab.value === 'audit') return loadAudit(auditPage.value);
       if (activeTab.value === 'storage') return loadStorage();
       if (activeTab.value === 'update') return loadSystem(true);
@@ -2275,7 +2320,8 @@ createApp({
 
     async function bootData() {
       await loadProfiles();
-      await Promise.all([loadCompartments(), loadAll(), loadSingle()]);
+      await loadCompartments();
+      await loadSingle();
     }
 
     function onProfileChange() {
@@ -2301,7 +2347,6 @@ createApp({
 
     function onTabChange(name) {
       if (name === 'audit' && !auditLogs.value.length) loadAudit(1);
-      if (name === 'all' && !allAccounts.value.length) loadAll();
       if (name === 'usage' && !usage.value) loadSingle(true);
       if (name === 'storage' && !storage.value) loadStorage();
       if (name === 'create') {
@@ -2310,9 +2355,9 @@ createApp({
       }
       if (name === 'update') {
         if (!sys.value.current) loadSystem(false);
-        loadUpdateStatus();
-        // 只在更新页轮询，离开就停，别在后台空转
-        watchUpdate(true);
+        // 只查一次；除非真的有更新在跑，否则不开轮询——
+        // 停在这一页也不该每 3 秒发一次请求
+        loadUpdateStatus().then(() => watchUpdate(updRunning.value));
       } else {
         watchUpdate(false);
       }
@@ -2384,7 +2429,7 @@ createApp({
             `${data.succeeded} 台成功，${data.failed} 台失败`,
             { type: 'warning', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '560px' } });
         }
-        clearAllSelection(); clearInstSelection();
+        clearInstSelection();
         await refreshAfterAction();
       } catch (e) {
         ElMessage.error(errMsg(e, `批量${label}失败`));
@@ -2392,12 +2437,10 @@ createApp({
     }
 
     async function refreshAfterAction() {
-      if (activeTab.value === 'all') return loadAll();
       return loadSingle();
     }
 
     function clearInstSelection() { instSelection.value = []; instTableRef.value?.clearSelection(); }
-    function clearAllSelection() { allSelection.value = []; allTableRef.value?.clearSelection(); }
 
     // ---- 配置管理 ----
     function onKeyFile(file) { importForm.file = file.raw; }
@@ -2419,7 +2462,6 @@ createApp({
         await loadProfiles();
         currentProfile.value = data.profile;
         onProfileChange();
-        loadAll();
       } catch (e) {
         ElMessage.error(errMsg(e, '导入失败'));
       } finally { importing.value = false; }
@@ -2447,7 +2489,6 @@ createApp({
         ElMessage.success(`账户 ${name} 已删除`);
         await loadProfiles();
         onProfileChange();
-        loadAll();
       } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
     }
 
@@ -2477,6 +2518,8 @@ createApp({
         const { data } = await axios.get('/api/system/update/status');
         const wasRunning = updRunning.value;
         upd.value = data;
+        // 跑完了就把轮询停掉，别一直挂着
+        if (wasRunning && !updRunning.value) watchUpdate(false);
         // 更新完成后版本号变了，把版本卡片一起刷新
         if (wasRunning && !updRunning.value) {
           if (data.state === 'done') ElMessage.success(`已更新到 v${data.version}`);
@@ -2535,12 +2578,15 @@ createApp({
     async function loadAllTiers(force) {
       const names = profiles.value.map(p => p.name);
       if (!names.length) return;
+      // 已经有一轮在跑就不要再起一轮：切页和换账户都会触发这里，
+      // 两轮交错就又变成多个号同时请求了
+      if (tierBusy.value) return;
       if (force) tiers.value = {};
       tierBusy.value = true;
       try {
-        // 并发查，账户多的时候不至于一个个排队等
-        await Promise.all(names.map(async (name) => {
-          if (!force && tiers.value[name]) return;
+        // 一个账户一个账户地查，不并发：同一时刻只让一个号在跟 OCI 通信
+        for (const name of names) {
+          if (!force && tiers.value[name]) continue;
           try {
             // 列表只显示一个标签，不要限额，省一次请求
             const { data } = await axios.get(
@@ -2552,7 +2598,7 @@ createApp({
               tier: 'unknown', label: '检测失败',
               reasons: [errMsg(e, '检测失败')] } };
           }
-        }));
+        }
       } finally { tierBusy.value = false; }
     }
 
@@ -2651,9 +2697,7 @@ createApp({
     }
 
     // ---- 展示 ----
-    const allFlat = computed(() =>
-      allAccounts.value.flatMap(a => a.instances.map(i => ({ ...i, profile: a.profile }))));
-    const failedAccounts = computed(() => allAccounts.value.filter(a => a.error));
+
 
     const STATE_TONE = {
       RUNNING: 'ok', STOPPED: 'idle',
@@ -2779,22 +2823,31 @@ createApp({
     let timer = null;
     watch(autoRefresh, (on) => {
       localStorage.setItem('ocix_auto', on ? '1' : '0');
+      if (on) startAutoTimer(); else stopAutoTimer();
+    }, { immediate: true });
+    // 不开自动刷新就压根不要有定时器在跑：
+    // 之前是每秒都醒一次，只是判断后什么都不做——白白占着，也容易让人误以为
+    // 面板在后台偷偷请求 OCI。现在打开开关才创建，关掉立刻销毁。
+    function stopAutoTimer() {
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+    function startAutoTimer() {
+      stopAutoTimer();
       countdown.value = 30;
-    });
-    onMounted(() => {
       timer = setInterval(() => {
-        if (!autoRefresh.value || !token.value || document.hidden) { countdown.value = 30; return; }
+        if (!token.value || document.hidden) return;   // 页面在后台就不计时
         countdown.value -= 1;
         if (countdown.value <= 0) { countdown.value = 30; if (!loading.value) refreshActive(); }
       }, 1000);
-    });
-    onUnmounted(() => clearInterval(timer));
+    }
+    onUnmounted(stopAutoTimer);
 
     onMounted(async () => {
       if (!token.value) return;
       try {
         const { data } = await axios.get('/api/auth/me');
         user.value = data.user;
+        appVersion.value = data.version || '';
         await bootData();
       } catch { /* 401 已由拦截器处理 */ }
     });
@@ -2820,16 +2873,16 @@ createApp({
       token, user, loginForm, loginErr, loading, netBusy,
       profiles, profilesLoading, currentProfile, compartments, compsLoading, compartmentId,
       subtree, activeTab, lastUpdated, autoRefresh, countdown,
+      appVersion, serviceOk, serviceHint,
       instances, instSelection, instTableRef, usage,
-      allAccounts, allFlat, allSummary, allWithIp, allSelection, allTableRef, failedAccounts,
       metrics, metricInstance, metricHours, metricsLoading,
       chartSeries, gridLines, hasMetricPoints, axisStart, axisEnd, hoverIdx, hoverX, hoverTime,
       importForm, importing, pw,
       auditLogs, auditTotal, auditActions, auditPage, auditSize, auditLoading, auditFilter,
       opts, optsLoading, createForm, isArm, canCreate, creating,
       preflight, preflightLoading, storage, storageLoading,
-      doLogin, logout, refreshActive, loadAll, loadMetrics, loadAudit,
-      onProfileChange, onTabChange, act, batchAct, clearInstSelection, clearAllSelection,
+      doLogin, logout, refreshActive, loadMetrics, loadAudit,
+      onProfileChange, onTabChange, act, batchAct, clearInstSelection,
       canStart, canStop, canReset, stateTone, stateText, specText,
       fmtPct, fmtDate, fmtTime, fmtUtc, copy, onChartMove, hoverValue,
       onKeyFile, importProfile, testProfile, delProfile, purgeAudit, changePw,

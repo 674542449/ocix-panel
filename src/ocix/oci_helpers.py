@@ -6,13 +6,16 @@ from datetime import datetime, timedelta, timezone
 
 from . import freetier
 from .backends import get_backend
-from .common import OCIError, TTLCache, gather
+from .common import OCIError, TTLCache, account_gate, gather
 from .config import COMPARTMENT_CACHE_TTL, OCI_CONFIG_PATH
 
 
 def _b():
     """当前后端（cli 或 sdk）。取实例而不是模块级绑定，测试才能随时替换。"""
     return get_backend()
+
+
+__all__ = ["account_gate"]   # 供路由层包住整次请求，保证跨账户串行
 
 
 # ---- 通用小工具 ----

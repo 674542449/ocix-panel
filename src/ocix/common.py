@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from configparser import ConfigParser
+from contextlib import contextmanager
 
 from .config import OCI_CONFIG_PATH, OCI_MAX_WORKERS
 
@@ -55,6 +56,29 @@ class TTLCache:
             else:
                 for k in [k for k in self._data if isinstance(k, tuple) and k and k[0] == profile]:
                     self._data.pop(k, None)
+
+
+# 同一时刻只允许一个账户在跟 OCI 通信。
+# 多个账户并发打 OCI 容易触发对方限流，出错信息还难归因；
+# 面板是单人自用的，串行带来的等待可以接受。
+# 注意是「按账户」串行：同一个账户内部（比如并发查多个 compartment）不受影响，
+# 否则页面会慢得离谱。
+_account_gate = threading.Lock()
+_gate_owner: list = [None]
+
+
+@contextmanager
+def account_gate(profile: str):
+    """跨账户串行；同一账户重入直接放行，避免自己把自己锁死。"""
+    if _gate_owner[0] == profile:
+        yield
+        return
+    with _account_gate:
+        _gate_owner[0] = profile
+        try:
+            yield
+        finally:
+            _gate_owner[0] = None
 
 
 def gather(fn: Callable, items: Iterable) -> list[tuple[object, object, Exception]]:

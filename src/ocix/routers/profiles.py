@@ -15,7 +15,7 @@ from fastapi import (
 )
 
 from .. import security
-from ..common import OCIError, list_profiles_from_config, read_config_parser
+from ..common import OCIError, account_gate, list_profiles_from_config, read_config_parser
 from ..config import KEYS_DIR, OCI_CONFIG_PATH
 from ..db import audit, delete_profile_db, list_profiles_db, upsert_profile
 from ..oci_helpers import (
@@ -336,7 +336,9 @@ def profile_tier(
     security.check_rate(request, security.API_RATE_LIMIT)
     _check_name(name)
     try:
-        return account_tier(name, with_limits=limits)
+        # 跨账户串行：多个号同时打 OCI 容易被对方限流
+        with account_gate(name):
+            return account_tier(name, with_limits=limits)
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
 
@@ -355,7 +357,8 @@ def get_console_password_policy(
     security.check_rate(request, security.API_RATE_LIMIT)
     _check_name(name)
     try:
-        return console_password_policy(name)
+        with account_gate(name):
+            return console_password_policy(name)
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
 

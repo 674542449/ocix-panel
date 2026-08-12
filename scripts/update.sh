@@ -36,14 +36,23 @@ LATEST="$(git show "origin/${BRANCH}:VERSION" 2>/dev/null | tr -d '[:space:]' ||
 BEHIND="$(git rev-list --count "HEAD..origin/${BRANCH}" 2>/dev/null || echo 0)"
 
 if [[ "$BEHIND" == "0" ]]; then
-  ok "已经是最新版了（v${CURRENT}）"
-  exit 0
+  if [[ "${OCIX_UPDATE_REEXEC:-0}" == "1" ]]; then
+    # 这是拉完代码后用新版脚本重跑的那一趟：代码当然已经是最新的，
+    # 不能在这里退出，后面还要重建容器
+    ok "代码已是 v${CURRENT}，继续完成部署"
+  else
+    ok "已经是最新版了（v${CURRENT}）"
+    exit 0
+  fi
+elif [[ $CHECK_ONLY -eq 0 ]]; then
+  echo "远端版本 v${LATEST:-未知}，落后 ${BEHIND} 个提交"
 fi
 
-echo "远端版本 v${LATEST:-未知}，落后 ${BEHIND} 个提交"
-echo "${c_dim}"
-git --no-pager log --oneline --no-decorate "HEAD..origin/${BRANCH}" | head -15
-echo "${c_off}"
+if [[ "$BEHIND" != "0" ]]; then
+  echo "${c_dim}"
+  git --no-pager log --oneline --no-decorate "HEAD..origin/${BRANCH}" | head -15
+  echo "${c_off}"
+fi
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
   echo "有新版本可用。执行以下命令更新："
@@ -68,11 +77,22 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   git reset --hard HEAD
 fi
 
-echo "拉取最新代码…"
-git pull --ff-only origin "$BRANCH" || die "拉取失败（可能有冲突）。可执行 git reset --hard origin/${BRANCH} 后重试。"
+if [[ "$BEHIND" != "0" ]]; then
+  echo "拉取最新代码…"
+  git pull --ff-only origin "$BRANCH"     || die "拉取失败（可能有冲突）。可执行 git reset --hard origin/${BRANCH} 后重试。"
+fi
 
 NEW="$(cat VERSION 2>/dev/null || echo unknown)"
 ok "代码已更新到 v${NEW}"
+
+# 拉完代码后用**新版**的自己接着往下跑。
+# bash 是按字节偏移边读边执行的，脚本文件在执行中途被 git pull 换掉，
+# 后面的内容会错位；而且新版里新增的步骤（比如自动安装更新代理）
+# 不重新执行就要等到下一次更新才生效。
+if [[ "${OCIX_UPDATE_REEXEC:-0}" != "1" ]]; then
+  export OCIX_UPDATE_REEXEC=1
+  exec bash "$REPO_ROOT/scripts/update.sh" "$@"
+fi
 
 # .env 里的版本号跟着走，compose 的镜像 tag 才对得上
 if [[ -f .env ]]; then

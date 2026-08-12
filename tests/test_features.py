@@ -412,3 +412,46 @@ def test_console_policy_endpoint(app_client, live_backend):
 def test_console_policy_rejects_bad_days(app_client, live_backend):
     assert app_client.put("/api/profiles/EXISTING/console-password-policy",
                           json={"days": -1}).status_code == 422
+
+
+def test_login_and_me_both_carry_the_version(app_client):
+    """侧栏要显示版本号。登录后不会再调 /auth/me，所以两个接口都得带上。"""
+    me = app_client.get("/api/auth/me").json()
+    assert me["version"]
+    login = app_client.post("/api/auth/login",
+                            json={"username": "admin", "password": "devpass123"}).json()
+    assert login["version"] == me["version"]
+
+
+def test_account_gate_serialises_across_accounts():
+    """同一时刻只允许一个账户在跟 OCI 通信。"""
+    import threading
+    import time as _t
+
+    from ocix.common import account_gate
+
+    active, peak, lock = [0], [0], threading.Lock()
+
+    def work(profile):
+        with account_gate(profile):
+            with lock:
+                active[0] += 1
+                peak[0] = max(peak[0], active[0])
+            _t.sleep(0.05)
+            with lock:
+                active[0] -= 1
+
+    threads = [threading.Thread(target=work, args=(f"P{i}",)) for i in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert peak[0] == 1, f"同时有 {peak[0]} 个账户在请求"
+
+
+def test_account_gate_is_reentrant_for_the_same_account():
+    """同一账户内部嵌套调用不能把自己锁死。"""
+    from ocix.common import account_gate
+    with account_gate("P"):
+        with account_gate("P"):
+            pass

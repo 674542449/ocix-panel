@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .. import security
-from ..common import OCIError, gather, list_profiles_from_config
+from ..common import OCIError, gather
 from ..db import audit
 from ..oci_helpers import (
     attach_ips,
@@ -73,47 +73,6 @@ def get_instances(
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     return {"instances": _simplify_list(items)}
-
-
-@router.get("/all")
-def get_all_instances(
-    subtree: bool = Query(False),
-    with_ip: bool = Query(False, description="多账户默认不查 IP，账户多时太慢"),
-    request: Request = None,
-    user: str = Depends(security.get_current_user),
-):
-    """多账户总览：并发遍历所有 profile（每个即一个 OCI 账户），聚合实例。"""
-    security.check_rate(request, security.API_RATE_LIMIT)
-    profiles = list_profiles_from_config()
-
-    def _one(name):
-        items = list_instances(name, subtree=subtree)
-        if with_ip:
-            items = attach_ips(name, items)
-        return _simplify_list(items)
-
-    accounts = []
-    for name, items, err in gather(_one, profiles):
-        accounts.append({
-            "profile": name,
-            "error": getattr(err, "message", str(err)) if err is not None else None,
-            "instances": items or [],
-        })
-    accounts.sort(key=lambda a: a["profile"])
-
-    total = sum(len(a["instances"]) for a in accounts)
-    running = sum(1 for a in accounts for i in a["instances"] if i["state"] == "RUNNING")
-    stopped = sum(1 for a in accounts for i in a["instances"] if i["state"] == "STOPPED")
-    return {
-        "accounts": accounts,
-        "summary": {
-            "accounts": len(accounts),
-            "instances": total,
-            "running": running,
-            "stopped": stopped,
-            "failed_accounts": sum(1 for a in accounts if a["error"]),
-        },
-    }
 
 
 @router.post("/action")

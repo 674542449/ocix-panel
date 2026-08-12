@@ -126,12 +126,19 @@ def _agent_state() -> dict:
     try:
         age = time.time() - os.path.getmtime(alive)
     except OSError:
-        return {"online": False, "last_seen": None,
-                "hint": f"宿主机更新代理未运行。在宿主机执行： bash {INSTALL_DIR}/scripts/install.sh"}
+        return {
+            "online": False, "last_seen": None,
+            # 用 update.sh 而不是 install.sh：它会顺手把代理装上，
+            # 而且不会重问域名/密码那些安装期的问题。跑这一次之后就永久生效。
+            "hint": f"在服务器上执行一次 sudo bash {INSTALL_DIR}/scripts/update.sh 即可装好更新代理，"
+                    f"之后就能一直用网页更新，不用再登服务器。",
+            "fix_command": f"sudo bash {INSTALL_DIR}/scripts/update.sh",
+        }
     if age > _ALIVE_TIMEOUT:
         return {"online": False, "last_seen": int(time.time() - age),
-                "hint": f"更新代理已 {int(age)} 秒没有心跳，检查： systemctl status ocix-updater"}
-    return {"online": True, "last_seen": int(time.time() - age), "hint": None}
+                "hint": f"更新代理已 {int(age)} 秒没有心跳，检查： systemctl status ocix-updater",
+                "fix_command": "sudo systemctl restart ocix-updater"}
+    return {"online": True, "last_seen": int(time.time() - age), "hint": None, "fix_command": None}
 
 
 def _read_log(limit: int = 4000) -> str | None:

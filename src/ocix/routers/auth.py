@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from .. import security
+from .. import __version__, security
 from ..config import ADMIN_USER, DEV_MODE
 from ..db import audit
 from ..schemas import ChangePasswordRequest, LoginRequest, PasswordPolicyRequest
@@ -24,12 +24,18 @@ def login(req: LoginRequest, request: Request):
     audit(req.username, "login", result="ok", ip=ip)
     return {"token": token, "user": req.username,
             "expires_in": security.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            # 登录后不会再调 /auth/me，版本号得在这儿一并给出，
+            # 否则侧栏会一直显示 v—
+            "version": __version__,
             "password": security.password_status()}
 
 
 @router.get("/me")
 def me(user: str = Depends(security.get_current_user_allow_expired)):
     return {"user": user, "is_admin": user == ADMIN_USER,
+            # 版本号搭个顺风车：前端启动本来就要调这个接口，
+            # 单独为版本号再发一次请求没必要
+            "version": __version__,
             "password": security.password_status()}
 
 

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="OCIX">
+  <!-- Always Free 额度的实际形状：两台 AMD 微型 + 一台 ARM。
+       面板管的就是这三块，所以标识直接用它，而不是通用的云朵/盾牌。 -->
+  <rect width="24" height="24" rx="5" fill="#0b1220"/>
+  <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" fill="#8fa3bf"/>
+  <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" fill="#8fa3bf"/>
+  <rect x="13.5" y="3.5" width="7" height="17" rx="1.6" fill="#38bdf8"/>
+</svg>

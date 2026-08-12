@@ -29,7 +29,7 @@ def test_diagnostics_reports_config_state(app_client):
 # ── 鉴权 ──
 
 @pytest.mark.parametrize("path", [
-    "/api/profiles", "/api/instances/all", "/api/audit",
+    "/api/profiles", "/api/instances?profile=EXISTING", "/api/audit",
     "/api/provision/storage?profile=EXISTING",
 ])
 def test_protected_endpoints_require_a_token(anon_client, path):
@@ -428,10 +428,9 @@ def test_missing_cli_surfaces_as_400(app_client):
     assert r.status_code == 400 and "oci" in r.text
 
 
-def test_multi_account_view_degrades_per_account(app_client):
-    r = app_client.get("/api/instances/all")
-    assert r.status_code == 200
-    assert r.json()["accounts"][0]["error"]
+def test_all_accounts_endpoint_is_gone(app_client):
+    """跨账户总览已删除：它会让多个账户同时打 OCI，而且日常并不看。"""
+    assert app_client.get("/api/instances/all").status_code == 404
 
 
 def test_metrics_failure_is_400_not_500(app_client):
