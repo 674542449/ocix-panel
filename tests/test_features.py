@@ -144,9 +144,14 @@ def _set_changed_at(seconds_ago: int):
     set_setting("admin_password_changed_at", str(int(time.time()) - seconds_ago))
 
 
-def test_password_policy_defaults_to_120_days(app_client):
+def test_panel_password_never_expires_by_default(app_client):
+    """面板自己的密码默认不过期。
+
+    120 天那条说的是 Oracle 账号的控制台密码，在 Identity Domain 里，
+    跟面板登录密码是两回事——默认给面板加个强制改密期反而是打扰。
+    """
     body = app_client.get("/api/auth/password-policy").json()
-    assert body["max_age_days"] == 120
+    assert body["max_age_days"] == 0
     assert body["expired"] is False
 
 
@@ -342,3 +347,68 @@ def test_tier_endpoint_honours_limits_flag(app_client, live_backend):
     body = app_client.get("/api/profiles/EXISTING/tier?limits=false").json()
     assert body["limits"] == []
     assert live_backend.count("list_limit_values") == 0
+
+
+# ── Oracle 账号（控制台登录）的密码有效期 ──
+#
+# 这是 Oracle 侧 Identity Domain 里的 passwordExpiresAfter，免费租户默认 120 天，
+# 跟面板自己的登录密码是两码事。
+
+def test_reads_console_password_policy(fake):
+    H.invalidate_read_cache()
+    res = H.console_password_policy("P")
+    assert res["supported"] is True
+    pol = res["policies"][0]
+    assert pol["expires_after_days"] == 120
+    assert pol["domain_name"] == "Default"
+
+
+def test_set_console_password_never_expires(fake):
+    H.invalidate_read_cache()
+    res = H.set_console_password_expiry("P", 0)
+    assert res["days"] == 0
+    assert res["changed"]
+    # 再读一次应当已经是「永不过期」
+    H.invalidate_read_cache()
+    assert H.console_password_policy("P")["policies"][0]["expires_after_days"] == 0
+
+
+def test_set_console_password_specific_days(fake):
+    H.invalidate_read_cache()
+    H.set_console_password_expiry("P", 365)
+    H.invalidate_read_cache()
+    assert H.console_password_policy("P")["policies"][0]["expires_after_days"] == 365
+
+
+def test_console_policy_reports_classic_iam_clearly(fake):
+    """经典 IAM 租户没有 Identity Domain，要说清楚而不是报个空。"""
+    fake.domains = []
+    H.invalidate_read_cache()
+    res = H.console_password_policy("P")
+    assert res["supported"] is False
+    assert "经典 IAM" in res["error"]
+
+
+def test_console_policy_surfaces_permission_error(fake):
+    def boom(profile, compartment_id):
+        raise OCIError("NotAuthorizedOrNotFound")
+    fake.list_domains = boom
+    H.invalidate_read_cache()
+    res = H.console_password_policy("P")
+    assert res["supported"] is False
+    assert "NotAuthorizedOrNotFound" in res["error"]
+
+
+def test_console_policy_endpoint(app_client, live_backend):
+    body = app_client.get("/api/profiles/EXISTING/console-password-policy").json()
+    assert body["policies"][0]["expires_after_days"] == 120
+
+    r = app_client.put("/api/profiles/EXISTING/console-password-policy", json={"days": 0})
+    assert r.status_code == 200, r.text
+    assert r.json()["days"] == 0
+    assert r.json()["policy"]["policies"][0]["expires_after_days"] == 0
+
+
+def test_console_policy_rejects_bad_days(app_client, live_backend):
+    assert app_client.put("/api/profiles/EXISTING/console-password-policy",
+                          json={"days": -1}).status_code == 422

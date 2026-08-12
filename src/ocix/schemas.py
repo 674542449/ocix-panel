@@ -38,6 +38,12 @@ class PasswordPolicyRequest(BaseModel):
     max_age_days: int = Field(ge=0, le=3650)
 
 
+class ConsolePasswordPolicyRequest(BaseModel):
+    """Oracle 账号（控制台登录）的密码有效期。0 = 永不过期。"""
+    days: int = Field(ge=0, le=3650)
+    policy_id: str | None = None
+
+
 class InstanceActionRequest(BaseModel):
     profile: str
     instance_id: str

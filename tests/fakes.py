@@ -6,6 +6,25 @@
 from __future__ import annotations
 
 from ocix.backends.base import Backend
+from ocix.common import OCIError
+
+
+def _to_sdk_shape(obj):
+    """把面板写出去的 camelCase 结构转成 SDK 读回来的 snake_case 形态。
+
+    OCI 收 camelCase、回 snake_case；假后端也得这样，
+    否则「写进去什么就读回什么」会让键名不匹配的问题隐形。
+    """
+    import re as _re
+
+    def snake(k):
+        return _re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", k.replace("-", "_")).lower()
+
+    if isinstance(obj, dict):
+        return {snake(k): _to_sdk_shape(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_sdk_shape(v) for v in obj]
+    return obj
 
 
 class FakeBackend(Backend):
@@ -24,6 +43,19 @@ class FakeBackend(Backend):
         # 默认：读不到订阅记录（免费号常见，权限不足）
         self.subscriptions = []
         self.subscription_details = {}
+        # 路由表里已有的规则（SDK 形态），用来验证重写时不会把它们弄坏
+        self.route_rules_existing = []
+        # 监控数据点，按 SDK 形态回给上层
+        self.metrics = []
+        # Identity Domain 与控制台密码策略（默认就是 Oracle 那个 120 天）
+        self.domains = [{"id": "dom1", "display_name": "Default",
+                         "url": "https://idcs-x.identity.oraclecloud.com", "type": "DEFAULT"}]
+        self.password_policies = {
+            "https://idcs-x.identity.oraclecloud.com": [
+                {"id": "pol1", "name": "Default Password Policy",
+                 "priority": 1, "passwordExpiresAfter": 120},
+            ],
+        }
         self.instances: list = []
         self.images: list = []
         self.compartments: list = []
@@ -165,7 +197,7 @@ class FakeBackend(Backend):
 
     def get_route_table(self, profile, rt_id):
         self._rec("get_route_table")
-        return {"route_rules": []}
+        return {"route_rules": [_to_sdk_shape(r) for r in self.route_rules_existing]}
 
     def update_route_rules(self, profile, rt_id, rules):
         self._rec("update_route_rules")
@@ -173,7 +205,10 @@ class FakeBackend(Backend):
 
     def get_security_list(self, profile, security_list_id):
         self._rec("get_security_list")
-        return {"ingress_security_rules": list(self.ingress_rules),
+        # 真实 SDK 回的是 snake_case。这里必须照做——
+        # 之前原样回显面板写进去的 camelCase，等于把「读回来」这一步的
+        # 键名问题全遮住了，结果 tcp_options 取不到的 bug 一直测不出来。
+        return {"ingress_security_rules": [_to_sdk_shape(r) for r in self.ingress_rules],
                 "display_name": "Default Security List"}
 
     def update_ingress_rules(self, profile, security_list_id, rules):
@@ -207,7 +242,9 @@ class FakeBackend(Backend):
     def summarize_metrics(self, profile, compartment_id, namespace, query,
                           start_time, end_time):
         self._rec("summarize_metrics")
-        return []
+        # 真实 SDK 回 snake_case 的 aggregated_datapoints
+        return [_to_sdk_shape(m) for m in self.metrics
+                if not m.get("name") or m["name"] in query]
 
     def list_limit_values(self, profile, compartment_id, service_name):
         self._rec("list_limit_values")
@@ -216,6 +253,22 @@ class FakeBackend(Backend):
     def list_subscriptions(self, profile, compartment_id):
         self._rec("list_subscriptions")
         return list(self.subscriptions)
+
+    def list_domains(self, profile, compartment_id):
+        self._rec("list_domains")
+        return list(self.domains)
+
+    def list_password_policies(self, profile, domain_url):
+        self._rec("list_password_policies")
+        return [_to_sdk_shape(p) for p in self.password_policies.get(domain_url, [])]
+
+    def set_password_expiry(self, profile, domain_url, policy_id, days):
+        self._rec("set_password_expiry")
+        for p in self.password_policies.get(domain_url, []):
+            if p.get("id") == policy_id:
+                p["passwordExpiresAfter"] = int(days) if int(days) > 0 else None
+                return dict(p)
+        raise OCIError("policy not found")
 
     def get_subscription(self, profile, subscription_id):
         self._rec("get_subscription")

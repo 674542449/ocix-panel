@@ -70,9 +70,11 @@ TRUST_PROXY = _bool_env("OCIX_TRUST_PROXY", False)
 # 取最左边那个等于直接采信客户端自己写的值。
 TRUSTED_PROXY_HOPS = max(1, int(os.getenv("OCIX_PROXY_HOPS", "1")))
 
-# 面板密码有效期（天）。0 = 永不过期。
+# 面板**自己**的登录密码有效期（天）。0 = 永不过期，也是默认值。
+# 注意别和 Oracle 账号的密码有效期搞混：那条 120 天的规则在 OCI 的
+# Identity Domain 里（面板可以在「密码」页直接改），跟这里无关。
 # 这只是初始默认值，装好后可以在「密码」页里随时改，改完存库。
-PASSWORD_MAX_AGE_DAYS = max(0, int(os.getenv("OCIX_PASSWORD_MAX_AGE_DAYS", "120")))
+PASSWORD_MAX_AGE_DAYS = max(0, int(os.getenv("OCIX_PASSWORD_MAX_AGE_DAYS", "0")))
 
 # 允许跨域的来源；留空表示只允许同源（默认部署由 Caddy 同源反代，无需 CORS）
 CORS_ORIGINS = [o.strip() for o in os.getenv("OCIX_CORS_ORIGINS", "").split(",") if o.strip()]

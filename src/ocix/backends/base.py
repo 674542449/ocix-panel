@@ -169,6 +169,17 @@ class Backend(ABC):
     @abstractmethod
     def get_subscription(self, profile: str, subscription_id: str) -> dict: ...
 
+    # ---------- Identity Domains（控制台登录密码策略）----------
+    @abstractmethod
+    def list_domains(self, profile: str, compartment_id: str) -> list: ...
+
+    @abstractmethod
+    def list_password_policies(self, profile: str, domain_url: str) -> list: ...
+
+    @abstractmethod
+    def set_password_expiry(self, profile: str, domain_url: str,
+                            policy_id: str, days: int) -> dict: ...
+
     # ---------- Monitoring ----------
     @abstractmethod
     def summarize_metrics(self, profile: str, compartment_id: str, namespace: str,

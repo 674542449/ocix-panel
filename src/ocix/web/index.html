@@ -1219,9 +1219,21 @@
               <div class="card-title">一键更新</div>
             </div>
 
-            <el-alert v-if="upd.agent && !upd.agent.online" type="warning" show-icon :closable="false"
-                      style="margin-bottom:12px;" title="宿主机更新代理没在运行"
-                      :description="upd.agent.hint" />
+            <template v-if="upd.agent && !upd.agent.online">
+              <el-alert type="warning" show-icon :closable="false" style="margin-bottom:10px;"
+                        title="一键更新暂时用不了：宿主机上的更新代理没在运行"
+                        description="面板容器没有 docker 权限，得由宿主机上的代理来执行更新。在服务器上跑一次下面这条就装好了，之后就能一直用。" />
+              <div class="cmd-box">
+                <code class="mono">{{ 'sudo bash ' + (sys.install_dir || '/opt/ocix') + '/scripts/install.sh' }}</code>
+                <button class="copy-btn" @click="copy('sudo bash ' + (sys.install_dir || '/opt/ocix') + '/scripts/install.sh')"
+                        aria-label="复制安装命令">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                </button>
+              </div>
+              <p class="hint" style="margin-top:0;">
+                装完刷新本页即可。也可以直接用下面的「手动更新」命令，效果一样。
+              </p>
+            </template>
 
             <p class="hint" style="margin-top:0;">
               点下面的按钮就会在宿主机上执行更新。面板容器本身<strong>没有</strong> docker 权限——
@@ -1282,8 +1294,66 @@
 
         <!-- 密码 -->
         <section class="pane" v-show="activeTab === 'password'">
+          <!-- Oracle 账号的密码策略放最前面：那条 120 天的强制改密就是它 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">Oracle 账号密码有效期</div>
+              <el-button size="small" @click="loadConsolePolicy(true)"
+                         :loading="consoleLoading">重新读取</el-button>
+            </div>
+
+            <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px;"
+                      title="这是 Oracle 账号（控制台登录）的密码策略，不是面板的登录密码"
+                      description="免费租户默认 120 天必须改一次控制台密码。改成 0 就不再到期。" />
+
+            <template v-if="consolePolicy.supported">
+              <div class="kv" style="margin-bottom:12px;">
+                <span class="state">
+                  <i :class="['dot', consoleDays > 0 ? 'attn' : 'ok']"></i>
+                  <span class="state-label" style="font-size:13px;">
+                    {{ consoleDays > 0 ? consoleDays + ' 天后必须改密' : '永不过期' }}
+                  </span>
+                </span>
+                <span class="who">账户：{{ currentProfile }}</span>
+              </div>
+
+              <div class="table-wrap" v-if="consolePolicy.policies.length > 1">
+                <el-table :data="consolePolicy.policies" size="small" stripe border>
+                  <el-table-column prop="domain_name" label="Identity Domain" min-width="140" />
+                  <el-table-column prop="name" label="策略" min-width="160" />
+                  <el-table-column label="有效期" width="110">
+                    <template #default="{row}">
+                      <span class="mono">{{ row.expires_after_days || '永不过期' }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+              <el-form label-position="top" @submit.prevent style="margin-top:10px;">
+                <el-form-item label="多少天后必须改密（0 = 永不过期）">
+                  <el-input-number v-model="consoleForm.days" :min="0" :max="3650" :step="30"
+                                   style="width:180px;" />
+                </el-form-item>
+                <el-button type="primary" @click="saveConsolePolicy" :loading="consoleSaving">
+                  应用到 Oracle 账号
+                </el-button>
+                <el-button @click="consoleForm.days = 0; saveConsolePolicy()"
+                           :loading="consoleSaving">设为永不过期</el-button>
+              </el-form>
+              <p class="hint">
+                改的是 Identity Domain 里的 <code class="mono">passwordExpiresAfter</code>，
+                等同于在 OCI 控制台改密码策略。需要当前用户有该域的写权限。
+              </p>
+            </template>
+
+            <div class="empty" v-else-if="!consoleLoading">
+              <b>读不到控制台密码策略</b>
+              {{ consolePolicy.error || '选一个账户后点「重新读取」。' }}
+            </div>
+          </div>
+
           <div class="card" style="max-width:420px;">
-            <div class="card-head"><div class="card-title">修改登录密码</div></div>
+            <div class="card-head"><div class="card-title">修改面板登录密码</div></div>
             <el-form label-position="top" @submit.prevent>
               <el-form-item label="当前密码">
                 <el-input v-model="pw.old_password" type="password" show-password autocomplete="current-password" />
@@ -1298,10 +1368,10 @@
           </div>
 
           <div class="card" style="max-width:420px;">
-            <div class="card-head"><div class="card-title">密码有效期</div></div>
+            <div class="card-head"><div class="card-title">面板登录密码有效期</div></div>
 
             <el-alert v-if="pwPolicy.expired" type="error" show-icon :closable="false"
-                      style="margin-bottom:12px;" title="密码已过期"
+                      style="margin-bottom:12px;" title="面板密码已过期"
                       description="改密之前，其它功能都用不了。" />
             <el-alert v-else-if="pwPolicy.days_left !== null && pwPolicy.days_left <= 7"
                       type="warning" show-icon :closable="false" style="margin-bottom:12px;"
@@ -1315,7 +1385,8 @@
               <el-button type="primary" @click="savePwPolicy" :loading="loading">保存</el-button>
             </el-form>
             <p class="hint">
-              填 <strong>0</strong> 表示永不过期。默认 120 天。
+              管的是<strong>面板自己</strong>的登录密码，默认 <strong>0</strong>（永不过期）。
+              Oracle 账号那条 120 天的规则在上面单独设。
               <template v-if="pwPolicy.max_age_days > 0 && pwPolicy.days_left !== null">
                 当前还剩 {{ pwPolicy.days_left }} 天。
               </template>
@@ -1587,8 +1658,14 @@ createApp({
     const updBusy = ref(false);
     let updTimer = null;
 
-    // ---- 密码有效期 ----
+    // ---- 面板自己的登录密码有效期 ----
     const pwPolicy = ref({ max_age_days: 0, days_left: null, expired: false });
+
+    // ---- Oracle 账号（控制台登录）的密码有效期 ----
+    const consolePolicy = ref({ supported: false, policies: [] });
+    const consoleForm = reactive({ days: 0 });
+    const consoleLoading = ref(false);
+    const consoleSaving = ref(false);
 
     // ---- 版本 / 更新 ----
     const sys = ref({ current: '', latest: null, update_available: false,
@@ -2208,6 +2285,7 @@ createApp({
       storage.value = null; preflight.value = null;
       // 等级是按账户算的，换账户必须清掉，否则会把上一个账户的结论安在新账户头上
       tier.value = {};
+      consolePolicy.value = { supported: false, policies: [] };
       firewall.value = null; fwInstance.value = '';
       opts.value = { ...opts.value, availability_domains: [], images: [], subnets: [] };
       createForm.availability_domain = ''; createForm.image_id = '';
@@ -2215,6 +2293,7 @@ createApp({
       loadCompartments();
       loadSingle(activeTab.value === 'usage');
       if (activeTab.value === 'usage') loadTier(false);
+      if (activeTab.value === 'password') loadConsolePolicy(true);
       if (activeTab.value === 'create') { loadCreateOptions(); doPreflight(); }
       if (activeTab.value === 'storage') loadStorage();
       if (activeTab.value === 'firewall') firewall.value = null;
@@ -2237,7 +2316,7 @@ createApp({
       } else {
         watchUpdate(false);
       }
-      if (name === 'password') loadPwPolicy();
+      if (name === 'password') { loadPwPolicy(); loadConsolePolicy(false); }
       if (name === 'usage') loadTier(false);
       if (name === 'profile') loadAllTiers(false);
       if (name === 'firewall') {
@@ -2491,6 +2570,55 @@ createApp({
       } finally { tierLoading.value = false; }
     }
 
+    // 多条策略时取最短的那条：真正卡住你的就是它
+    const consoleDays = computed(() => {
+      const list = (consolePolicy.value.policies || []).filter(p => p.expires_after_days > 0);
+      if (!list.length) return 0;
+      return Math.min(...list.map(p => p.expires_after_days));
+    });
+
+    async function loadConsolePolicy(force) {
+      if (!currentProfile.value) return;
+      if (consolePolicy.value.supported && !force) return;
+      consoleLoading.value = true;
+      try {
+        const { data } = await axios.get(
+          `/api/profiles/${encodeURIComponent(currentProfile.value)}/console-password-policy`);
+        consolePolicy.value = data;
+        consoleForm.days = consoleDays.value;
+      } catch (e) {
+        consolePolicy.value = { supported: false, policies: [], error: errMsg(e, '读取失败') };
+      } finally { consoleLoading.value = false; }
+    }
+
+    async function saveConsolePolicy() {
+      const days = Math.max(0, Number(consoleForm.days) || 0);
+      try {
+        await ElMessageBox.confirm(
+          days === 0
+            ? '把 Oracle 账号的控制台密码设为永不过期？\n这会改动 Identity Domain 的密码策略，等同于在 OCI 控制台里改。'
+            : `把 Oracle 账号的控制台密码有效期设为 ${days} 天？`,
+          '确认修改 Oracle 账号密码策略',
+          { type: 'warning', confirmButtonText: '确认修改', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      consoleSaving.value = true;
+      try {
+        const { data } = await axios.put(
+          `/api/profiles/${encodeURIComponent(currentProfile.value)}/console-password-policy`,
+          { days });
+        consolePolicy.value = data.policy;
+        consoleForm.days = consoleDays.value;
+        ElMessage.success(days === 0 ? 'Oracle 账号密码已设为永不过期'
+                                     : `Oracle 账号密码有效期已设为 ${days} 天`);
+        if ((data.failed || []).length) {
+          ElMessage.warning('部分策略没改成：' + data.failed.join('；'));
+        }
+      } catch (e) {
+        ElMessage.error(errMsg(e, '修改失败'));
+      } finally { consoleSaving.value = false; }
+    }
+
     async function loadPwPolicy() {
       try {
         const { data } = await axios.get('/api/auth/password-policy');
@@ -2683,6 +2811,8 @@ createApp({
       ruleForm, addRule, deleteRule, clearRules, vpuRange, vpuTier,
       upd, updBusy, updRunning, updStateText, updTagType, doUpdate,
       pwPolicy, savePwPolicy,
+      consolePolicy, consoleForm, consoleLoading, consoleSaving, consoleDays,
+      loadConsolePolicy, saveConsolePolicy,
       tier, tierLoading, loadTier, tiers, tierBusy, loadAllTiers,
       tierDot, tierText, tierTitle, tierDotOf,
       sys, sysLoading, loadSystem,

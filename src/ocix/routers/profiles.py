@@ -20,10 +20,13 @@ from ..config import KEYS_DIR, OCI_CONFIG_PATH
 from ..db import audit, delete_profile_db, list_profiles_db, upsert_profile
 from ..oci_helpers import (
     account_tier,
+    console_password_policy,
     get_user,
     invalidate_compartment_cache,
     read_profile_config,
+    set_console_password_expiry,
 )
+from ..schemas import ConsolePasswordPolicyRequest
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
@@ -336,3 +339,46 @@ def profile_tier(
         return account_tier(name, with_limits=limits)
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.get("/{name}/console-password-policy")
+def get_console_password_policy(
+    name: str,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """Oracle 账号（控制台登录）的密码有效期。
+
+    注意这跟面板自己的登录密码不是一回事：这条是 Oracle 侧的策略，
+    免费租户默认 120 天必须改一次。
+    """
+    security.check_rate(request, security.API_RATE_LIMIT)
+    _check_name(name)
+    try:
+        return console_password_policy(name)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.put("/{name}/console-password-policy")
+def put_console_password_policy(
+    name: str,
+    req: ConsolePasswordPolicyRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """改 Oracle 账号的密码有效期，0 = 永不过期。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    _check_name(name)
+    ip = security.client_ip(request)
+    try:
+        res = set_console_password_expiry(name, req.days, req.policy_id)
+    except OCIError as e:
+        audit(user, "console-password-policy", profile=name, target=name,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "console-password-policy", profile=name, target=name,
+          detail=("控制台密码设为永不过期" if req.days == 0
+                  else f"控制台密码有效期设为 {req.days} 天"),
+          result="ok", ip=ip)
+    return res

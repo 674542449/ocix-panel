@@ -83,6 +83,20 @@ if [[ -f .env ]]; then
   fi
 fi
 
+# 更新代理没装或没跑就补上。
+# 网页端一键更新靠它执行；只跑 update.sh 的老用户机器上还没有这个服务，
+# 不在这儿补的话，更新页的按钮会一直是灰的。
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system && $EUID -eq 0 ]]; then
+  if ! systemctl is-active --quiet ocix-updater.service; then
+    echo "安装/启动更新代理…"
+    mkdir -p "${REPO_ROOT}/var/control"
+    sed "s|__OCIX_HOME__|${REPO_ROOT}|g" "${REPO_ROOT}/deploy/ocix-updater.service"       > /etc/systemd/system/ocix-updater.service
+    systemctl daemon-reload
+    systemctl enable --now ocix-updater.service >/dev/null 2>&1 || true
+    systemctl is-active --quiet ocix-updater.service       && ok "更新代理已就绪，之后可以直接在网页上点「立即更新」"       || warn "更新代理没起来： systemctl status ocix-updater"
+  fi
+fi
+
 echo "重新构建并重启…"
 bash "$REPO_ROOT/scripts/ocix.sh" up -d --build
 

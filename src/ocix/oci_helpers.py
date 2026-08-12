@@ -31,11 +31,34 @@ def _num(value, default=0.0) -> float:
         return default
 
 
+_SNAKE_CACHE: dict = {}
+
+
+def _snake(key: str) -> str:
+    """把 kebab-case / camelCase 统一成 snake_case。"""
+    hit = _SNAKE_CACHE.get(key)
+    if hit is None:
+        hit = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", key.replace("-", "_")).lower()
+        _SNAKE_CACHE[key] = hit
+    return hit
+
+
 def _get(d: dict, *keys, default=None):
-    """SDK 返回 snake_case，历史数据可能是 kebab-case，两种都兜住。"""
+    """按多个键名取值，自动补上每个键的 snake_case 变体。
+
+    改用 SDK 之后返回的一律是 snake_case，但不少调用点还沿用 CLI 时代的
+    kebab-case / camelCase 键名。漏一个不会报错，只会静默取到 None——
+    危害很大：安全规则的 tcp_options 取不到，重写规则时端口范围就丢了，
+    「加一条规则」会把已有的 TCP 规则统统放大成全端口；
+    路由规则的 network_entity_id 取不到，开 IPv6 会把已有路由的目标清空。
+    所以这里统一兜底，而不是指望每个调用点都写全。
+    """
+    if not isinstance(d, dict):
+        return default
     for k in keys:
-        if isinstance(d, dict) and d.get(k) is not None:
-            return d[k]
+        for cand in (k, _snake(k)):
+            if d.get(cand) is not None:
+                return d[cand]
     return default
 
 
@@ -955,6 +978,25 @@ def _set_ingress(profile: str, security_list_id: str, rules: list) -> None:
     _b().update_ingress_rules(profile, security_list_id, rules)
 
 
+def _norm_rule_option(kind: str, opt: dict) -> dict:
+    """把从 OCI 读回来的规则选项，规整成写回去时要的 camelCase 形态。
+
+    读回来是 snake_case（destination_port_range），写出去要 camelCase
+    （destinationPortRange）。原样透传的话有两个后果：
+    写回 OCI 时端口范围会丢（写侧只认 camelCase），
+    而且判重时「读回来的」和「新建的」永远不相等，同一条规则会被反复添加。
+    """
+    if kind == "icmpOptions":
+        return {"type": _get(opt, "type"), "code": _get(opt, "code")}
+    out = {}
+    for src, dst in (("destination-port-range", "destinationPortRange"),
+                     ("source-port-range", "sourcePortRange")):
+        rng = _get(opt, src, dst)
+        if rng:
+            out[dst] = {"min": _get(rng, "min"), "max": _get(rng, "max")}
+    return out
+
+
 def _raw_ingress(profile: str, security_list_id: str) -> list:
     sl = _b().get_security_list(profile, security_list_id)
     out = []
@@ -971,7 +1013,7 @@ def _raw_ingress(profile: str, security_list_id: str) -> list:
                          ("icmp-options", "icmpOptions")):
             opt = _get(r, src, dst)
             if opt:
-                rule[dst] = opt
+                rule[dst] = _norm_rule_option(dst, opt)
         out.append(rule)
     return out
 
@@ -1338,3 +1380,107 @@ def account_tier(profile: str, with_limits: bool = True) -> dict:
         "limit_error": limit_error,
         "limits_note": "服务配额仅供参考——免费账号上也可能非零，不能作为付费依据。",
     })
+
+
+# ---------------- 控制台登录密码策略（Oracle 账号本身的密码）----------------
+# 免费/新版租户把「多少天必须改一次控制台密码」存在 Identity Domain 的
+# PasswordPolicy 里（passwordExpiresAfter），默认 120 天。
+# 这跟面板自己的登录密码是两回事，别混。
+
+
+def _domains(profile: str) -> list:
+    tenancy = tenancy_of(profile)
+    out = []
+    for d in _b().list_domains(profile, tenancy):
+        url = (_get(d, "url") or _get(d, "home-region-url", "home_region_url") or "").strip()
+        if not url:
+            continue
+        out.append({
+            "id": _get(d, "id"),
+            "name": _get(d, "display-name", "display_name") or _get(d, "id"),
+            "url": url.rstrip("/"),
+            "type": _get(d, "type") or "",
+        })
+    # 默认域排前面，多数人只关心它
+    out.sort(key=lambda x: (0 if x["type"] == "DEFAULT" else 1, x["name"] or ""))
+    return out
+
+
+def console_password_policy(profile: str) -> dict:
+    """读取 Oracle 账号（控制台登录）的密码有效期。"""
+    ck = (profile, "console_pwd_policy")
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+
+    try:
+        domains = _domains(profile)
+    except OCIError as e:
+        return {"supported": False, "policies": [],
+                "error": f"读取 Identity Domain 失败：{e.message}"}
+
+    if not domains:
+        return {
+            "supported": False, "policies": [],
+            "error": "没找到 Identity Domain。租户可能还是经典 IAM，"
+                     "或者当前用户没有 inspect domains 权限。",
+        }
+
+    policies, errors = [], []
+    for d in domains:
+        try:
+            for p in _b().list_password_policies(profile, d["url"]):
+                expires = _get(p, "password-expires-after", "password_expires_after")
+                policies.append({
+                    "domain_id": d["id"],
+                    "domain_name": d["name"],
+                    "domain_url": d["url"],
+                    "policy_id": _get(p, "id"),
+                    "name": _get(p, "name") or "",
+                    "priority": _get(p, "priority"),
+                    # None / 0 都当作永不过期
+                    "expires_after_days": int(expires) if expires else 0,
+                })
+        except OCIError as e:
+            errors.append(f"{d['name']}: {e.message}")
+
+    result = {
+        "supported": bool(policies),
+        "policies": sorted(policies, key=lambda x: (x["priority"] or 999, x["name"])),
+        "error": "；".join(errors) if errors and not policies else None,
+        "warnings": errors if policies and errors else [],
+    }
+    return _read_cache.set(ck, result)
+
+
+def set_console_password_expiry(profile: str, days: int, policy_id: str = None) -> dict:
+    """改 Oracle 账号的密码有效期。days=0 表示永不过期。
+
+    不指定 policy_id 就把所有域的策略一起改——用户想要的是
+    「以后别再逼我改密码」，而不是挑某一条策略。
+    """
+    current = console_password_policy(profile)
+    targets = [p for p in current["policies"]
+               if not policy_id or p["policy_id"] == policy_id]
+    if not targets:
+        raise OCIError(current.get("error") or "没有可修改的密码策略")
+
+    days = max(0, int(days))
+    changed, failed = [], []
+    for p in targets:
+        try:
+            _b().set_password_expiry(profile, p["domain_url"], p["policy_id"], days)
+            changed.append(p["name"] or p["policy_id"])
+        except OCIError as e:
+            failed.append(f"{p['name'] or p['policy_id']}: {e.message}")
+
+    invalidate_read_cache(profile)
+    if not changed:
+        raise OCIError("修改失败：" + "；".join(failed))
+    return {
+        "ok": True,
+        "days": days,
+        "changed": changed,
+        "failed": failed,
+        "policy": console_password_policy(profile),
+    }

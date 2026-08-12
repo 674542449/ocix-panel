@@ -286,3 +286,68 @@ def test_change_ephemeral_ip(fake):
     assert res["new_ip"] == "5.6.7.8"
     assert fake.count("delete_public_ip") == 1
     assert fake.count("create_ephemeral_public_ip") == 1
+
+
+# ── SDK 迁移遗留的键名问题（读回来是 snake_case）──
+
+def test_metrics_parse_sdk_snake_case_datapoints(fake):
+    """回归：监控页一直空白。
+
+    SDK 返回的是 aggregated_datapoints，而代码只找 kebab / camel 两种写法，
+    永远取不到，图表和表格全是空的。
+    """
+    fake.metrics = [{
+        "name": "CpuUtilization",
+        "aggregated_datapoints": [
+            {"timestamp": "2026-08-12T10:00:00Z", "value": 12.5},
+            {"timestamp": "2026-08-12T10:01:00Z", "value": 20.0},
+        ],
+    }]
+    out = H.get_metrics("P", "inst1", "cid", hours=1)
+    cpu = next(m for m in out if m["metric"] == "CpuUtilization")
+    assert cpu["count"] == 2
+    assert cpu["latest"] == 20.0
+    assert cpu["avg"] == 16.25
+
+
+def test_adding_a_rule_keeps_existing_port_ranges(fw):
+    """回归（重要）：加一条规则会把已有 TCP 规则放大成全端口。
+
+    读回来的是 tcp_options（snake），代码只找 tcpOptions，取不到就等于没有，
+    重写规则集时端口范围整个丢掉——等于悄悄把没打算开的端口全开了。
+    """
+    # fw 里本来就有一条 SSH 22 规则，它的端口范围同样不能在重写中丢掉
+    H.add_port_rule("P", "sub1", "TCP", 80, 80, "0.0.0.0/0")
+    H.invalidate_read_cache()
+    H.add_port_rule("P", "sub1", "TCP", 8443, 8443, "0.0.0.0/0")
+
+    ranges = sorted(
+        (r["tcpOptions"]["destinationPortRange"]["min"],
+         r["tcpOptions"]["destinationPortRange"]["max"])
+        for r in fw.ingress_rules if r.get("tcpOptions"))
+    assert ranges == [(22, 22), (80, 80), (8443, 8443)], fw.ingress_rules
+
+
+def test_rule_dedup_still_works_after_round_trip(fw):
+    """判重要拿读回来的形态和新建的比，键名不一致就会重复添加。"""
+    before = len(fw.ingress_rules)
+    H.add_port_rule("P", "sub1", "TCP", 443, 443, "0.0.0.0/0")
+    H.invalidate_read_cache()
+    res = H.add_port_rule("P", "sub1", "TCP", 443, 443, "0.0.0.0/0")
+    assert res["added"] is False
+    assert len(fw.ingress_rules) == before + 1
+
+
+def test_enabling_ipv6_keeps_existing_route_targets(fake):
+    """回归：开 IPv6 会重写整张路由表，已有规则的目标不能被清空。"""
+    fake.route_rules_existing = [{
+        "destination": "0.0.0.0/0",
+        "destinationType": "CIDR_BLOCK",
+        "networkEntityId": "ocid1.internetgateway.oc1..existing",
+    }]
+    H._ensure_ipv6_route("P", "vcn1", "cid", "rt1")
+
+    old = next(r for r in fake.route_rules if r["destination"] == "0.0.0.0/0")
+    assert old["networkEntityId"] == "ocid1.internetgateway.oc1..existing", \
+        "已有路由的目标被清空了"
+    assert any(r["destination"] == "::/0" for r in fake.route_rules)

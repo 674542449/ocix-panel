@@ -353,6 +353,69 @@ class SDKBackend(Backend):
                      compartment_id=compartment_id, entity_version="V1")
         return [to_dict(x) for x in (getattr(resp.data, "items", None) or [])]
 
+    # ---------- Identity Domains（控制台登录密码策略）----------
+    def _domains_client(self, profile: str, domain_url: str):
+        """每个 Identity Domain 有自己的 SCIM 端点，按 URL 缓存客户端。"""
+        key = (profile, "domains", domain_url)
+        with self._lock:
+            hit = self._clients.get(key)
+        if hit is not None:
+            return hit
+        endpoint = (domain_url or "").strip().rstrip("/")
+        if not endpoint:
+            raise OCIError("Identity Domain 的 URL 为空，无法读取密码策略")
+        client = _wrap(oci.identity_domains.IdentityDomainsClient,
+                       self._cfg(profile), service_endpoint=endpoint)
+        with self._lock:
+            self._clients[key] = client
+        return client
+
+    def list_domains(self, profile, compartment_id):
+        return self._all(self._iam(profile).list_domains, compartment_id,
+                         lifecycle_state="ACTIVE")
+
+    def list_password_policies(self, profile, domain_url):
+        # attribute_sets=["all"] 不能省：默认返回的精简视图里没有 passwordExpiresAfter
+        resp = _wrap(self._domains_client(profile, domain_url).list_password_policies,
+                     count=100, attribute_sets=["all"])
+        return [to_dict(x) for x in (getattr(resp.data, "resources", None) or [])]
+
+    def set_password_expiry(self, profile, domain_url, policy_id, days):
+        """days=0 表示永不过期（把字段整个删掉），>0 则设成具体天数。
+
+        用的是 SCIM PatchOp。op 必须大写（REMOVE / REPLACE），
+        小写会被域直接拒掉。
+        """
+        from oci.identity_domains.models import Operations, PatchOp
+
+        client = self._domains_client(profile, domain_url)
+        if int(days) <= 0:
+            ops = [Operations(op=Operations.OP_REMOVE, path="passwordExpiresAfter"),
+                   Operations(op=Operations.OP_REMOVE, path="passwordExpireWarning")]
+            fallback = [
+                Operations(op=Operations.OP_REPLACE, path="passwordExpiresAfter", value=None),
+                Operations(op=Operations.OP_REPLACE, path="passwordExpireWarning", value=None),
+            ]
+        else:
+            ops = [Operations(op=Operations.OP_REPLACE,
+                              path="passwordExpiresAfter", value=int(days))]
+            fallback = None
+
+        def _patch(operations):
+            patch = PatchOp(schemas=["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                            operations=operations)
+            return _wrap(client.patch_password_policy, policy_id,
+                         patch_op=patch, attribute_sets=["all"])
+
+        try:
+            resp = _patch(ops)
+        except OCIError:
+            # 有的域不接受 REMOVE，退回用 REPLACE 置空
+            if fallback is None:
+                raise
+            resp = _patch(fallback)
+        return _d(resp.data)
+
     def get_subscription(self, profile, subscription_id):
         """订阅详情，含 subscription_tier 与 promotion。
 

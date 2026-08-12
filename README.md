@@ -75,7 +75,8 @@ sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/
 **运维**
 - 免费额度对照、CPU / 内存时序图（1 小时 ~ 7 天）
 - 审计日志（登录 / 改密 / 开关机 / 账户增删，含来源 IP）
-- 登录鉴权（JWT）、限流、自动 HTTPS、**密码有效期**（默认 120 天，可设 0 关闭）
+- 登录鉴权（JWT）、限流、自动 HTTPS
+- **改 Oracle 账号的密码有效期**：默认 120 天强制改密，面板里一键设为永不过期
 - **账户等级**：账户列表直接标出免费号 / 已升级，依据租户订阅记录
 - **网页一键更新**：点一下就更新，不用 SSH
 
@@ -243,6 +244,21 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 
 界面本身仍是中文，只有出境到 Oracle 的字段受此限制。
 
+### 一个反复踩的坑：SDK 返回的是 snake_case
+
+改用 SDK 后返回值统一是 `snake_case`，但不少地方还沿用 CLI 时代的
+`kebab-case` / `camelCase` 键名。取不到不会报错，只会静默变成 `None`，
+后果一度很严重：
+
+- 监控页永远空白（`aggregated_datapoints` 取不到）
+- **加一条防火墙规则会把已有 TCP 规则放大成全端口**（`tcp_options` 丢了，
+  重写规则集时端口范围一起没了）
+- 开 IPv6 会清空已有路由的目标（`network_entity_id` 取不到）
+
+现在 `_get()` 会自动补上每个键的 snake_case 变体，不再指望每个调用点写全；
+测试里的假后端也改成**按 SDK 形态返回**——之前它原样回显面板写进去的
+camelCase，等于把这一整类问题全遮住了。
+
 ### 关于响应速度
 
 **调用次数就是等待时间**，所以优化的核心是减少调用。以「3 个 compartment、3 台实例」为例：
@@ -304,13 +320,29 @@ Allow group <你所在的组> to inspect subscriptions in tenancy
 systemctl status ocix-updater
 ```
 
-## 密码有效期
+## 两种密码有效期，别搞混
 
-默认 **120 天**必须改一次密码，可在「密码」页自由调整，**填 0 表示永不过期**。
+| | 管什么 | 默认 | 在哪改 |
+|---|---|---|---|
+| **Oracle 账号密码** | OCI 控制台登录密码，到期强制改 | **120 天**（Oracle 定的） | 「密码」页顶部，可设 0 = 永不过期 |
+| **面板登录密码** | 这个面板自己的登录密码 | **0 = 永不过期** | 「密码」页下方 |
 
-超期后所有业务接口返回 403，只留 `/api/auth/me` 和改密接口可用——
-否则就把自己锁在门外了。前端收到带 `X-OCIX-Password-Expired` 标记的响应会
-自动跳到密码页。
+### Oracle 账号密码：120 天那条就是它
+
+免费/新版租户把这条规则存在 Identity Domain 的 `passwordExpiresAfter` 里。
+面板可以直接改（走 SCIM PatchOp，等同于在 OCI 控制台里改密码策略）：
+
+- 填 **0** → 删掉该字段，控制台密码不再到期
+- 填具体天数 → 改成那个值
+
+需要当前 API 用户对该域有写权限。经典 IAM 租户没有 Identity Domain，
+面板会直接说明而不是报个空。
+
+### 面板登录密码
+
+默认**永不过期**。想加强制轮换就填天数，超期后所有业务接口返回 403，
+只留 `/api/auth/me` 和改密接口可用——否则会把自己锁在门外。
+前端收到 `X-OCIX-Password-Expired` 标记会自动跳到密码页。
 
 ## 安全要点
 
@@ -340,7 +372,8 @@ systemctl status ocix-updater
 | GET | `/api/health` | 探活（无需鉴权，只回 ok） |
 | GET | `/api/diagnostics` | 环境自检：版本 / SDK / 配置状态（需登录） |
 | GET | `/api/profiles/{name}/tier` | 账户等级；`?limits=false` 可省掉配额查询 |
-| GET · PUT | `/api/auth/password-policy` | 密码有效期（0 = 永不过期） |
+| GET · PUT | `/api/auth/password-policy` | **面板**登录密码有效期（0 = 永不过期） |
+| GET · PUT | `/api/profiles/{name}/console-password-policy` | **Oracle 账号**控制台密码有效期 |
 | POST | `/api/system/update` | 请求更新（由宿主机代理执行） |
 | GET | `/api/system/update/status` | 更新进度与日志 |
 | POST | `/api/auth/login` | 登录获取 JWT |
