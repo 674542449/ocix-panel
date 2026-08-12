@@ -58,7 +58,7 @@ def get_compartments(
 def get_instances(
     profile: str,
     compartment_id: str = None,
-    subtree: bool = Query(True, description="是否遍历子 compartment"),
+    subtree: bool = Query(False, description="是否遍历子 compartment（开启会成倍增加查询次数）"),
     with_ip: bool = Query(True, description="是否附带公网/内网 IP（会多几次 CLI 调用）"),
     include_terminated: bool = False,
     request: Request = None,
@@ -77,7 +77,7 @@ def get_instances(
 
 @router.get("/all")
 def get_all_instances(
-    subtree: bool = Query(True),
+    subtree: bool = Query(False),
     with_ip: bool = Query(False, description="多账户默认不查 IP，账户多时太慢"),
     request: Request = None,
     user: str = Depends(security.get_current_user),

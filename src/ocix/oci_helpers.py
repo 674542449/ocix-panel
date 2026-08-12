@@ -340,12 +340,17 @@ def list_boot_volumes(profile: str, compartment_id: str = None, subtree: bool = 
 
 
 def _availability_domains(profile: str) -> list:
+    ck = (profile, "ads")
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     try:
         data = run_oci(
             profile, "iam", "availability-domain", "list",
             "--compartment-id", tenancy_of(profile),
         )
-        return [a.get("name") for a in (data.get("data", []) or []) if a.get("name")]
+        return _read_cache.set(
+            ck, [a.get("name") for a in (data.get("data", []) or []) if a.get("name")])
     except OCICLIError:
         return []
 
@@ -407,10 +412,19 @@ def storage_overview(profile: str, compartment_id: str = None, subtree: bool = T
     instances = list_instances(profile, compartment_id, subtree=subtree)
     inst_names = {i.get("id"): (i.get("display-name") or i.get("display_name")) for i in instances}
 
-    targets = _target_compartments(profile, compartment_id, subtree)
+    # 只查真正有卷的 compartment：挂载关系查询要按可用域循环，是这一页最贵的部分
+    vol_comps = {_get(v, "compartment-id", "compartment_id") for v in boot + block}
+    vol_comps.discard(None)
+    if not vol_comps:
+        vol_comps = set(_target_compartments(profile, compartment_id, subtree))
+    boot_comps = {_get(v, "compartment-id", "compartment_id") for v in boot} - {None}
+    block_comps = {_get(v, "compartment-id", "compartment_id") for v in block} - {None}
+
     boot_att, block_att = {}, {}
-    for _cid, res, err in gather(lambda c: (_boot_volume_attachments(profile, c),
-                                            _block_volume_attachments(profile, c)), targets):
+    for _cid, res, err in gather(
+            lambda c: (_boot_volume_attachments(profile, c) if c in boot_comps else {},
+                       _block_volume_attachments(profile, c) if c in block_comps else {}),
+            vol_comps):
         if err is None and res:
             boot_att.update(res[0])
             block_att.update(res[1])
@@ -477,6 +491,10 @@ def _version_key(v: str) -> tuple:
 def list_images(profile: str, compartment_id: str = None, shape: str = None,
                 os_name: str = "Canonical Ubuntu", keep_majors: int = 2) -> list:
     """只列 Ubuntu 镜像，按规格过滤（ARM 需要 aarch64），且只保留最新的两个大版本。"""
+    ck = (profile, "images", compartment_id, shape, os_name, keep_majors)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     cid = compartment_id or tenancy_of(profile)
     args = [
         "compute", "image", "list", "--compartment-id", cid,
@@ -508,11 +526,15 @@ def list_images(profile: str, compartment_id: str = None, shape: str = None,
             by_version[key] = row
 
     versions = sorted(by_version, key=_version_key, reverse=True)[:max(1, keep_majors)]
-    return [by_version[v] for v in versions]
+    return _read_cache.set(ck, [by_version[v] for v in versions])
 
 
 def list_subnets(profile: str, compartment_id: str = None) -> list:
     """列出可用于开机的子网（附带所属 VCN 名）。"""
+    ck = (profile, "subnets", compartment_id)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     cid = compartment_id or tenancy_of(profile)
     try:
         vcn_data = run_oci(profile, "network", "vcn", "list", "--compartment-id", cid, "--all")
@@ -549,7 +571,8 @@ def list_subnets(profile: str, compartment_id: str = None) -> list:
                 "public": not _get(s, "prohibit-public-ip-on-vnic",
                                    "prohibit_public_ip_on_vnic", default=False),
             })
-    return [s for s in out if s["public"]] + [s for s in out if not s["public"]]
+    return _read_cache.set(
+        ck, [s for s in out if s["public"]] + [s for s in out if not s["public"]])
 
 
 DEFAULT_NETWORK_NAME = "ocix-vcn"
@@ -659,7 +682,15 @@ def launch_instance(profile: str, params: dict) -> dict:
 
 
 def primary_vnic(profile: str, instance_id: str, compartment_id: str) -> dict:
-    """拿到实例的主 VNIC——换 IP、查 IPv6、定位子网都要靠它。"""
+    """拿到实例的主 VNIC——换 IP、查 IPv6、定位子网都要靠它。
+
+    结果缓存 30 秒：一次防火墙操作要反复定位同一张网卡，
+    每次重查都是 2 次 CLI 调用（约 2.3 秒）。
+    """
+    ck = (profile, "vnic", instance_id)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     data = run_oci(profile, "compute", "vnic-attachment", "list",
                    "--compartment-id", compartment_id, "--instance-id", instance_id, "--all")
     vnic_id = None
@@ -670,13 +701,13 @@ def primary_vnic(profile: str, instance_id: str, compartment_id: str) -> dict:
     if not vnic_id:
         raise OCICLIError("找不到实例的网卡（VNIC），实例可能正在创建或已终止")
     vnic = run_oci(profile, "network", "vnic", "get", "--vnic-id", vnic_id).get("data", {}) or {}
-    return {
+    return _read_cache.set(ck, {
         "vnic_id": vnic_id,
         "subnet_id": _get(vnic, "subnet-id", "subnet_id"),
         "public_ip": _get(vnic, "public-ip", "public_ip"),
         "private_ip": _get(vnic, "private-ip", "private_ip"),
         "ipv6_addresses": _get(vnic, "ipv6-addresses", "ipv6_addresses", default=[]) or [],
-    }
+    })
 
 
 def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dict:
@@ -972,8 +1003,12 @@ _PROTO = {"1": "ICMP", "6": "TCP", "17": "UDP", "58": "ICMPv6", "all": "全部�
 def firewall_status(profile: str, instance_id: str, compartment_id: str) -> dict:
     """读取实例所在子网的安全列表——这是 OCI 云端防火墙的真实状态。"""
     vnic = primary_vnic(profile, instance_id, compartment_id)
-    sub = run_oci(profile, "network", "subnet", "get",
-                  "--subnet-id", vnic["subnet_id"]).get("data", {}) or {}
+    sub = _read_cache.get((profile, "subnet_obj", vnic["subnet_id"]))
+    if sub is None:
+        sub = _read_cache.set(
+            (profile, "subnet_obj", vnic["subnet_id"]),
+            run_oci(profile, "network", "subnet", "get",
+                    "--subnet-id", vnic["subnet_id"]).get("data", {}) or {})
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
 
     def _one(sid):
@@ -1042,12 +1077,17 @@ def _raw_ingress(profile: str, security_list_id: str) -> list:
 
 
 def _subnet_security(profile: str, subnet_id: str) -> tuple:
+    ck = (profile, "subnet_sec", subnet_id)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     sub = run_oci(profile, "network", "subnet", "get",
                   "--subnet-id", subnet_id).get("data", {}) or {}
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
     if not sl_ids:
         raise OCICLIError("该子网未关联安全列表，无法修改防火墙规则")
-    return sl_ids[0], bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))
+    return _read_cache.set(
+        ck, (sl_ids[0], bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))))
 
 
 def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = True) -> dict:

@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/monitor", tags=["monitor"])
 def usage(
     profile: str,
     compartment_id: str = None,
-    subtree: bool = Query(True),
+    subtree: bool = Query(False),
     request: Request = None,
     user: str = Depends(security.get_current_user),
 ):

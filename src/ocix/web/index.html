@@ -349,7 +349,7 @@
                      clearable filterable :loading="compsLoading">
             <el-option v-for="c in compartments" :key="c.id" :value="c.id" :label="c.path" />
           </el-select>
-          <el-tooltip content="同时查询所有子 compartment，关掉会明显更快" placement="bottom">
+          <el-tooltip content="默认只查租户根。开启后会逐个遍历子 compartment，查询次数成倍增加" placement="bottom">
             <el-checkbox v-model="subtree" label="含子 compartment" />
           </el-tooltip>
           <el-button type="primary" @click="refreshActive" :loading="loading">刷新</el-button>
@@ -1251,7 +1251,7 @@ createApp({
     const compartments = ref([]);
     const compsLoading = ref(false);
     const compartmentId = ref('');
-    const subtree = ref(true);
+    const subtree = ref(false);
     const activeTab = ref('all');
     const lastUpdated = ref('');
 
@@ -1465,16 +1465,20 @@ createApp({
       return p;
     }
 
-    async function loadSingle() {
+    async function loadSingle(withUsage) {
       if (!currentProfile.value) { instances.value = []; usage.value = null; return; }
       loading.value = true;
       try {
-        const [inst, usg] = await Promise.all([
-          axios.get('/api/instances', { params: { ...scopeParams(), with_ip: true } }),
-          axios.get('/api/monitor/usage', { params: scopeParams() }).catch(() => ({ data: null })),
-        ]);
+        // 额度数据只在「免费额度」页才取——每次调用 oci CLI 固定约 1.1 秒，
+        // 在实例页顺带查一遍额度会白白多花 6 次调用
+        const reqs = [axios.get('/api/instances', { params: { ...scopeParams(), with_ip: true } })];
+        if (withUsage) {
+          reqs.push(axios.get('/api/monitor/usage', { params: scopeParams() })
+            .catch(() => ({ data: null })));
+        }
+        const [inst, usg] = await Promise.all(reqs);
         instances.value = inst.data.instances;
-        usage.value = usg.data;
+        if (withUsage) usage.value = usg.data;
         stamp();
       } catch (e) {
         ElMessage.error(errMsg(e, '实例加载失败'));
@@ -1937,6 +1941,7 @@ createApp({
       if (activeTab.value === 'firewall') { loadSingle(); return loadFirewall(); }
       if (activeTab.value === 'create') { loadCreateOptions(); return doPreflight(); }
       if (activeTab.value === 'metrics') { loadSingle(); return loadMetrics(); }
+      if (activeTab.value === 'usage') return loadSingle(true);
       return loadSingle();
     }
 
@@ -1955,14 +1960,16 @@ createApp({
       createForm.availability_domain = ''; createForm.image_id = '';
       createForm.assign_ipv6 = false;
       loadCompartments();
-      loadSingle();
+      loadSingle(activeTab.value === 'usage');
       if (activeTab.value === 'create') { loadCreateOptions(); doPreflight(); }
       if (activeTab.value === 'storage') loadStorage();
+      if (activeTab.value === 'firewall') firewall.value = null;
     }
 
     function onTabChange(name) {
       if (name === 'audit' && !auditLogs.value.length) loadAudit(1);
       if (name === 'all' && !allAccounts.value.length) loadAll();
+      if (name === 'usage' && !usage.value) loadSingle(true);
       if (name === 'storage' && !storage.value) loadStorage();
       if (name === 'create') {
         if (!opts.value.availability_domains.length) loadCreateOptions();
@@ -1978,7 +1985,11 @@ createApp({
       }
     }
 
-    watch([compartmentId, subtree], () => { if (currentProfile.value) loadSingle(); });
+    watch([compartmentId, subtree], () => {
+      if (!currentProfile.value) return;
+      loadSingle(activeTab.value === 'usage');
+      if (activeTab.value === 'storage') loadStorage();
+    });
 
     // ---- 操作 ----
     const ACTION_LABEL = { START: '开机', SOFTSTOP: '关机', STOP: '强制关机', SOFTRESET: '重启', RESET: '强制重启' };

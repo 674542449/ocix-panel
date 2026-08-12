@@ -75,3 +75,35 @@ def _isolate_env(monkeypatch):
     for key in list(os.environ):
         if key.startswith("OCI_CLI"):
             monkeypatch.delenv(key, raising=False)
+
+
+# app_client / anon_client 会清空 sys.modules 重新导入 ocix，
+# 于是同时存在多个 oci_helpers 模块对象：测试模块在收集期绑定的那个，
+# 和 fixture 里新导入的那个。这里把收集期那个先抓住，清缓存时两边都清，
+# 否则缓存会跨用例泄漏（曾导致镜像与子网 IPv6 的用例互相污染）。
+try:
+    from ocix import oci_helpers as _helpers_at_import
+except Exception:  # pragma: no cover - 依赖缺失时由具体用例报错
+    _helpers_at_import = None
+
+
+@pytest.fixture(autouse=True)
+def _clear_caches():
+    """清空进程级读缓存。
+
+    oci_helpers 为了压低 oci CLI 调用次数缓存了实例、卷、镜像、网卡等数据。
+    """
+    def _reset():
+        mods = []
+        if _helpers_at_import is not None:
+            mods.append(_helpers_at_import)
+        current = sys.modules.get("ocix.oci_helpers")
+        if current is not None and current not in mods:
+            mods.append(current)
+        for m in mods:
+            m.invalidate_read_cache()
+            m.invalidate_compartment_cache()
+
+    _reset()
+    yield
+    _reset()

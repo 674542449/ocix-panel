@@ -181,6 +181,72 @@ def test_clear_without_ssh_leaves_nothing(fw_store):
     assert fw_store["rules"] == []
 
 
+# ── 调用次数：每次 oci CLI 调用固定约 1.1 秒进程开销，次数就是等待时间 ──
+
+@pytest.fixture()
+def count_calls(monkeypatch):
+    """统计一次操作实际发出多少次 CLI 调用。"""
+    calls = []
+
+    def fake_run(profile, *args, **kwargs):
+        j = " ".join(args)
+        calls.append(" ".join(j.split()[:3]))
+        if j.startswith("iam compartment list"):
+            return {"data": [{"id": "c1", "name": "a", "compartment-id": "root",
+                              "lifecycle-state": "ACTIVE"}]}
+        if j.startswith("iam availability-domain list"):
+            return {"data": [{"name": "AD-1"}, {"name": "AD-2"}]}
+        if j.startswith("compute instance list"):
+            return {"data": [{"id": "i1", "display-name": "box", "shape": "VM.Standard.A1.Flex",
+                              "lifecycle-state": "RUNNING", "compartment-id": "root",
+                              "shape-config": {"ocpus": 1, "memory-in-gbs": 6}}]}
+        if j.startswith("compute vnic-attachment list"):
+            return {"data": [{"lifecycle-state": "ATTACHED", "instance-id": "i1", "vnic-id": "v1"}]}
+        if j.startswith("network vnic get"):
+            return {"data": {"public-ip": "1.2.3.4", "private-ip": "10.0.0.1", "subnet-id": "sub1"}}
+        if j.startswith("network subnet get"):
+            return {"data": {"security-list-ids": ["sl1"], "display-name": "public"}}
+        if j.startswith("network security-list get"):
+            return {"data": {"ingress-security-rules": []}}
+        return {"data": []}
+
+    monkeypatch.setattr(H, "run_oci", fake_run)
+    monkeypatch.setattr(H, "tenancy_of", lambda p: "root")
+    return calls
+
+
+def test_availability_domains_are_fetched_once(count_calls):
+    """回归：可用域每个 compartment 都重查一次，存储页因此多了好几秒。"""
+    for _ in range(4):
+        H._availability_domains("P")
+    assert count_calls.count("iam availability-domain list") == 1
+
+
+def test_primary_vnic_is_cached(count_calls):
+    """一次防火墙操作要反复定位同一张网卡，每次重查都是 2 次调用。"""
+    for _ in range(3):
+        H.primary_vnic("P", "i1", "root")
+    assert len(count_calls) == 2
+
+
+def test_repeated_firewall_status_only_refetches_rules(count_calls):
+    """规则会变，网卡和子网不会——第二次查状态不该把前置调用重跑一遍。"""
+    H.firewall_status("P", "i1", "root")
+    first = len(count_calls)
+    H.firewall_status("P", "i1", "root")
+    assert len(count_calls) - first == 1
+
+
+def test_instance_list_is_cached_and_invalidated(count_calls):
+    H.list_instances("P", "root")
+    H.list_instances("P", "root")
+    assert count_calls.count("compute instance list") == 1
+
+    H.invalidate_read_cache("P")
+    H.list_instances("P", "root")
+    assert count_calls.count("compute instance list") == 2
+
+
 # ── 卷性能档位 ──
 
 @pytest.mark.parametrize("vpus,tier", [
