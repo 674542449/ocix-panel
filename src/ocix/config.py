@@ -34,7 +34,7 @@ except Exception:
 
 DB_PATH = DATA_DIR / "ocix.db"
 
-# OCI CLI 官方配置文件（容器内通常由卷挂载到 /root/.oci/config）
+# OCI 官方配置文件，格式与 oci CLI 通用（容器内由卷挂载到 /root/.oci/config）
 OCI_CONFIG_PATH = Path(
     os.getenv("OCI_CONFIG_PATH") or (Path.home() / ".oci" / "config")
 ).expanduser()
@@ -50,12 +50,11 @@ ADMIN_PASSWORD = os.getenv("OCIX_ADMIN_PASSWORD", "changeit")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("OCIX_TOKEN_TTL", "1440"))
 
 # ---- 执行层 ----
-OCI_CLI_TIMEOUT = int(os.getenv("OCIX_CLI_TIMEOUT", "60"))
-# 建实例 / 建网络会等资源就绪，比普通查询慢得多，单独给一个更长的超时
+# 建实例 / 建网络要等资源就绪，需要更长的等待上限
 OCI_LAUNCH_TIMEOUT = int(os.getenv("OCIX_LAUNCH_TIMEOUT", "180"))
-# 单次请求内并发调用 oci CLI 的上限（每次调用都是一个子进程，别开太大）
-OCI_MAX_WORKERS = max(1, int(os.getenv("OCIX_CLI_WORKERS", "8")))
-# compartment 列表缓存秒数（compartment 很少变，缓存能显著降低 CLI 调用次数）
+# 单次请求内的并发上限。SDK 调用是网络 IO，可以比子进程时代开得大一些
+OCI_MAX_WORKERS = max(1, int(os.getenv("OCIX_WORKERS", "16")))
+# compartment 列表缓存秒数（compartment 很少变，缓存能显著降低请求次数）
 COMPARTMENT_CACHE_TTL = int(os.getenv("OCIX_COMPARTMENT_CACHE_TTL", "300"))
 
 # ---- 速率限制 ----
@@ -67,14 +66,6 @@ TRUST_PROXY = _bool_env("OCIX_TRUST_PROXY", True)
 
 # 允许跨域的来源；留空表示只允许同源（默认部署由 Caddy 同源反代，无需 CORS）
 CORS_ORIGINS = [o.strip() for o in os.getenv("OCIX_CORS_ORIGINS", "").split(",") if o.strip()]
-
-# ---- 与 OCI 的通信方式 ----
-# cli：调用官方 oci 命令行（每次约 1.1 秒进程开销，但每步都能复制成命令自己复现）
-# sdk：进程内调用官方 oci Python SDK（快 10-20 倍）
-# 两者都是 Oracle 官方通道——oci CLI 本身就构建在 oci SDK 之上。
-OCI_BACKEND = (os.getenv("OCIX_BACKEND", "cli") or "cli").strip().lower()
-if OCI_BACKEND not in ("cli", "sdk"):
-    OCI_BACKEND = "cli"
 
 # ---- 在线更新 ----
 # 宿主机上的安装目录，用于在网页上给出正确的更新命令

@@ -10,7 +10,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 构建上下文是仓库根目录
+# 构建上下文是仓库根目录。依赖里含 Oracle 官方 oci Python SDK。
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -46,6 +46,36 @@
     .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:12.5px; letter-spacing:-.01em; }
     :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
 
+    /* 顶部全局进度条：任何请求在飞就显示，让「点了没反应」变成「在跑」 */
+    .netbar { position:fixed; top:0; left:0; height:2px; width:100%; z-index:2000;
+              background:transparent; pointer-events:none; }
+    .netbar > i { display:block; height:100%; width:100%; transform-origin:0 50%;
+                  background:linear-gradient(90deg, var(--accent), #a78bfa);
+                  animation:netbar 1.1s ease-in-out infinite; }
+    @keyframes netbar {
+      0%   { transform:scaleX(0);   opacity:1; }
+      50%  { transform:scaleX(.65); opacity:1; }
+      100% { transform:scaleX(1);   opacity:0; }
+    }
+
+    /* 刷新按钮的旋转图标 */
+    .spin { animation:spin 900ms linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .btn-icon { width:14px; height:14px; vertical-align:-2px; margin-right:5px; }
+
+    /* 骨架屏：首次加载时占位，避免大片空白 */
+    .skel { border-radius:6px; background:linear-gradient(90deg,
+            #1a2439 25%, #243149 37%, #1a2439 63%);
+            background-size:400% 100%; animation:shimmer 1.3s ease-in-out infinite; }
+    @keyframes shimmer { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+    .skel-row { height:34px; margin-bottom:8px; }
+    .skel-row:nth-child(2) { opacity:.8; }
+    .skel-row:nth-child(3) { opacity:.6; }
+    .skel-row:nth-child(4) { opacity:.4; }
+
+    /* 数据刷新时轻微压暗，明确「这是旧数据，正在更新」 */
+    .stale { opacity:.55; transition:opacity .2s ease; pointer-events:none; }
+
     .topbar { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
               padding:var(--sp-3) var(--sp-5); background:#0d1526; border-bottom:1px solid var(--line);
               position:sticky; top:0; z-index:20; flex-wrap:wrap; }
@@ -273,6 +303,8 @@
     .copy-btn::after { content:""; position:absolute; left:50%; top:50%;
                        width:44px; height:44px; transform:translate(-50%,-50%); }
     @media (prefers-reduced-motion: reduce) {
+      .netbar > i, .skel, .spin { animation:none !important; }
+      .netbar > i { transform:scaleX(1); opacity:.9; }
       *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important;
                                transition-duration:.001ms !important; }
       .dot.warn { box-shadow:0 0 0 3px rgba(245,158,11,.3); }
@@ -305,6 +337,7 @@
 
   <!-- ── 主面板 ── -->
   <div v-else>
+    <div class="netbar" v-show="netBusy" aria-hidden="true"><i></i></div>
     <div class="topbar">
       <div class="brand">OCI<span>X</span><small>Always Free 开机面板</small></div>
       <div class="topbar-right">
@@ -352,8 +385,15 @@
           <el-tooltip content="默认只查租户根。开启后会逐个遍历子 compartment，查询次数成倍增加" placement="bottom">
             <el-checkbox v-model="subtree" label="含子 compartment" />
           </el-tooltip>
-          <el-button type="primary" @click="refreshActive" :loading="loading">刷新</el-button>
-          <span class="who" v-if="lastUpdated">更新于 {{ lastUpdated }}</span>
+          <el-button type="primary" @click="refreshActive" :disabled="loading">
+            <svg class="btn-icon" :class="{ spin: loading }" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" />
+            </svg>
+            {{ loading ? '刷新中…' : '刷新' }}
+          </el-button>
+          <span class="who" v-if="loading">正在从 Oracle 拉取…</span>
+          <span class="who" v-else-if="lastUpdated">更新于 {{ lastUpdated }}</span>
         </div>
 
         <el-alert v-if="!profiles.length && !profilesLoading" type="warning" show-icon :closable="false"
@@ -385,7 +425,10 @@
               <el-button size="small" text @click="clearAllSelection">取消选择</el-button>
             </div>
 
-            <div class="table-wrap" v-if="allFlat.length">
+            <div v-if="loading && !allFlat.length" aria-label="加载中">
+              <div class="skel skel-row" v-for="i in 4" :key="i"></div>
+            </div>
+            <div class="table-wrap" v-else-if="allFlat.length" :class="{ stale: loading }">
               <el-table ref="allTableRef" :data="allFlat" size="small" stripe border row-key="id"
                         @selection-change="allSelection = $event" style="width:100%;">
                 <el-table-column type="selection" width="42" />
@@ -448,7 +491,10 @@
               <el-button size="small" text @click="clearInstSelection">取消选择</el-button>
             </div>
 
-            <div class="table-wrap" v-if="instances.length">
+            <div v-if="loading && !instances.length" aria-label="加载中">
+              <div class="skel skel-row" v-for="i in 4" :key="i"></div>
+            </div>
+            <div class="table-wrap" v-else-if="instances.length" :class="{ stale: loading }">
               <el-table ref="instTableRef" :data="instances" size="small" stripe border row-key="id"
                         @selection-change="instSelection = $event" style="width:100%;">
                 <el-table-column type="selection" width="42" />
@@ -661,7 +707,10 @@
 
         <!-- 免费额度 -->
         <section class="pane" v-show="activeTab === 'usage'">
-          <div class="card" v-if="usage">
+          <div class="card" v-if="loading && !usage" aria-label="加载中">
+            <div class="skel skel-row" v-for="i in 6" :key="i"></div>
+          </div>
+          <div class="card" v-else-if="usage">
             <div class="card-head">
               <div class="card-title">当前用量 / Always Free 上限</div>
             </div>
@@ -693,7 +742,10 @@
               <el-button size="small" @click="loadStorage" :loading="storageLoading">刷新</el-button>
             </div>
 
-            <template v-if="storage">
+            <div v-if="storageLoading && !storage" aria-label="加载中">
+              <div class="skel skel-row" v-for="i in 4" :key="i"></div>
+            </div>
+            <template v-else-if="storage">
               <div class="stats" style="margin-bottom:14px;">
                 <div class="stat" :class="storage.summary.total_gb > storage.summary.limit_gb ? 'crit' : ''">
                   <div class="v">{{ storage.summary.total_gb }}</div>
@@ -1394,6 +1446,19 @@ createApp({
     const auditFilter = reactive({ action: '', result: '' });
 
     // ---- HTTP ----
+    // 在途请求计数 -> 顶部进度条。任何一次请求都会让它出现，
+    // 点了按钮立刻能看到「在跑」，不至于以为没反应。
+    const netBusy = ref(false);
+    let inflight = 0;
+    const settle = () => {
+      inflight = Math.max(0, inflight - 1);
+      if (!inflight) netBusy.value = false;
+    };
+    axios.interceptors.request.use((cfg) => { inflight++; netBusy.value = true; return cfg; });
+    axios.interceptors.response.use(
+      (r) => { settle(); return r; },
+      (e) => { settle(); return Promise.reject(e); });
+
     function applyToken(t) {
       axios.defaults.headers.common['Authorization'] = t ? 'Bearer ' + t : '';
     }
@@ -1469,8 +1534,8 @@ createApp({
       if (!currentProfile.value) { instances.value = []; usage.value = null; return; }
       loading.value = true;
       try {
-        // 额度数据只在「免费额度」页才取——每次调用 oci CLI 固定约 1.1 秒，
-        // 在实例页顺带查一遍额度会白白多花 6 次调用
+        // 额度数据只在「免费额度」页才取：
+        // 在实例页顺带查一遍会多花 6 次 OCI 请求
         const reqs = [axios.get('/api/instances', { params: { ...scopeParams(), with_ip: true } })];
         if (withUsage) {
           reqs.push(axios.get('/api/monitor/usage', { params: scopeParams() })
@@ -2293,7 +2358,7 @@ createApp({
       ruleForm, addRule, deleteRule, clearRules, vpuRange, vpuTier,
       sys, sysLoading, loadSystem,
       changeIp, changePerformance,
-      token, user, loginForm, loginErr, loading,
+      token, user, loginForm, loginErr, loading, netBusy,
       profiles, profilesLoading, currentProfile, compartments, compsLoading, compartmentId,
       subtree, activeTab, lastUpdated, autoRefresh, countdown,
       instances, instSelection, instTableRef, usage,

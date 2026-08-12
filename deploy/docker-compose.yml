@@ -13,14 +13,12 @@ services:
       - OCIX_ADMIN_USER=${OCIX_ADMIN_USER:-admin}
       - OCIX_ADMIN_PASSWORD=${OCIX_ADMIN_PASSWORD:?OCIX_ADMIN_PASSWORD 未设置}
       - OCIX_TOKEN_TTL=${OCIX_TOKEN_TTL:-1440}
-      - OCIX_CLI_TIMEOUT=${OCIX_CLI_TIMEOUT:-60}
       - OCIX_LAUNCH_TIMEOUT=${OCIX_LAUNCH_TIMEOUT:-180}
-      - OCIX_CLI_WORKERS=${OCIX_CLI_WORKERS:-8}
+      - OCIX_WORKERS=${OCIX_WORKERS:-16}
       - OCIX_LOGIN_LIMIT=${OCIX_LOGIN_LIMIT:-10}
       - OCIX_API_LIMIT=${OCIX_API_LIMIT:-120}
       - OCIX_TRUST_PROXY=${OCIX_TRUST_PROXY:-false}
       - OCIX_HOME=${OCIX_HOME:-/opt/ocix}
-      - OCIX_BACKEND=${OCIX_BACKEND:-cli}
     volumes:
       - oci_config:/root/.oci
       - ocix_data:/app/data

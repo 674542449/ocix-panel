@@ -48,5 +48,5 @@ src = ["src", "tests"]
 select = ["E", "F", "W", "I", "UP", "B"]
 ignore = [
     "B008",   # FastAPI 的 Depends() 就是要写在默认值里
-    "B904",   # 把 OCICLIError 转成 HTTPException 时刻意不带 traceback，避免内部细节外泄
+    "B904",   # 把 OCIError 转成 HTTPException 时刻意不带 traceback，避免内部细节外泄
 ]

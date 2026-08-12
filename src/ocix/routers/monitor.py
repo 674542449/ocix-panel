@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .. import security
-from ..oci_cli import OCICLIError, gather, list_profiles_from_config
+from ..common import OCIError, gather, list_profiles_from_config
 from ..oci_helpers import free_tier_usage, get_metrics
 
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
@@ -18,7 +18,7 @@ def usage(
     security.check_rate(request, security.API_RATE_LIMIT)
     try:
         data = free_tier_usage(profile, compartment_id, subtree=subtree)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     return data
 
@@ -58,6 +58,6 @@ def metrics(
     security.check_rate(request, security.API_RATE_LIMIT)
     try:
         data = get_metrics(profile, instance_id, compartment_id, hours)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     return {"metrics": data, "hours": hours, "instance_id": instance_id}

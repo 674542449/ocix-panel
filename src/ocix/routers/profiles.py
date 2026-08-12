@@ -6,9 +6,9 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from .. import security
+from ..common import OCIError, list_profiles_from_config, read_config_parser
 from ..config import KEYS_DIR, OCI_CONFIG_PATH
 from ..db import audit, delete_profile_db, list_profiles_db, upsert_profile
-from ..oci_cli import OCICLIError, list_profiles_from_config, read_config_parser
 from ..oci_helpers import get_user, invalidate_compartment_cache, read_profile_config
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
@@ -66,7 +66,7 @@ def get_profiles(user: str = Depends(security.get_current_user)):
         meta = db_by_name.get(name, {})
         try:
             cfg = read_profile_config(name)
-        except OCICLIError:
+        except OCIError:
             cfg = {}
         key_file = cfg.get("key_file") or meta.get("key_file") or ""
         merged.append({
@@ -230,7 +230,7 @@ async def import_profile(
                     pass
         invalidate_compartment_cache(name)
 
-        msg = e.message if isinstance(e, OCICLIError) else str(e)
+        msg = e.message if isinstance(e, OCIError) else str(e)
         audit(user, "import-profile", profile=name, target=name, result="fail", detail=msg, ip=ip)
         raise HTTPException(status_code=400, detail=f"配置校验失败，已回滚: {msg}")
 
@@ -246,7 +246,7 @@ def test_profile(
     name = _check_name(name)
     try:
         u = get_user(name)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "test-profile", profile=name, target=name, result="fail",
               detail=e.message, ip=security.client_ip(request))
         raise HTTPException(status_code=400, detail=e.message)

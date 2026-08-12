@@ -1,7 +1,7 @@
 """接口层：鉴权、导入回滚、额度硬闸门、静态文件安全。
 
-这里从不调用真实 oci CLI —— conftest 把 PATH 清空了，任何外呼都会以
-「未找到 oci 命令」失败，正好用来验证错误处理。
+这里从不连真实 OCI —— 配置里的 key_file 指向不存在的路径，
+任何外呼都会以「OCI 配置有问题」失败，正好用来验证错误处理。
 """
 
 import pytest
@@ -230,11 +230,11 @@ def test_first_instance_creates_the_network(app_client, stub_launch, monkeypatch
 
 
 def test_network_failure_creates_nothing(app_client, stub_launch, monkeypatch):
-    from ocix.oci_cli import OCICLIError
+    from ocix.common import OCIError
     from ocix.routers import provision
 
     def boom(*a, **kw):
-        raise OCICLIError("配额不足，无法创建 VCN")
+        raise OCIError("配额不足，无法创建 VCN")
 
     monkeypatch.setattr(provision, "resolve_subnet", boom)
     r = app_client.post("/api/provision/instances", json=_create_payload())
@@ -273,11 +273,11 @@ def test_ipv6_is_not_touched_when_unchecked(app_client, stub_launch, monkeypatch
 
 
 def test_ipv6_failure_aborts_before_creating_the_instance(app_client, stub_launch, monkeypatch):
-    from ocix.oci_cli import OCICLIError
+    from ocix.common import OCIError
     from ocix.routers import provision
 
     def boom(*a, **kw):
-        raise OCICLIError("该区域不支持 IPv6")
+        raise OCIError("该区域不支持 IPv6")
 
     monkeypatch.setattr(provision, "resolve_subnet",
                         lambda p, c, **kw: {"id": "s", "created": False})
@@ -364,11 +364,11 @@ def test_ipv6_from_launch_skips_the_extra_call(app_client, stub_launch, monkeypa
 
 def test_post_launch_failures_do_not_fail_the_request(app_client, stub_launch, monkeypatch):
     """实例已经建出来了，收尾步骤失败只能警告——报 500 会让人以为没建成而重复创建。"""
-    from ocix.oci_cli import OCICLIError
+    from ocix.common import OCIError
     from ocix.routers import provision
 
     def boom(*a, **kw):
-        raise OCICLIError("权限不足")
+        raise OCIError("权限不足")
 
     monkeypatch.setattr(provision, "resolve_subnet",
                         lambda p, c, **kw: {"id": "s", "created": False})
@@ -408,7 +408,7 @@ def test_add_ipv6_is_idempotent(app_client, monkeypatch):
 
 
 def test_add_ipv6_failure_is_400(app_client):
-    """没有 oci CLI 时应报可读错误而不是 500。"""
+    """连不上 OCI 时应报可读错误而不是 500。"""
     r = app_client.post("/api/provision/instances/add-ipv6",
                         json={"profile": "EXISTING", "instance_id": "ocid1.instance.oc1..x"})
     assert r.status_code == 400
@@ -420,7 +420,7 @@ def test_invalid_instance_action_is_rejected(app_client):
     assert r.status_code == 422
 
 
-# ── 依赖 oci CLI 的接口要给出可读错误，而不是 500 ──
+# ── 依赖 OCI 的接口要给出可读错误，而不是 500 ──
 
 def test_missing_cli_surfaces_as_400(app_client):
     r = app_client.get("/api/instances?profile=EXISTING")

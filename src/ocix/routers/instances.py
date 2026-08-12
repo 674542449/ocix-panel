@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .. import security
+from ..common import OCIError, gather, list_profiles_from_config
 from ..db import audit
-from ..oci_cli import OCICLIError, gather, list_profiles_from_config
 from ..oci_helpers import (
     attach_ips,
     instance_action,
@@ -49,7 +49,7 @@ def get_compartments(
     security.check_rate(request, security.API_RATE_LIMIT)
     try:
         items = list_compartments(profile, use_cache=not refresh)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     return {"compartments": items}
 
@@ -59,7 +59,7 @@ def get_instances(
     profile: str,
     compartment_id: str = None,
     subtree: bool = Query(False, description="是否遍历子 compartment（开启会成倍增加查询次数）"),
-    with_ip: bool = Query(True, description="是否附带公网/内网 IP（会多几次 CLI 调用）"),
+    with_ip: bool = Query(True, description="是否附带公网/内网 IP（每台实例会多一次请求）"),
     include_terminated: bool = False,
     request: Request = None,
     user: str = Depends(security.get_current_user),
@@ -70,7 +70,7 @@ def get_instances(
                                include_terminated=include_terminated)
         if with_ip:
             items = attach_ips(profile, items)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     return {"instances": _simplify_list(items)}
 
@@ -126,7 +126,7 @@ def do_action(
     ip = security.client_ip(request)
     try:
         data = instance_action(req.profile, req.instance_id, req.action)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "instance-action", profile=req.profile, target=req.instance_id,
               detail=f"{req.action} -> {e.message}", result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)

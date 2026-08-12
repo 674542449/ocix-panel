@@ -1,55 +1,32 @@
-"""两个后端各自的实现细节。
+"""SDK 后端：离线签名核对。
 
-SDK 那部分是**离线签名核对**：不发任何请求，只确认我们调用的方法与参数
-在安装的 oci SDK 里真实存在。这类错误在 CLI 时代只有连上真实租户才会暴露
-（曾经踩到 `No such option: --create-vnic-details`、
-`get-public-ip-by-private-ip-id` 不是子命令）。
+不发任何请求，只确认我们调用的方法、参数、模型字段在安装的 oci SDK 里真实存在。
+这类错误在早期用 oci 命令行时只有连上真实租户才会暴露
+（踩过 `No such option: --create-vnic-details`、
+`get-public-ip-by-private-ip-id` 不是子命令、list_volumes 位置传参 TypeError）。
 """
-
-import inspect
 
 import pytest
 
 from ocix.backends import get_backend, set_backend
 from ocix.backends.base import Backend
-from ocix.backends.cli import CLIBackend
 
 oci = pytest.importorskip("oci")
 from ocix.backends.sdk import SDKBackend, _ingress_model  # noqa: E402
 
-ABSTRACT = sorted(
-    name for name, val in vars(Backend).items()
-    if getattr(val, "__isabstractmethod__", False)
-)
+
+def test_backend_implements_full_interface():
+    assert not SDKBackend.__abstractmethods__,         f"SDKBackend 未实现: {SDKBackend.__abstractmethods__}"
 
 
-# ── 接口一致性 ──
-
-@pytest.mark.parametrize("cls", [CLIBackend, SDKBackend])
-def test_backend_implements_full_interface(cls):
-    assert not cls.__abstractmethods__, f"{cls.__name__} 未实现: {cls.__abstractmethods__}"
-
-
-@pytest.mark.parametrize("method", ABSTRACT)
-def test_signatures_match_between_backends(method):
-    """两个后端签名必须一致，否则切换 OCIX_BACKEND 会在运行时炸。"""
-    cli_sig = inspect.signature(getattr(CLIBackend, method))
-    sdk_sig = inspect.signature(getattr(SDKBackend, method))
-    assert list(cli_sig.parameters) == list(sdk_sig.parameters), method
-
-
-def test_backend_selection_defaults_to_cli(monkeypatch):
+def test_default_backend_is_the_sdk():
     set_backend(None)
-    monkeypatch.setattr("ocix.backends.OCI_BACKEND", "cli")
-    assert get_backend().name == "cli"
-    set_backend(None)
-
-
-def test_backend_selection_can_pick_sdk(monkeypatch):
-    set_backend(None)
-    monkeypatch.setattr("ocix.backends.OCI_BACKEND", "sdk")
-    assert get_backend().name == "sdk"
-    set_backend(None)
+    try:
+        b = get_backend()
+        assert b.name == "sdk"
+        assert isinstance(b, Backend)
+    finally:
+        set_backend(None)
 
 
 # ── SDK：调用的方法是否真实存在 ──
@@ -146,66 +123,6 @@ def test_ingress_model_maps_udp_and_icmp():
     assert icmp.icmp_options.type == 3 and icmp.icmp_options.code == 4
 
 
-# ── CLI 后端：命令行参数形状 ──
-
-@pytest.fixture()
-def cli_calls(monkeypatch):
-    calls = []
-
-    def fake_run(profile, *args, **kwargs):
-        calls.append(list(args))
-        return {"data": {"id": "x", "lifecycle-state": "PROVISIONING"}}
-
-    monkeypatch.setattr("ocix.backends.cli.run_oci", fake_run)
-    return calls
-
-
-CLI_SPEC = {
-    "compartment_id": "c", "availability_domain": "AD-1", "display_name": "box",
-    "image_id": "img", "subnet_id": "sub1", "shape": "VM.Standard.E2.1.Micro",
-    "boot_gb": 50, "ssh_public_key": "ssh-ed25519 AAAA test@x",
-}
-
-
-@pytest.mark.parametrize("assign_ipv6", [False, True])
-def test_cli_launch_never_uses_create_vnic_details(cli_calls, assign_ipv6):
-    """回归：--create-vnic-details 在 oci CLI 里根本不存在（是 SDK 层字段）。"""
-    CLIBackend().launch_instance("P", {**CLI_SPEC, "assign_ipv6": assign_ipv6})
-    args = cli_calls[0]
-    assert "--create-vnic-details" not in args
-    assert "--subnet-id" in args and "--assign-public-ip" in args
-
-
-def test_cli_uses_public_ip_get_with_private_ip_id(cli_calls):
-    """回归：get-public-ip-by-private-ip-id 不是子命令，正确写法是 public-ip get。"""
-    CLIBackend().get_public_ip_by_private_ip("P", "pip1")
-    joined = " ".join(cli_calls[0])
-    assert "get-public-ip-by-private-ip-id" not in joined
-    assert joined.startswith("network public-ip get") and "--private-ip-id" in joined
-
-
-def test_cli_vcn_ipv6_declares_oracle_allocation(cli_calls):
-    """AddVcnIpv6CidrDetails 必须给 isOracleGuaAllocationEnabled，否则服务端拒绝。"""
-    CLIBackend().add_vcn_ipv6_cidr("P", "vcn1")
-    assert "--is-oracle-gua-allocation-enabled" in cli_calls[0]
-
-
-def test_cli_launch_sends_ssh_key_as_metadata(cli_calls):
-    CLIBackend().launch_instance("P", dict(CLI_SPEC))
-    args = cli_calls[0]
-    meta = args[args.index("--metadata") + 1]
-    assert "ssh_authorized_keys" in meta and "ssh-ed25519" in meta
-
-
-def test_cli_shape_config_only_for_flex(cli_calls):
-    CLIBackend().launch_instance("P", {**CLI_SPEC, "shape": "VM.Standard.A1.Flex",
-                                       "shape_config": {"ocpus": 4, "memoryInGBs": 24}})
-    assert "--shape-config" in cli_calls[0]
-    cli_calls.clear()
-    CLIBackend().launch_instance("P", dict(CLI_SPEC))
-    assert "--shape-config" not in cli_calls[0]
-
-
 # ── SDK：配置类错误必须是可读的 400，不能是 500 ──
 
 @pytest.mark.parametrize("exc_name", [
@@ -215,7 +132,7 @@ def test_cli_shape_config_only_for_flex(cli_calls):
 def test_sdk_config_errors_become_readable(monkeypatch, exc_name):
     """回归：私钥路径写错时 from_file 抛 InvalidKeyFilePath，
     早先没捕获，直接以 500 冒到前端。"""
-    from ocix.oci_cli import OCICLIError
+    from ocix.common import OCIError
 
     exc = getattr(oci.exceptions, exc_name)
 
@@ -227,19 +144,19 @@ def test_sdk_config_errors_become_readable(monkeypatch, exc_name):
 
     backend = SDKBackend()
     monkeypatch.setattr(oci.config, "from_file", boom)
-    with pytest.raises(OCICLIError) as ei:
+    with pytest.raises(OCIError) as ei:
         backend.list_instances("P", "c")
     assert "配置" in str(ei.value)
 
 
 def test_sdk_service_error_keeps_message_and_code(monkeypatch):
     from ocix.backends.sdk import _wrap
-    from ocix.oci_cli import OCICLIError
+    from ocix.common import OCIError
 
     def boom():
         raise oci.exceptions.ServiceError(404, "NotAuthorizedOrNotFound", {}, "找不到该资源")
 
-    with pytest.raises(OCICLIError) as ei:
+    with pytest.raises(OCIError) as ei:
         _wrap(boom)
     assert ei.value.message == "找不到该资源"
     assert ei.value.code == "NotAuthorizedOrNotFound"
@@ -247,10 +164,67 @@ def test_sdk_service_error_keeps_message_and_code(monkeypatch):
 
 def test_sdk_network_failure_is_readable(monkeypatch):
     from ocix.backends.sdk import _wrap
-    from ocix.oci_cli import OCICLIError
+    from ocix.common import OCIError
 
     def boom():
         raise OSError("name resolution failed")
 
-    with pytest.raises(OCICLIError, match="连接 OCI 失败"):
+    with pytest.raises(OCIError, match="连接 OCI 失败"):
         _wrap(boom)
+
+
+# ── SDK：按后端真实的调用方式做形参绑定检查 ──
+# 只做绑定，不发请求。回归：list_volumes 的签名是 (self, **kwargs)，
+# 位置传参会直接 TypeError，存储页和额度页都会挂。
+
+BINDINGS = [
+    ("core.ComputeClient", "list_instances", ("cid",), {}),
+    ("core.ComputeClient", "instance_action", ("iid", "START"), {}),
+    ("core.ComputeClient", "terminate_instance", ("iid",), {"preserve_boot_volume": False}),
+    ("core.ComputeClient", "list_vnic_attachments", ("cid",), {"instance_id": "iid"}),
+    ("core.ComputeClient", "list_boot_volume_attachments", ("AD-1", "cid"), {}),
+    ("core.ComputeClient", "list_volume_attachments", ("cid",), {}),
+    ("core.ComputeClient", "list_images", ("cid",),
+     {"operating_system": "Canonical Ubuntu", "sort_by": "TIMECREATED", "sort_order": "DESC"}),
+    ("core.VirtualNetworkClient", "get_vnic", ("v1",), {}),
+    ("core.VirtualNetworkClient", "list_private_ips", (), {"vnic_id": "v1"}),
+    ("core.VirtualNetworkClient", "delete_public_ip", ("p1",), {}),
+    ("core.VirtualNetworkClient", "add_ipv6_vcn_cidr", ("vcn1",), {}),
+    ("core.VirtualNetworkClient", "list_subnets", ("cid",), {"vcn_id": "vcn1"}),
+    ("core.VirtualNetworkClient", "get_subnet", ("s1",), {}),
+    ("core.VirtualNetworkClient", "list_vcns", ("cid",), {}),
+    ("core.VirtualNetworkClient", "get_vcn", ("vcn1",), {}),
+    ("core.VirtualNetworkClient", "list_internet_gateways", ("cid",), {"vcn_id": "vcn1"}),
+    ("core.VirtualNetworkClient", "get_route_table", ("rt1",), {}),
+    ("core.VirtualNetworkClient", "get_security_list", ("sl1",), {}),
+    # 这三个签名是 (self, **kwargs)，必须关键字传参
+    ("core.BlockstorageClient", "list_volumes", (), {"compartment_id": "cid"}),
+    ("core.BlockstorageClient", "list_boot_volumes", (),
+     {"compartment_id": "cid", "availability_domain": "AD-1"}),
+    ("core.BlockstorageClient", "delete_boot_volume", ("b1",), {}),
+    ("core.BlockstorageClient", "delete_volume", ("v1",), {}),
+    ("identity.IdentityClient", "get_user", ("u1",), {}),
+    ("identity.IdentityClient", "list_compartments", ("t1",),
+     {"compartment_id_in_subtree": True, "access_level": "ACCESSIBLE"}),
+    ("identity.IdentityClient", "list_availability_domains", ("cid",), {}),
+]
+
+
+@pytest.mark.parametrize("path,method,args,kwargs", BINDINGS)
+def test_sdk_calls_bind_to_real_signatures(path, method, args, kwargs):
+    """用后端真实的传参方式做一次形参绑定；签名不符会在这里 TypeError。"""
+    mod, cls = path.split(".")
+    fn = getattr(getattr(getattr(oci, mod), cls), method)
+    try:
+        fn(None, *args, **kwargs)      # self=None，只走到形参绑定
+    except TypeError as e:
+        if "positional argument" in str(e) or "unexpected keyword" in str(e):
+            pytest.fail(f"{path}.{method} 传参方式不对: {e}")
+    except Exception:
+        pass                            # 绑定通过后失败在预期之内（没有真实客户端）
+
+
+def test_list_volumes_rejects_positional_compartment():
+    """把上面那个 bug 单独钉死：别再改回位置传参。"""
+    with pytest.raises(TypeError, match="positional argument"):
+        oci.core.BlockstorageClient.list_volumes(None, "cid")

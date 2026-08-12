@@ -24,8 +24,8 @@ from oci.exceptions import (
 from oci.pagination import list_call_get_all_results
 from oci.util import to_dict
 
-from ..config import OCI_CONFIG_PATH
-from ..oci_cli import OCICLIError
+from ..common import OCIError
+from ..config import OCI_CONFIG_PATH, OCI_LAUNCH_TIMEOUT
 from .base import Backend
 
 # 配置本身有问题（路径、私钥、口令…）。这类错误必须转成可读提示，
@@ -41,18 +41,18 @@ CONFIG_ERRORS = (
 
 
 def _wrap(fn, *a, **kw):
-    """把 SDK 异常翻译成面板统一的 OCICLIError，错误信息保持可读。"""
+    """把 SDK 异常翻译成面板统一的 OCIError，错误信息保持可读。"""
     try:
         return fn(*a, **kw)
     except ServiceError as e:
         msg = e.message or str(e)
-        raise OCICLIError(msg, e.status, e.code) from None
+        raise OCIError(msg, e.status, e.code) from None
     except CONFIG_ERRORS as e:
-        raise OCICLIError(f"OCI 配置有问题: {e}") from None
+        raise OCIError(f"OCI 配置有问题: {e}") from None
     except ClientError as e:
-        raise OCICLIError(f"OCI 客户端错误: {e}") from None
+        raise OCIError(f"OCI 客户端错误: {e}") from None
     except OSError as e:
-        raise OCICLIError(f"连接 OCI 失败: {e}") from None
+        raise OCIError(f"连接 OCI 失败: {e}") from None
 
 
 def _d(obj) -> dict:
@@ -75,7 +75,7 @@ class SDKBackend(Backend):
         try:
             return oci.config.from_file(str(OCI_CONFIG_PATH), profile)
         except CONFIG_ERRORS as e:
-            raise OCICLIError(f"读取 OCI 配置失败: {e}") from None
+            raise OCIError(f"读取 OCI 配置失败: {e}") from None
 
     def _client(self, profile: str, kind: str):
         key = (profile, kind)
@@ -87,7 +87,7 @@ class SDKBackend(Backend):
         try:
             oci.config.validate_config(cfg)
         except Exception as e:  # noqa: BLE001 - 任何配置问题都要变成可读提示
-            raise OCICLIError(f"OCI 配置不合法: {e}") from None
+            raise OCIError(f"OCI 配置不合法: {e}") from None
         ctor = {
             "compute": oci.core.ComputeClient,
             "network": oci.core.VirtualNetworkClient,
@@ -118,6 +118,16 @@ class SDKBackend(Backend):
     def _all(self, fn, *a, **kw) -> list:
         """自动翻页，等价于 CLI 的 --all。"""
         return [to_dict(x) for x in _wrap(list_call_get_all_results, fn, *a, **kw).data]
+
+    def _wait(self, profile: str, getter, resource_id: str, state: str = "AVAILABLE"):
+        """等资源变成目标状态，返回资源对象。
+
+        建 VCN / 子网 / 网关都要等就绪，否则下一步会拿到还没生效的资源。
+        """
+        resp = _wrap(getter, resource_id)
+        done = _wrap(oci.wait_until, self._net(profile), resp,
+                     "lifecycle_state", state, max_wait_seconds=OCI_LAUNCH_TIMEOUT)
+        return done.data
 
     def version(self) -> str:
         return f"oci SDK {oci.__version__}"
@@ -228,15 +238,13 @@ class SDKBackend(Backend):
             compartment_id=compartment_id, cidr_block=cidr_block,
             display_name=display_name, dns_label=dns_label)
         vcn = _wrap(self._net(profile).create_vcn, details).data
-        return _d(_wrap(oci.wait_until, self._net(profile),
-                        self._net(profile).get_vcn(vcn.id),
-                        "lifecycle_state", "AVAILABLE", max_wait_seconds=180).data)
+        return _d(self._wait(profile, self._net(profile).get_vcn, vcn.id))
 
     def add_vcn_ipv6_cidr(self, profile, vcn_id):
         details = oci.core.models.AddVcnIpv6CidrDetails(is_oracle_gua_allocation_enabled=True)
         try:
             _wrap(self._net(profile).add_ipv6_vcn_cidr, vcn_id, add_vcn_ipv6_cidr_details=details)
-        except OCICLIError as e:
+        except OCIError as e:
             msg = (e.message or "").lower()
             # 已经有 GUA 段时直接当成功，保持幂等
             if not ("already" in msg or "limitexceeded" in msg or "conflict" in msg):
@@ -254,9 +262,7 @@ class SDKBackend(Backend):
             compartment_id=compartment_id, vcn_id=vcn_id, cidr_block=cidr_block,
             display_name=display_name, dns_label=dns_label)
         subnet = _wrap(self._net(profile).create_subnet, details).data
-        return _d(_wrap(oci.wait_until, self._net(profile),
-                        self._net(profile).get_subnet(subnet.id),
-                        "lifecycle_state", "AVAILABLE", max_wait_seconds=180).data)
+        return _d(self._wait(profile, self._net(profile).get_subnet, subnet.id))
 
     def update_subnet_ipv6_cidr(self, profile, subnet_id, ipv6_cidr):
         details = oci.core.models.UpdateSubnetDetails(ipv6_cidr_block=ipv6_cidr)
@@ -270,9 +276,7 @@ class SDKBackend(Backend):
             compartment_id=compartment_id, vcn_id=vcn_id,
             is_enabled=True, display_name=display_name)
         ig = _wrap(self._net(profile).create_internet_gateway, details).data
-        return _d(_wrap(oci.wait_until, self._net(profile),
-                        self._net(profile).get_internet_gateway(ig.id),
-                        "lifecycle_state", "AVAILABLE", max_wait_seconds=180).data)
+        return _d(self._wait(profile, self._net(profile).get_internet_gateway, ig.id))
 
     def get_route_table(self, profile, rt_id):
         return _d(_wrap(self._net(profile).get_route_table, rt_id).data)
@@ -302,7 +306,8 @@ class SDKBackend(Backend):
                          compartment_id=compartment_id, **kw)
 
     def list_volumes(self, profile, compartment_id):
-        return self._all(self._block(profile).list_volumes, compartment_id)
+        # 注意：list_volumes 的签名是 (self, **kwargs)，只能用关键字传参
+        return self._all(self._block(profile).list_volumes, compartment_id=compartment_id)
 
     def delete_boot_volume(self, profile, volume_id):
         _wrap(self._block(profile).delete_boot_volume, volume_id)

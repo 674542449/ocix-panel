@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 from . import freetier
 from .backends import get_backend
+from .common import OCIError, TTLCache, gather
 from .config import COMPARTMENT_CACHE_TTL, OCI_CONFIG_PATH
-from .oci_cli import OCICLIError, TTLCache, gather
 
 
 def _b():
@@ -32,7 +32,7 @@ def _num(value, default=0.0) -> float:
 
 
 def _get(d: dict, *keys, default=None):
-    """oci CLI 输出是 kebab-case，SDK/部分字段是 snake_case，两种都兜住。"""
+    """SDK 返回 snake_case，历史数据可能是 kebab-case，两种都兜住。"""
     for k in keys:
         if isinstance(d, dict) and d.get(k) is not None:
             return d[k]
@@ -45,9 +45,9 @@ def read_profile_config(profile: str) -> dict:
     cp.optionxform = str
     cp.read(str(OCI_CONFIG_PATH), encoding="utf-8")
     if profile != "DEFAULT" and not cp.has_section(profile):
-        raise OCICLIError(f"配置中不存在 profile: {profile}")
+        raise OCIError(f"配置中不存在 profile: {profile}")
     if profile == "DEFAULT" and not cp.defaults():
-        raise OCICLIError("配置中不存在 profile: DEFAULT")
+        raise OCIError("配置中不存在 profile: DEFAULT")
     return {k: v for k, v in cp.items(profile)}
 
 
@@ -55,7 +55,7 @@ def tenancy_of(profile: str) -> str:
     cfg = read_profile_config(profile)
     tenancy = cfg.get("tenancy")
     if not tenancy:
-        raise OCICLIError(f"profile [{profile}] 缺少 tenancy 字段")
+        raise OCIError(f"profile [{profile}] 缺少 tenancy 字段")
     return tenancy
 
 
@@ -63,7 +63,7 @@ def get_user(profile: str) -> dict:
     cfg = read_profile_config(profile)
     user = cfg.get("user")
     if not user:
-        raise OCICLIError(f"profile [{profile}] 缺少 user 字段")
+        raise OCIError(f"profile [{profile}] 缺少 user 字段")
     return _b().get_user(profile, user)
 
 
@@ -93,7 +93,7 @@ def list_compartments(profile: str, use_cache: bool = True) -> list:
     items = []
     try:
         items = _b().list_compartments(profile, tenancy)
-    except OCICLIError:
+    except OCIError:
         # 权限不足时至少还能用租户根
         items = []
 
@@ -149,8 +149,8 @@ def _target_compartments(profile: str, compartment_id: str = None, subtree: bool
 
 # ---- 实例 ----
 
-# 列表类数据缓存 30 秒：每次 CLI 调用固定 ~1.1s 进程开销，
-# 同一个页面里 /instances 和 /monitor/usage 都要用实例列表，不缓存等于翻倍。
+# 列表类数据缓存 30 秒：同一个页面里 /instances 和 /monitor/usage
+# 都要用实例列表，不缓存等于把请求翻倍。
 _read_cache = TTLCache(ttl=30)
 
 
@@ -299,13 +299,13 @@ def list_boot_volumes(profile: str, compartment_id: str = None, subtree: bool = 
     def _one(cid):
         try:
             return _b().list_boot_volumes(profile, cid)
-        except OCICLIError:
+        except OCIError:
             # 老接口要求带可用域，退回逐个可用域查
             out = []
             for ad in _availability_domains(profile):
                 try:
                     out.extend(_b().list_boot_volumes(profile, cid, availability_domain=ad))
-                except OCICLIError:
+                except OCIError:
                     continue
             return out
 
@@ -326,7 +326,7 @@ def _availability_domains(profile: str) -> list:
     try:
         ads = _b().list_availability_domains(profile, tenancy_of(profile))
         return _read_cache.set(ck, [a.get("name") for a in ads if a.get("name")])
-    except OCICLIError:
+    except OCIError:
         return []
 
 
@@ -342,7 +342,7 @@ def _boot_volume_attachments(profile: str, compartment_id: str) -> dict:
     for ad in _availability_domains(profile):
         try:
             items = _b().list_boot_volume_attachments(profile, compartment_id, ad)
-        except OCICLIError:
+        except OCIError:
             continue
         for a in items:
             bid = _get(a, "boot-volume-id", "boot_volume_id")
@@ -361,7 +361,7 @@ def _block_volume_attachments(profile: str, compartment_id: str) -> dict:
     out = {}
     try:
         items = _b().list_volume_attachments(profile, compartment_id)
-    except OCICLIError:
+    except OCIError:
         return out
     for a in items:
         vid = _get(a, "volume-id", "volume_id")
@@ -499,7 +499,7 @@ def list_subnets(profile: str, compartment_id: str = None) -> list:
     cid = compartment_id or tenancy_of(profile)
     try:
         vcn_items = _b().list_vcns(profile, cid)
-    except OCICLIError:
+    except OCIError:
         return []
     vcns = {
         v["id"]: _get(v, "display-name", "display_name")
@@ -551,7 +551,7 @@ def resolve_subnet(profile: str, compartment_id: str = None, create_if_missing: 
     if subnets:
         return {**subnets[0], "created": False}
     if not create_if_missing:
-        raise OCICLIError("这个账户还没有可用子网")
+        raise OCIError("这个账户还没有可用子网")
     net = create_network(profile, cid, DEFAULT_NETWORK_NAME)
     return {
         "id": net["subnet_id"],
@@ -572,7 +572,7 @@ def create_network(profile: str, compartment_id: str = None, name: str = "ocix-v
     vcn = _b().create_vcn(profile, cid, "10.0.0.0/16", name, label)
     vcn_id = vcn.get("id")
     if not vcn_id:
-        raise OCICLIError("VCN 创建失败：未返回 VCN id")
+        raise OCIError("VCN 创建失败：未返回 VCN id")
 
     ig = _b().create_internet_gateway(profile, cid, vcn_id, f"{name}-ig")
 
@@ -625,7 +625,7 @@ def primary_vnic(profile: str, instance_id: str, compartment_id: str) -> dict:
     """拿到实例的主 VNIC——换 IP、查 IPv6、定位子网都要靠它。
 
     结果缓存 30 秒：一次防火墙操作要反复定位同一张网卡，
-    每次重查都是 2 次 CLI 调用（约 2.3 秒）。
+    每次重查都要 2 次 API 请求。
     """
     ck = (profile, "vnic", instance_id)
     cached = _read_cache.get(ck)
@@ -638,7 +638,7 @@ def primary_vnic(profile: str, instance_id: str, compartment_id: str) -> dict:
             vnic_id = _get(a, "vnic-id", "vnic_id")
             break
     if not vnic_id:
-        raise OCICLIError("找不到实例的网卡（VNIC），实例可能正在创建或已终止")
+        raise OCIError("找不到实例的网卡（VNIC），实例可能正在创建或已终止")
     vnic = _b().get_vnic(profile, vnic_id)
     return _read_cache.set(ck, {
         "vnic_id": vnic_id,
@@ -659,7 +659,7 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
     ips = _b().list_private_ips(profile, vnic["vnic_id"])
     primary = next((p for p in ips if _get(p, "is-primary", "is_primary")), None) or (ips[0] if ips else None)
     if not primary:
-        raise OCICLIError("找不到主私网 IP，无法更换公网 IP")
+        raise OCIError("找不到主私网 IP，无法更换公网 IP")
     private_ip_id = primary.get("id")
 
     old_ip = vnic.get("public_ip")
@@ -668,11 +668,11 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
             # 注意是 `public-ip get --private-ip-id`，
             # 没有 get-public-ip-by-private-ip-id 这个子命令（写错会直接报 No such command）
             cur = _b().get_public_ip_by_private_ip(profile, private_ip_id)
-        except OCICLIError:
+        except OCIError:
             cur = {}
         lifetime = _get(cur, "lifetime")
         if lifetime == "RESERVED":
-            raise OCICLIError(
+            raise OCIError(
                 "这台机器用的是保留（Reserved）公网 IP，面板不会动它——"
                 "保留 IP 换掉就找不回来了。请到 OCI 控制台手动处理。")
         if cur.get("id"):
@@ -773,7 +773,7 @@ def ensure_subnet_ipv6(profile: str, subnet_id: str, compartment_id: str) -> dic
         try:
             _ensure_ipv6_route(profile, vcn_id, compartment_id, st["route_table_id"])
             _ensure_ipv6_ingress(profile, subnet_id)
-        except OCICLIError:
+        except OCIError:
             pass
         return {**st, "changed": False}
 
@@ -782,7 +782,7 @@ def ensure_subnet_ipv6(profile: str, subnet_id: str, compartment_id: str) -> dic
         _add_vcn_ipv6(profile, vcn_id)
         vcn, v6 = _vcn_ipv6_blocks(profile, vcn_id)
     if not v6:
-        raise OCICLIError(
+        raise OCIError(
             "VCN 没能拿到 IPv6 地址段。请确认该区域支持 IPv6，"
             "以及你的用户对 VCN 有 manage 权限。")
 
@@ -790,7 +790,7 @@ def ensure_subnet_ipv6(profile: str, subnet_id: str, compartment_id: str) -> dic
     subnet_cidr = v6[0].rsplit("/", 1)[0] + "/64"
     try:
         _b().update_subnet_ipv6_cidr(profile, subnet_id, subnet_cidr)
-    except OCICLIError as e:
+    except OCIError as e:
         if "already" not in (e.message or "").lower():
             raise
 
@@ -801,7 +801,7 @@ def ensure_subnet_ipv6(profile: str, subnet_id: str, compartment_id: str) -> dic
                      ("安全列表入站规则", lambda: _ensure_ipv6_ingress(profile, subnet_id))):
         try:
             fn()
-        except OCICLIError as e:
+        except OCIError as e:
             warnings.append(f"{step}没能自动补上：{e.message}")
 
     return {**subnet_ipv6_status(profile, subnet_id), "changed": True, "warnings": warnings}
@@ -819,10 +819,10 @@ def wait_for_primary_vnic(profile: str, instance_id: str, compartment_id: str,
     while time.time() < deadline:
         try:
             return primary_vnic(profile, instance_id, compartment_id)
-        except OCICLIError as e:
+        except OCIError as e:
             last_err = e
             time.sleep(5)
-    raise last_err or OCICLIError(f"等待网卡就绪超时（{timeout}s）")
+    raise last_err or OCIError(f"等待网卡就绪超时（{timeout}s）")
 
 
 def add_ipv6_to_instance(profile: str, instance_id: str, compartment_id: str,
@@ -984,7 +984,7 @@ def _subnet_security(profile: str, subnet_id: str) -> tuple:
     sub = _b().get_subnet(profile, subnet_id)
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
     if not sl_ids:
-        raise OCICLIError("该子网未关联安全列表，无法修改防火墙规则")
+        raise OCIError("该子网未关联安全列表，无法修改防火墙规则")
     return _read_cache.set(
         ck, (sl_ids[0], bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))))
 
@@ -1017,7 +1017,7 @@ def add_port_rule(profile: str, subnet_id: str, protocol: str, port_from: int,
     """追加一条入站规则。protocol 取 TCP / UDP / ICMP / ALL。"""
     proto = _PROTO_NUM.get((protocol or "").upper())
     if not proto:
-        raise OCICLIError(f"不支持的协议: {protocol}")
+        raise OCIError(f"不支持的协议: {protocol}")
     sid, _ = _subnet_security(profile, subnet_id)
     rules = _raw_ingress(profile, sid)
 
@@ -1047,7 +1047,7 @@ def delete_port_rule(profile: str, subnet_id: str, index: int) -> dict:
     sid, _ = _subnet_security(profile, subnet_id)
     rules = _raw_ingress(profile, sid)
     if index < 0 or index >= len(rules):
-        raise OCICLIError("规则序号超出范围，请刷新后重试")
+        raise OCIError("规则序号超出范围，请刷新后重试")
     removed = rules.pop(index)
     _set_ingress(profile, sid, rules)
     return {"security_list_id": sid, "subnet_id": subnet_id,
@@ -1082,7 +1082,7 @@ def revoke_all_ports(profile: str, instance_id: str, compartment_id: str) -> dic
     """撤掉全放行规则，回到只剩具体端口的状态。"""
     st = firewall_status(profile, instance_id, compartment_id)
     if not st["security_lists"]:
-        raise OCICLIError("这个子网没有关联安全列表，无法修改防火墙")
+        raise OCIError("这个子网没有关联安全列表，无法修改防火墙")
     sid = st["security_lists"][0]["id"]
     rules = _raw_ingress(profile, sid)
     kept = [r for r in rules
@@ -1201,7 +1201,7 @@ def get_metrics(profile: str, instance_id: str, compartment_id: str = None, hour
         out.append(result)
     # 全部失败说明是权限 / compartment 错了，交给上层报错
     if errors and len(errors) == len(_METRIC_QUERIES):
-        raise OCICLIError(errors[0])
+        raise OCIError(errors[0])
     order = {m[0]: idx for idx, m in enumerate(_METRIC_QUERIES)}
     out.sort(key=lambda x: order.get(x["metric"], 99))
     return out

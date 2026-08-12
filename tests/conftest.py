@@ -44,16 +44,14 @@ def workdir(tmp_path):
 
 @pytest.fixture()
 def app_client(workdir, monkeypatch):
-    """带真实鉴权的 TestClient；PATH 清空以保证不会真的调到 oci CLI。"""
+    """带真实鉴权的 TestClient；配置里的 key_file 不存在，绝不会真的连上 OCI。"""
     from fastapi.testclient import TestClient
 
-    monkeypatch.setenv("PATH", "")
     monkeypatch.setenv("OCIX_SESSION_SECRET", "t" * 40)
     monkeypatch.setenv("OCIX_ADMIN_USER", "admin")
     monkeypatch.setenv("OCIX_ADMIN_PASSWORD", "devpass123")
     monkeypatch.setenv("OCIX_DATA_DIR", str(workdir["root"] / "data"))
     monkeypatch.setenv("OCI_CONFIG_PATH", str(workdir["config"]))
-    monkeypatch.setenv("OCIX_CLI_TIMEOUT", "5")
 
     with _fresh_ocix():
         from ocix.main import app
@@ -73,7 +71,6 @@ def anon_client(workdir, monkeypatch):
     """未登录的 TestClient。"""
     from fastapi.testclient import TestClient
 
-    monkeypatch.setenv("PATH", "")
     monkeypatch.setenv("OCIX_SESSION_SECRET", "t" * 40)
     monkeypatch.setenv("OCIX_ADMIN_PASSWORD", "devpass123")
     monkeypatch.setenv("OCIX_DATA_DIR", str(workdir["root"] / "data2"))
@@ -90,7 +87,7 @@ def anon_client(workdir, monkeypatch):
 def _isolate_env(monkeypatch):
     """避免宿主机上的 OCI_* 环境变量影响测试。"""
     for key in list(os.environ):
-        if key.startswith("OCI_CLI"):
+        if key.startswith("OCI_"):
             monkeypatch.delenv(key, raising=False)
 
 
@@ -108,7 +105,7 @@ except Exception:  # pragma: no cover - 依赖缺失时由具体用例报错
 def _clear_caches():
     """清空进程级读缓存。
 
-    oci_helpers 为了压低 oci CLI 调用次数缓存了实例、卷、镜像、网卡等数据。
+    oci_helpers 为了压低 OCI 请求次数缓存了实例、卷、镜像、网卡等数据。
     """
     def _reset():
         mods = []

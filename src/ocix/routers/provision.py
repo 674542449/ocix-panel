@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import freetier, security
+from ..common import OCIError
 from ..db import audit
-from ..oci_cli import OCICLIError
 from ..oci_helpers import (
     VPU_RANGE,
     add_ipv6_to_instance,
@@ -65,7 +65,7 @@ def options(
         ads = list_availability_domains(profile)
         images = list_images(profile, compartment_id, shape=shape)
         subnets = list_subnets(profile, compartment_id)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     return {
         "availability_domains": ads,
@@ -90,7 +90,7 @@ def preflight(
     security.check_rate(request, security.API_RATE_LIMIT)
     try:
         return preflight_create(req.profile, req.model_dump(), req.compartment_id)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
 
 
@@ -107,7 +107,7 @@ def create_instance(
 
     try:
         check = preflight_create(req.profile, params, req.compartment_id)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=f"额度预检失败，未创建任何资源: {e.message}")
 
     if not check["allow"]:
@@ -125,7 +125,7 @@ def create_instance(
         subnet = resolve_subnet(req.profile, req.compartment_id)
         params["subnet_id"] = subnet["id"]
         network_created = subnet.get("created", False)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=f"没能准备好网络，未创建任何实例: {e.message}")
 
     # 勾了 IPv6 就在这里把子网的 IPv6 一并开通，用户不用再点一次
@@ -134,7 +134,7 @@ def create_instance(
         try:
             net = ensure_subnet_ipv6(req.profile, params["subnet_id"], req.compartment_id)
             ipv6_warnings = net.get("warnings", [])
-        except OCICLIError as e:
+        except OCIError as e:
             audit(user, "create-instance", profile=req.profile, target=req.display_name,
                   detail=f"IPv6 开通失败: {e.message}", result="fail", ip=ip)
             raise HTTPException(
@@ -143,7 +143,7 @@ def create_instance(
 
     try:
         data = launch_instance(req.profile, params)
-    except OCICLIError as e:
+    except OCIError as e:
         msg = e.message
         if "capacity" in msg.lower() or "OutOfCapacity" in (e.code or ""):
             msg = _CAPACITY_HINT
@@ -169,7 +169,7 @@ def create_instance(
                   target=params["subnet_id"],
                   detail="随实例创建自动放行 " + (", ".join(res["added"]) or "（已是全放行）"),
                   result="ok", ip=ip)
-        except OCICLIError as e:
+        except OCIError as e:
             warnings.append(f"实例已创建，但端口没能自动放行：{e.message}（可到「防火墙」页手动放行）")
 
     ipv6_addr = None
@@ -185,7 +185,7 @@ def create_instance(
                                            wait_seconds=90)
                 ipv6_addr = res.get("ipv6")
                 warnings.extend(res.get("warnings", []))
-            except OCICLIError as e:
+            except OCIError as e:
                 warnings.append(
                     f"实例已创建，但 IPv6 还没挂上：{e.message}。"
                     f"等实例跑起来后到实例列表点击「+ 添加」即可。")
@@ -218,7 +218,7 @@ def add_ipv6(
     ip = security.client_ip(request)
     try:
         res = add_ipv6_to_instance(req.profile, req.instance_id, _compartment_of(req))
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "add-ipv6", profile=req.profile, target=req.instance_id,
               detail=e.message, result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -237,7 +237,7 @@ def terminate(
     ip = security.client_ip(request)
     try:
         terminate_instance(req.profile, req.instance_id, req.preserve_boot_volume)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "terminate-instance", profile=req.profile, target=req.instance_id,
               detail=e.message, result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -259,7 +259,7 @@ def storage(
     security.check_rate(request, security.API_RATE_LIMIT)
     try:
         return storage_overview(profile, compartment_id, subtree=subtree)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
 
 
@@ -273,7 +273,7 @@ def remove_volume(
     ip = security.client_ip(request)
     try:
         delete_volume(req.profile, req.volume_id, req.kind)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "delete-volume", profile=req.profile, target=req.volume_id,
               detail=f"{req.kind} -> {e.message}", result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -300,7 +300,7 @@ def change_ip(
     ip = security.client_ip(request)
     try:
         res = change_public_ip(req.profile, req.instance_id, _compartment_of(req))
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "change-public-ip", profile=req.profile, target=req.instance_id,
               detail=e.message, result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -322,7 +322,7 @@ def get_firewall(
     try:
         from ..oci_helpers import tenancy_of
         return firewall_status(profile, instance_id, compartment_id or tenancy_of(profile))
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
 
 
@@ -336,7 +336,7 @@ def firewall_allow_all(
     ip = security.client_ip(request)
     try:
         res = open_all_ports(req.profile, req.instance_id, _compartment_of(req), req.include_ipv6)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "firewall-allow-all", profile=req.profile, target=req.instance_id,
               detail=e.message, result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -355,7 +355,7 @@ def firewall_revoke_all(
     ip = security.client_ip(request)
     try:
         res = revoke_all_ports(req.profile, req.instance_id, _compartment_of(req))
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     audit(user, "firewall-revoke-all", profile=req.profile, target=req.instance_id,
           detail=f"移除 {res['removed']} 条全放行规则", result="ok", ip=ip)
@@ -377,7 +377,7 @@ def add_firewall_rule(
         res = add_port_rule(req.profile, st["subnet_id"], req.protocol,
                             req.port_from, req.port_to, req.source, req.description)
         status = firewall_status(req.profile, req.instance_id, cid)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "firewall-add-rule", profile=req.profile, target=req.instance_id,
               detail=e.message, result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -401,7 +401,7 @@ def delete_firewall_rule(
         st = firewall_status(req.profile, req.instance_id, cid)
         res = delete_port_rule(req.profile, st["subnet_id"], req.index)
         status = firewall_status(req.profile, req.instance_id, cid)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     audit(user, "firewall-delete-rule", profile=req.profile, target=req.instance_id,
           detail=str(res.get("removed")), result="ok", ip=ip)
@@ -422,7 +422,7 @@ def clear_firewall_rules(
         st = firewall_status(req.profile, req.instance_id, cid)
         res = clear_ingress_rules(req.profile, st["subnet_id"], req.keep_ssh)
         status = firewall_status(req.profile, req.instance_id, cid)
-    except OCICLIError as e:
+    except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
     audit(user, "firewall-clear", profile=req.profile, target=req.instance_id,
           detail=f"移除 {res['removed']} 条，保留SSH={req.keep_ssh}", result="ok", ip=ip)
@@ -440,7 +440,7 @@ def enable_ipv6(
     ip = security.client_ip(request)
     try:
         res = ensure_subnet_ipv6(req.profile, req.subnet_id, req.compartment_id)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "enable-ipv6", profile=req.profile, target=req.subnet_id,
               detail=e.message, result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -460,7 +460,7 @@ def set_performance(
     ip = security.client_ip(request)
     try:
         res = update_volume_performance(req.profile, req.volume_id, req.kind, req.vpus)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "volume-performance", profile=req.profile, target=req.volume_id,
               detail=f"vpus={req.vpus} -> {e.message}", result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
@@ -480,7 +480,7 @@ def make_network(
     ip = security.client_ip(request)
     try:
         net = create_network(req.profile, req.compartment_id, req.name)
-    except OCICLIError as e:
+    except OCIError as e:
         audit(user, "create-network", profile=req.profile, target=req.name,
               detail=e.message, result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=e.message)
