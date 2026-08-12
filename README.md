@@ -151,6 +151,7 @@ sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT && sudo netfilter-persistent 
 ```
 ocix-panel/
 ├── src/ocix/            后端（FastAPI）+ 前端单页 (web/)
+│   ├── backends/        与 OCI 通信的两种实现（cli / sdk）
 │   ├── routers/         API 路由
 │   ├── freetier.py      Always Free 额度模型与预检闸门
 │   ├── oci_helpers.py   oci CLI 封装
@@ -215,12 +216,28 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 
 ## 底层实现
 
-面板**不直接调用 OCI Python SDK**，所有操作都通过 Oracle 官方的 `oci` CLI（子进程）完成：
+面板支持**两种官方通道**，用 `OCIX_BACKEND` 切换，接口完全一致：
 
-- 唯一出口是 `src/ocix/oci_cli.py` 的 `run_oci()`，统一加 `--config-file` / `--profile` / `--output json`
-- 凭据完全交给 CLI 按官方 `~/.oci/config` 规则处理，面板不自己签名、不自己发 HTTP
-- `oci-cli` 本身依赖官方 `oci` SDK，所以调用链仍是 官方 SDK → OCI REST API，只是多了一层官方 CLI
-- 好处是行为与你在终端手敲 `oci ...` 完全一致，出问题可以直接复制命令自己复现
+| | `cli`（默认） | `sdk` |
+|---|---|---|
+| 实现 | 起子进程调官方 `oci` 命令行 | 进程内调官方 `oci` Python SDK |
+| 单次调用开销 | **约 1150ms**（其中 import SDK 682ms） | 约 50–150ms，且复用 HTTPS 连接 |
+| 排错 | 每步都能复制成命令自己复现 | 结构化异常，带 status / code |
+| 分页 | `--all` | `list_call_get_all_results` |
+| 创建实例时分配 IPv6 | 不支持（CLI 无对应参数），只能建完补挂 | **支持**，随实例一次到位 |
+
+两者都是 Oracle 官方产物——**`oci-cli` 本身就构建在 `oci` SDK 之上**，
+调用链末端都是 官方 SDK → OCI REST API，合规上没有任何区别。
+
+```bash
+# 切到 SDK（快 10-20 倍），改 .env 后重启
+OCIX_BACKEND=sdk
+bash /opt/ocix/scripts/ocix.sh up -d
+```
+
+`/api/health` 会报告当前用的是哪个后端。切换只影响「怎么发请求」，
+业务逻辑（额度闸门、缓存、防火墙规则）两边共用同一份代码：
+`src/ocix/backends/` 定义接口与两种实现，`oci_helpers.py` 只调接口。
 
 依赖只设下限 `oci-cli>=3.70,<4`：面板用到的子命令（`network ipv6 create`、
 `network vcn add-ipv6-vcn-cidr` 等）在老版本 CLI 里可能不存在。

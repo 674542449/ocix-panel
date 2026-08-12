@@ -174,18 +174,25 @@ def create_instance(
 
     ipv6_addr = None
     if req.assign_ipv6 and instance_id:
-        try:
-            # launch 立刻返回 PROVISIONING，网卡还没挂好，得等一会儿再挂 IPv6
-            res = add_ipv6_to_instance(req.profile, instance_id, req.compartment_id,
-                                       wait_seconds=90)
-            ipv6_addr = res.get("ipv6")
-            warnings.extend(res.get("warnings", []))
+        # SDK 后端在 launch 时就带了 assign_ipv6_ip，地址随实例一起分配，直接读返回值；
+        # CLI 后端没有对应参数，只能等网卡挂好后再补一个。
+        assigned = data.get("ipv6_addresses") or data.get("ipv6-addresses") or []
+        ipv6_addr = assigned[0] if assigned else None
+
+        if ipv6_addr is None:
+            try:
+                res = add_ipv6_to_instance(req.profile, instance_id, req.compartment_id,
+                                           wait_seconds=90)
+                ipv6_addr = res.get("ipv6")
+                warnings.extend(res.get("warnings", []))
+            except OCICLIError as e:
+                warnings.append(
+                    f"实例已创建，但 IPv6 还没挂上：{e.message}。"
+                    f"等实例跑起来后到实例列表点击「+ 添加」即可。")
+
+        if ipv6_addr:
             audit(user, "add-ipv6", profile=req.profile, target=instance_id,
-                  detail=ipv6_addr or "", result="ok", ip=ip)
-        except OCICLIError as e:
-            warnings.append(
-                f"实例已创建，但 IPv6 还没挂上：{e.message}。"
-                f"等实例跑起来后到实例列表点「+ 添加」即可。")
+                  detail=ipv6_addr, result="ok", ip=ip)
 
     return {
         "ok": True,

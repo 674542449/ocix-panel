@@ -1,14 +1,19 @@
-import base64
 import configparser
-import json
 import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 
 from . import freetier
-from .config import COMPARTMENT_CACHE_TTL, OCI_CONFIG_PATH, OCI_LAUNCH_TIMEOUT
-from .oci_cli import OCICLIError, TTLCache, gather, run_oci
+from .backends import get_backend
+from .config import COMPARTMENT_CACHE_TTL, OCI_CONFIG_PATH
+from .oci_cli import OCICLIError, TTLCache, gather
+
+
+def _b():
+    """当前后端（cli 或 sdk）。取实例而不是模块级绑定，测试才能随时替换。"""
+    return get_backend()
+
 
 # ---- 通用小工具 ----
 
@@ -59,8 +64,7 @@ def get_user(profile: str) -> dict:
     user = cfg.get("user")
     if not user:
         raise OCICLIError(f"profile [{profile}] 缺少 user 字段")
-    data = run_oci(profile, "iam", "user", "get", "--user-id", user)
-    return data.get("data", {})
+    return _b().get_user(profile, user)
 
 
 # ---- Compartment ----
@@ -88,14 +92,7 @@ def list_compartments(profile: str, use_cache: bool = True) -> list:
     tenancy = tenancy_of(profile)
     items = []
     try:
-        data = run_oci(
-            profile, "iam", "compartment", "list",
-            "--compartment-id", tenancy,
-            "--compartment-id-in-subtree", "true",
-            "--access-level", "ACCESSIBLE",
-            "--all",
-        )
-        items = data.get("data", []) or []
+        items = _b().list_compartments(profile, tenancy)
     except OCICLIError:
         # 权限不足时至少还能用租户根
         items = []
@@ -176,8 +173,7 @@ def list_instances(
     targets = _target_compartments(profile, compartment_id, subtree)
 
     def _one(cid):
-        data = run_oci(profile, "compute", "instance", "list", "--compartment-id", cid, "--all")
-        return data.get("data", []) or []
+        return _b().list_instances(profile, cid)
 
     results, errors = [], []
     for _cid, items, err in gather(_one, targets):
@@ -220,8 +216,7 @@ def attach_ips(profile: str, instances: list) -> list:
     }
 
     def _attachments(cid):
-        data = run_oci(profile, "compute", "vnic-attachment", "list", "--compartment-id", cid, "--all")
-        return data.get("data", []) or []
+        return _b().list_vnic_attachments(profile, cid)
 
     inst_to_vnic = {}
     for _cid, atts, err in gather(_attachments, comp_ids):
@@ -239,8 +234,7 @@ def attach_ips(profile: str, instances: list) -> list:
     vnic_ids = {v for v in wanted.values() if v}
 
     def _vnic(vid):
-        data = run_oci(profile, "network", "vnic", "get", "--vnic-id", vid)
-        return data.get("data", {}) or {}
+        return _b().get_vnic(profile, vid)
 
     vnic_info = {}
     for vid, vnic, err in gather(_vnic, vnic_ids):
@@ -263,18 +257,9 @@ def attach_ips(profile: str, instances: list) -> list:
 
 def instance_action(profile: str, instance_id: str, action: str) -> dict:
     # 合法 action: START / STOP / SOFTSTOP / RESET / SOFTRESET
-    data = run_oci(
-        profile,
-        "compute",
-        "instance",
-        "action",
-        "--instance-id",
-        instance_id,
-        "--action",
-        action.upper(),
-    )
+    data = _b().instance_action(profile, instance_id, action)
     invalidate_read_cache(profile)
-    return data.get("data", {})
+    return data
 
 
 # ---- 存储 ----
@@ -287,8 +272,7 @@ def list_block_volumes(profile: str, compartment_id: str = None, subtree: bool =
     targets = _target_compartments(profile, compartment_id, subtree)
 
     def _one(cid):
-        data = run_oci(profile, "bv", "volume", "list", "--compartment-id", cid, "--all")
-        return data.get("data", []) or []
+        return _b().list_volumes(profile, cid)
 
     out = []
     for _cid, items, err in gather(_one, targets):
@@ -314,18 +298,13 @@ def list_boot_volumes(profile: str, compartment_id: str = None, subtree: bool = 
 
     def _one(cid):
         try:
-            data = run_oci(profile, "bv", "boot-volume", "list", "--compartment-id", cid, "--all")
-            return data.get("data", []) or []
+            return _b().list_boot_volumes(profile, cid)
         except OCICLIError:
-            ads = _availability_domains(profile)
+            # 老接口要求带可用域，退回逐个可用域查
             out = []
-            for ad in ads:
+            for ad in _availability_domains(profile):
                 try:
-                    data = run_oci(
-                        profile, "bv", "boot-volume", "list",
-                        "--compartment-id", cid, "--availability-domain", ad, "--all",
-                    )
-                    out.extend(data.get("data", []) or [])
+                    out.extend(_b().list_boot_volumes(profile, cid, availability_domain=ad))
                 except OCICLIError:
                     continue
             return out
@@ -345,12 +324,8 @@ def _availability_domains(profile: str) -> list:
     if cached is not None:
         return cached
     try:
-        data = run_oci(
-            profile, "iam", "availability-domain", "list",
-            "--compartment-id", tenancy_of(profile),
-        )
-        return _read_cache.set(
-            ck, [a.get("name") for a in (data.get("data", []) or []) if a.get("name")])
+        ads = _b().list_availability_domains(profile, tenancy_of(profile))
+        return _read_cache.set(ck, [a.get("name") for a in ads if a.get("name")])
     except OCICLIError:
         return []
 
@@ -366,14 +341,10 @@ def _boot_volume_attachments(profile: str, compartment_id: str) -> dict:
     out = {}
     for ad in _availability_domains(profile):
         try:
-            data = run_oci(
-                profile, "compute", "boot-volume-attachment", "list",
-                "--compartment-id", compartment_id,
-                "--availability-domain", ad, "--all",
-            )
+            items = _b().list_boot_volume_attachments(profile, compartment_id, ad)
         except OCICLIError:
             continue
-        for a in data.get("data", []) or []:
+        for a in items:
             bid = _get(a, "boot-volume-id", "boot_volume_id")
             if not bid:
                 continue
@@ -389,13 +360,10 @@ def _boot_volume_attachments(profile: str, compartment_id: str) -> dict:
 def _block_volume_attachments(profile: str, compartment_id: str) -> dict:
     out = {}
     try:
-        data = run_oci(
-            profile, "compute", "volume-attachment", "list",
-            "--compartment-id", compartment_id, "--all",
-        )
+        items = _b().list_volume_attachments(profile, compartment_id)
     except OCICLIError:
         return out
-    for a in data.get("data", []) or []:
+    for a in items:
         vid = _get(a, "volume-id", "volume_id")
         if not vid:
             continue
@@ -466,9 +434,9 @@ def storage_overview(profile: str, compartment_id: str = None, subtree: bool = T
 
 def delete_volume(profile: str, volume_id: str, kind: str) -> None:
     if kind == "boot":
-        run_oci(profile, "bv", "boot-volume", "delete", "--boot-volume-id", volume_id, "--force")
+        _b().delete_boot_volume(profile, volume_id)
     else:
-        run_oci(profile, "bv", "volume", "delete", "--volume-id", volume_id, "--force")
+        _b().delete_volume(profile, volume_id)
     invalidate_read_cache(profile)
 
 
@@ -496,17 +464,10 @@ def list_images(profile: str, compartment_id: str = None, shape: str = None,
     if cached is not None:
         return cached
     cid = compartment_id or tenancy_of(profile)
-    args = [
-        "compute", "image", "list", "--compartment-id", cid,
-        "--operating-system", os_name,
-        "--sort-by", "TIMECREATED", "--sort-order", "DESC", "--all",
-    ]
-    if shape:
-        args += ["--shape", shape]
-    data = run_oci(profile, *args)
+    images = _b().list_images(profile, cid, os_name, shape)
 
     by_version = {}
-    for im in data.get("data", []) or []:
+    for im in images:
         if _get(im, "lifecycle-state", "lifecycle_state") != "AVAILABLE":
             continue
         name = _get(im, "display-name", "display_name") or ""
@@ -537,21 +498,19 @@ def list_subnets(profile: str, compartment_id: str = None) -> list:
         return cached
     cid = compartment_id or tenancy_of(profile)
     try:
-        vcn_data = run_oci(profile, "network", "vcn", "list", "--compartment-id", cid, "--all")
+        vcn_items = _b().list_vcns(profile, cid)
     except OCICLIError:
         return []
     vcns = {
         v["id"]: _get(v, "display-name", "display_name")
-        for v in (vcn_data.get("data", []) or [])
+        for v in vcn_items
         if _get(v, "lifecycle-state", "lifecycle_state") == "AVAILABLE"
     }
     if not vcns:
         return []
 
     def _one(vid):
-        data = run_oci(profile, "network", "subnet", "list",
-                       "--compartment-id", cid, "--vcn-id", vid, "--all")
-        return data.get("data", []) or []
+        return _b().list_subnets(profile, cid, vcn_id=vid)
 
     out = []
     for vid, subnets, err in gather(_one, list(vcns)):
@@ -610,34 +569,23 @@ def create_network(profile: str, compartment_id: str = None, name: str = "ocix-v
     cid = compartment_id or tenancy_of(profile)
     label = "".join(c for c in name.lower() if c.isalnum())[:13] or "ocixvcn"
 
-    vcn = run_oci(profile, "network", "vcn", "create",
-                  "--compartment-id", cid, "--cidr-block", "10.0.0.0/16",
-                  "--display-name", name, "--dns-label", label,
-                  "--wait-for-state", "AVAILABLE",
-                  timeout=OCI_LAUNCH_TIMEOUT).get("data", {})
+    vcn = _b().create_vcn(profile, cid, "10.0.0.0/16", name, label)
     vcn_id = vcn.get("id")
     if not vcn_id:
         raise OCICLIError("VCN 创建失败：未返回 VCN id")
 
-    ig = run_oci(profile, "network", "internet-gateway", "create",
-                 "--compartment-id", cid, "--vcn-id", vcn_id, "--is-enabled", "true",
-                 "--display-name", f"{name}-ig", "--wait-for-state", "AVAILABLE",
-                 timeout=OCI_LAUNCH_TIMEOUT).get("data", {})
+    ig = _b().create_internet_gateway(profile, cid, vcn_id, f"{name}-ig")
 
     rt_id = _get(vcn, "default-route-table-id", "default_route_table_id")
     if rt_id and ig.get("id"):
-        run_oci(profile, "network", "route-table", "update", "--rt-id", rt_id, "--force",
-                "--route-rules", json.dumps([{
-                    "destination": "0.0.0.0/0",
-                    "destinationType": "CIDR_BLOCK",
-                    "networkEntityId": ig["id"],
-                }]))
+        _b().update_route_rules(profile, rt_id, [{
+            "destination": "0.0.0.0/0",
+            "destinationType": "CIDR_BLOCK",
+            "networkEntityId": ig["id"],
+        }])
 
-    subnet = run_oci(profile, "network", "subnet", "create",
-                     "--compartment-id", cid, "--vcn-id", vcn_id,
-                     "--cidr-block", "10.0.0.0/24", "--display-name", f"{name}-public",
-                     "--dns-label", "public", "--wait-for-state", "AVAILABLE",
-                     timeout=OCI_LAUNCH_TIMEOUT).get("data", {})
+    subnet = _b().create_subnet(profile, cid, vcn_id, "10.0.0.0/24",
+                                f"{name}-public", "public")
     return {
         "vcn_id": vcn_id,
         "vcn_name": name,
@@ -650,35 +598,27 @@ def create_network(profile: str, compartment_id: str = None, name: str = "ocix-v
 
 def launch_instance(profile: str, params: dict) -> dict:
     """开一台实例。额度预检必须在调用方先跑过。"""
-    cid = params["compartment_id"]
     plan = freetier.normalize_plan(params)
-    args = [
-        "compute", "instance", "launch",
-        "--compartment-id", cid,
-        "--availability-domain", params["availability_domain"],
-        "--display-name", params["display_name"],
-        "--image-id", params["image_id"],
-        "--shape", plan["shape"],
-        "--boot-volume-size-in-gbs", str(plan["boot_gb"]),
-    ]
-    # 只用各版本 CLI 都有的扁平参数。
-    # 早先给 IPv6 走 --create-vnic-details，但不少 oci CLI 版本压根没有这个选项
-    # （报 "No such option: --create-vnic-details"），所以 IPv6 改为建完之后单独挂。
-    args += ["--subnet-id", params["subnet_id"], "--assign-public-ip", "true"]
+    spec = {
+        "compartment_id": params["compartment_id"],
+        "availability_domain": params["availability_domain"],
+        "display_name": params["display_name"],
+        "image_id": params["image_id"],
+        "subnet_id": params["subnet_id"],
+        "shape": plan["shape"],
+        "boot_gb": plan["boot_gb"],
+        "ssh_public_key": params["ssh_public_key"].strip(),
+        "user_data": params.get("user_data"),
+        # CLI 后端无法在创建时分配 IPv6（没有对应参数），会忽略这个标志，
+        # 由上层在创建完成后补挂；SDK 后端则可以一次到位。
+        "assign_ipv6": bool(params.get("assign_ipv6")),
+    }
     if plan["family"] == "arm":
-        args += ["--shape-config", json.dumps({
-            "ocpus": plan["ocpus"], "memoryInGBs": plan["memory_gb"],
-        })]
+        spec["shape_config"] = {"ocpus": plan["ocpus"], "memoryInGBs": plan["memory_gb"]}
 
-    metadata = {"ssh_authorized_keys": params["ssh_public_key"].strip()}
-    user_data = params.get("user_data")
-    if user_data:
-        metadata["user_data"] = base64.b64encode(user_data.encode("utf-8")).decode("ascii")
-    args += ["--metadata", json.dumps(metadata)]
-
-    data = run_oci(profile, *args, timeout=OCI_LAUNCH_TIMEOUT)
+    data = _b().launch_instance(profile, spec)
     invalidate_read_cache(profile)
-    return data.get("data", {})
+    return data
 
 
 def primary_vnic(profile: str, instance_id: str, compartment_id: str) -> dict:
@@ -691,16 +631,15 @@ def primary_vnic(profile: str, instance_id: str, compartment_id: str) -> dict:
     cached = _read_cache.get(ck)
     if cached is not None:
         return cached
-    data = run_oci(profile, "compute", "vnic-attachment", "list",
-                   "--compartment-id", compartment_id, "--instance-id", instance_id, "--all")
+    atts = _b().list_vnic_attachments(profile, compartment_id, instance_id=instance_id)
     vnic_id = None
-    for a in data.get("data", []) or []:
+    for a in atts:
         if _get(a, "lifecycle-state", "lifecycle_state") == "ATTACHED":
             vnic_id = _get(a, "vnic-id", "vnic_id")
             break
     if not vnic_id:
         raise OCICLIError("找不到实例的网卡（VNIC），实例可能正在创建或已终止")
-    vnic = run_oci(profile, "network", "vnic", "get", "--vnic-id", vnic_id).get("data", {}) or {}
+    vnic = _b().get_vnic(profile, vnic_id)
     return _read_cache.set(ck, {
         "vnic_id": vnic_id,
         "subnet_id": _get(vnic, "subnet-id", "subnet_id"),
@@ -717,8 +656,7 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
     因此中间会有几秒钟没有公网地址。保留（RESERVED）IP 不走这条路，会直接拒绝。
     """
     vnic = primary_vnic(profile, instance_id, compartment_id)
-    ips = run_oci(profile, "network", "private-ip", "list",
-                  "--vnic-id", vnic["vnic_id"], "--all").get("data", []) or []
+    ips = _b().list_private_ips(profile, vnic["vnic_id"])
     primary = next((p for p in ips if _get(p, "is-primary", "is_primary")), None) or (ips[0] if ips else None)
     if not primary:
         raise OCICLIError("找不到主私网 IP，无法更换公网 IP")
@@ -729,8 +667,7 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
         try:
             # 注意是 `public-ip get --private-ip-id`，
             # 没有 get-public-ip-by-private-ip-id 这个子命令（写错会直接报 No such command）
-            cur = run_oci(profile, "network", "public-ip", "get",
-                          "--private-ip-id", private_ip_id).get("data", {}) or {}
+            cur = _b().get_public_ip_by_private_ip(profile, private_ip_id)
         except OCICLIError:
             cur = {}
         lifetime = _get(cur, "lifetime")
@@ -739,15 +676,9 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
                 "这台机器用的是保留（Reserved）公网 IP，面板不会动它——"
                 "保留 IP 换掉就找不回来了。请到 OCI 控制台手动处理。")
         if cur.get("id"):
-            run_oci(profile, "network", "public-ip", "delete",
-                    "--public-ip-id", cur["id"], "--force")
+            _b().delete_public_ip(profile, cur["id"])
 
-    new = run_oci(profile, "network", "public-ip", "create",
-                  "--compartment-id", compartment_id,
-                  "--lifetime", "EPHEMERAL",
-                  "--private-ip-id", private_ip_id,
-                  "--wait-for-state", "ASSIGNED",
-                  timeout=OCI_LAUNCH_TIMEOUT).get("data", {}) or {}
+    new = _b().create_ephemeral_public_ip(profile, compartment_id, private_ip_id)
     invalidate_read_cache(profile)
     return {"old_ip": old_ip, "new_ip": _get(new, "ip-address", "ip_address")}
 
@@ -755,8 +686,7 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
 # ---- IPv6 ----
 
 def subnet_ipv6_status(profile: str, subnet_id: str) -> dict:
-    sub = run_oci(profile, "network", "subnet", "get",
-                  "--subnet-id", subnet_id).get("data", {}) or {}
+    sub = _b().get_subnet(profile, subnet_id)
     return {
         "subnet_id": subnet_id,
         "vcn_id": _get(sub, "vcn-id", "vcn_id"),
@@ -767,7 +697,7 @@ def subnet_ipv6_status(profile: str, subnet_id: str) -> dict:
 
 
 def _vcn_ipv6_blocks(profile: str, vcn_id: str) -> tuple:
-    vcn = run_oci(profile, "network", "vcn", "get", "--vcn-id", vcn_id).get("data", {}) or {}
+    vcn = _b().get_vcn(profile, vcn_id)
     blocks = _get(vcn, "ipv6-cidr-blocks", "ipv6_cidr_blocks", default=[]) or []
     return vcn, blocks
 
@@ -779,31 +709,17 @@ def _add_vcn_ipv6(profile: str, vcn_id: str) -> None:
     置为 true——两个都不给会被服务端拒掉，这正是之前 IPv6 一直开不起来的原因。
     老版本 CLI 没有这个参数，所以失败后再退回不带参数的写法。
     """
-    try:
-        run_oci(profile, "network", "vcn", "add-ipv6-vcn-cidr", "--vcn-id", vcn_id,
-                "--is-oracle-gua-allocation-enabled", "true", timeout=OCI_LAUNCH_TIMEOUT)
-        return
-    except OCICLIError as e:
-        msg = (e.message or "").lower()
-        if "already" in msg or "limitexceeded" in msg or "conflict" in msg:
-            return
-        if "no such option" not in msg and "unrecognized" not in msg and "usage:" not in msg:
-            raise
-    run_oci(profile, "network", "vcn", "add-ipv6-vcn-cidr", "--vcn-id", vcn_id,
-            timeout=OCI_LAUNCH_TIMEOUT)
+    _b().add_vcn_ipv6_cidr(profile, vcn_id)
 
 
 def _ensure_ipv6_route(profile: str, vcn_id: str, compartment_id: str, route_table_id: str) -> None:
     """补一条 ::/0 → 互联网网关的默认路由，否则 IPv6 出不去。"""
-    igs = run_oci(profile, "network", "internet-gateway", "list",
-                  "--compartment-id", compartment_id, "--vcn-id", vcn_id,
-                  "--all").get("data", []) or []
+    igs = _b().list_internet_gateways(profile, compartment_id, vcn_id)
     ig_id = next((g.get("id") for g in igs
                   if _get(g, "lifecycle-state", "lifecycle_state") == "AVAILABLE"), None)
     if not ig_id or not route_table_id:
         return
-    rt = run_oci(profile, "network", "route-table", "get",
-                 "--rt-id", route_table_id).get("data", {}) or {}
+    rt = _b().get_route_table(profile, route_table_id)
     rules = _get(rt, "route-rules", "route_rules", default=[]) or []
     norm = []
     for r in rules:
@@ -819,8 +735,7 @@ def _ensure_ipv6_route(profile: str, vcn_id: str, compartment_id: str, route_tab
         return
     norm.append({"destination": "::/0", "destinationType": "CIDR_BLOCK",
                  "networkEntityId": ig_id, "description": "ocix: ipv6 default route"})
-    run_oci(profile, "network", "route-table", "update", "--rt-id", route_table_id,
-            "--force", "--route-rules", json.dumps(norm), timeout=OCI_LAUNCH_TIMEOUT)
+    _b().update_route_rules(profile, route_table_id, norm)
 
 
 def _ensure_ipv6_ingress(profile: str, subnet_id: str) -> None:
@@ -829,8 +744,7 @@ def _ensure_ipv6_ingress(profile: str, subnet_id: str) -> None:
     OCI 默认安全列表只写了 IPv4 的规则，不补这一条的话 IPv6 地址分下来也连不上，
     看起来就像「IPv6 不好使」。
     """
-    sub = run_oci(profile, "network", "subnet", "get",
-                  "--subnet-id", subnet_id).get("data", {}) or {}
+    sub = _b().get_subnet(profile, subnet_id)
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
     if not sl_ids:
         return
@@ -875,8 +789,7 @@ def ensure_subnet_ipv6(profile: str, subnet_id: str, compartment_id: str) -> dic
     # /56 里切第一个 /64 给子网
     subnet_cidr = v6[0].rsplit("/", 1)[0] + "/64"
     try:
-        run_oci(profile, "network", "subnet", "update", "--subnet-id", subnet_id,
-                "--ipv6-cidr-block", subnet_cidr, "--force", timeout=OCI_LAUNCH_TIMEOUT)
+        _b().update_subnet_ipv6_cidr(profile, subnet_id, subnet_cidr)
     except OCICLIError as e:
         if "already" not in (e.message or "").lower():
             raise
@@ -927,9 +840,8 @@ def add_ipv6_to_instance(profile: str, instance_id: str, compartment_id: str,
 
     net = ensure_subnet_ipv6(profile, vnic["subnet_id"], compartment_id)
 
-    data = run_oci(profile, "network", "ipv6", "create",
-                   "--vnic-id", vnic["vnic_id"], timeout=OCI_LAUNCH_TIMEOUT)
-    addr = _get(data.get("data", {}) or {}, "ip-address", "ip_address")
+    data = _b().create_ipv6(profile, vnic["vnic_id"])
+    addr = _get(data, "ip-address", "ip_address")
     invalidate_read_cache(profile)
     return {"ipv6": addr, "changed": True, "warnings": net.get("warnings", [])}
 
@@ -966,14 +878,9 @@ VPU_RANGE = {
 
 def update_volume_performance(profile: str, volume_id: str, kind: str, vpus: int) -> dict:
     if kind == "boot":
-        data = run_oci(profile, "bv", "boot-volume", "update",
-                       "--boot-volume-id", volume_id, "--vpus-per-gb", str(vpus),
-                       timeout=OCI_LAUNCH_TIMEOUT)
+        d = _b().update_boot_volume_vpus(profile, volume_id, vpus)
     else:
-        data = run_oci(profile, "bv", "volume", "update",
-                       "--volume-id", volume_id, "--vpus-per-gb", str(vpus),
-                       timeout=OCI_LAUNCH_TIMEOUT)
-    d = data.get("data", {}) or {}
+        d = _b().update_volume_vpus(profile, volume_id, vpus)
     invalidate_read_cache(profile)
     return {"id": volume_id, "vpus_per_gb": _get(d, "vpus-per-gb", "vpus_per_gb", default=vpus)}
 
@@ -1005,15 +912,12 @@ def firewall_status(profile: str, instance_id: str, compartment_id: str) -> dict
     vnic = primary_vnic(profile, instance_id, compartment_id)
     sub = _read_cache.get((profile, "subnet_obj", vnic["subnet_id"]))
     if sub is None:
-        sub = _read_cache.set(
-            (profile, "subnet_obj", vnic["subnet_id"]),
-            run_oci(profile, "network", "subnet", "get",
-                    "--subnet-id", vnic["subnet_id"]).get("data", {}) or {})
+        sub = _read_cache.set((profile, "subnet_obj", vnic["subnet_id"]),
+                              _b().get_subnet(profile, vnic["subnet_id"]))
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
 
     def _one(sid):
-        return run_oci(profile, "network", "security-list", "get",
-                       "--security-list-id", sid).get("data", {}) or {}
+        return _b().get_security_list(profile, sid)
 
     lists, rules = [], []
     for sid, sl, err in gather(_one, sl_ids):
@@ -1048,15 +952,11 @@ def firewall_status(profile: str, instance_id: str, compartment_id: str) -> dict
 
 
 def _set_ingress(profile: str, security_list_id: str, rules: list) -> None:
-    run_oci(profile, "network", "security-list", "update",
-            "--security-list-id", security_list_id, "--force",
-            "--ingress-security-rules", json.dumps(rules),
-            timeout=OCI_LAUNCH_TIMEOUT)
+    _b().update_ingress_rules(profile, security_list_id, rules)
 
 
 def _raw_ingress(profile: str, security_list_id: str) -> list:
-    sl = run_oci(profile, "network", "security-list", "get",
-                 "--security-list-id", security_list_id).get("data", {}) or {}
+    sl = _b().get_security_list(profile, security_list_id)
     out = []
     for r in _get(sl, "ingress-security-rules", "ingress_security_rules", default=[]) or []:
         rule = {
@@ -1081,8 +981,7 @@ def _subnet_security(profile: str, subnet_id: str) -> tuple:
     cached = _read_cache.get(ck)
     if cached is not None:
         return cached
-    sub = run_oci(profile, "network", "subnet", "get",
-                  "--subnet-id", subnet_id).get("data", {}) or {}
+    sub = _b().get_subnet(profile, subnet_id)
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
     if not sl_ids:
         raise OCICLIError("该子网未关联安全列表，无法修改防火墙规则")
@@ -1201,11 +1100,7 @@ def revoke_all_ports(profile: str, instance_id: str, compartment_id: str) -> dic
 
 
 def terminate_instance(profile: str, instance_id: str, preserve_boot_volume: bool = False) -> None:
-    run_oci(
-        profile, "compute", "instance", "terminate",
-        "--instance-id", instance_id, "--force",
-        "--preserve-boot-volume", "true" if preserve_boot_volume else "false",
-    )
+    _b().terminate_instance(profile, instance_id, preserve_boot_volume)
     invalidate_read_cache(profile)
 
 
@@ -1269,16 +1164,9 @@ def get_metrics(profile: str, instance_id: str, compartment_id: str = None, hour
     def _one(spec):
         metric, label, unit = spec
         query = f'{metric}[{interval}]{{resourceId = "{instance_id}"}}.mean()'
-        data = run_oci(
-            profile,
-            "monitoring", "metric-data", "summarize-metrics-data",
-            "--compartment-id", cid,
-            "--namespace", "oci_computeagent",
-            "--query-text", query,
-            "--start-time", start.strftime(fmt),
-            "--end-time", end.strftime(fmt),
-        )
-        series = data.get("data", []) or []
+        series = _b().summarize_metrics(
+            profile, cid, "oci_computeagent", query,
+            start.strftime(fmt), end.strftime(fmt))
         points = []
         for s in series:
             for dp in _get(s, "aggregated-datapoints", "aggregatedDatapoints", default=[]) or []:

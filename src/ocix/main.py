@@ -7,9 +7,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, security
+from .backends import get_backend
 from .config import CORS_ORIGINS, DEV_MODE, FRONTEND_DIR, OCI_CONFIG_PATH
 from .db import init_db
-from .oci_cli import cli_version, list_profiles_from_config
+from .oci_cli import list_profiles_from_config
 from .routers import audit, auth, instances, monitor, profiles, provision, system
 
 VERSION = __version__
@@ -51,7 +52,8 @@ def health():
         "service": "ocix",
         "version": VERSION,
         "dev_mode": DEV_MODE,
-        "oci_cli": cli_version() or None,
+        "backend": get_backend().name,
+        "backend_version": get_backend().version() or None,
         "oci_config": {
             "path": str(OCI_CONFIG_PATH),
             "exists": OCI_CONFIG_PATH.exists(),

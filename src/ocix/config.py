@@ -68,6 +68,14 @@ TRUST_PROXY = _bool_env("OCIX_TRUST_PROXY", True)
 # 允许跨域的来源；留空表示只允许同源（默认部署由 Caddy 同源反代，无需 CORS）
 CORS_ORIGINS = [o.strip() for o in os.getenv("OCIX_CORS_ORIGINS", "").split(",") if o.strip()]
 
+# ---- 与 OCI 的通信方式 ----
+# cli：调用官方 oci 命令行（每次约 1.1 秒进程开销，但每步都能复制成命令自己复现）
+# sdk：进程内调用官方 oci Python SDK（快 10-20 倍）
+# 两者都是 Oracle 官方通道——oci CLI 本身就构建在 oci SDK 之上。
+OCI_BACKEND = (os.getenv("OCIX_BACKEND", "cli") or "cli").strip().lower()
+if OCI_BACKEND not in ("cli", "sdk"):
+    OCI_BACKEND = "cli"
+
 # ---- 在线更新 ----
 # 宿主机上的安装目录，用于在网页上给出正确的更新命令
 INSTALL_DIR = os.getenv("OCIX_HOME", "/opt/ocix")

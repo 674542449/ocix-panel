@@ -1,12 +1,32 @@
 import os
 import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+
+
+@contextmanager
+def _fresh_ocix():
+    """让 ocix 以当前环境变量重新导入，结束后把模块表恢复原样。
+
+    config.py 在 import 时读环境变量，所以要拿到新配置只能重新导入。
+    但若不恢复，测试模块在收集期绑定的类/函数就会和 sys.modules 里的不是同一个对象，
+    monkeypatch 会打在「另一份」模块上——这坑踩过两次。
+    """
+    saved = {k: v for k, v in sys.modules.items() if k == "ocix" or k.startswith("ocix.")}
+    for name in saved:
+        del sys.modules[name]
+    try:
+        yield
+    finally:
+        for name in [k for k in list(sys.modules) if k == "ocix" or k.startswith("ocix.")]:
+            del sys.modules[name]
+        sys.modules.update(saved)
 
 
 @pytest.fixture()
@@ -35,16 +55,15 @@ def app_client(workdir, monkeypatch):
     monkeypatch.setenv("OCI_CONFIG_PATH", str(workdir["config"]))
     monkeypatch.setenv("OCIX_CLI_TIMEOUT", "5")
 
-    for mod in [m for m in list(sys.modules) if m == "ocix" or m.startswith("ocix.")]:
-        del sys.modules[mod]
+    with _fresh_ocix():
+        from ocix.main import app
 
-    from ocix.main import app
-
-    with TestClient(app) as client:
-        r = client.post("/api/auth/login", json={"username": "admin", "password": "devpass123"})
-        assert r.status_code == 200, r.text
-        client.headers.update({"Authorization": "Bearer " + r.json()["token"]})
-        yield client
+        with TestClient(app) as client:
+            r = client.post("/api/auth/login",
+                            json={"username": "admin", "password": "devpass123"})
+            assert r.status_code == 200, r.text
+            client.headers.update({"Authorization": "Bearer " + r.json()["token"]})
+            yield client
 
     shutil.rmtree(workdir["root"] / "data", ignore_errors=True)
 
@@ -60,13 +79,11 @@ def anon_client(workdir, monkeypatch):
     monkeypatch.setenv("OCIX_DATA_DIR", str(workdir["root"] / "data2"))
     monkeypatch.setenv("OCI_CONFIG_PATH", str(workdir["config"]))
 
-    for mod in [m for m in list(sys.modules) if m == "ocix" or m.startswith("ocix.")]:
-        del sys.modules[mod]
+    with _fresh_ocix():
+        from ocix.main import app
 
-    from ocix.main import app
-
-    with TestClient(app) as client:
-        yield client
+        with TestClient(app) as client:
+            yield client
 
 
 @pytest.fixture(autouse=True)

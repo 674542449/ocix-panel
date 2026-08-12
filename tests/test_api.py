@@ -340,6 +340,28 @@ def test_ipv6_is_attached_after_launch_not_during(app_client, stub_launch, monke
     assert calls and calls[0] > 0, "必须带等待时间，否则网卡还没挂好"
 
 
+def test_ipv6_from_launch_skips_the_extra_call(app_client, stub_launch, monkeypatch):
+    """SDK 后端在 launch 时就分配了 IPv6，就不该再等 90 秒补挂一次。"""
+    from ocix.routers import provision
+    extra = []
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "s", "created": False})
+    monkeypatch.setattr(provision, "ensure_subnet_ipv6",
+                        lambda p, s, c: {"enabled": True, "warnings": []})
+    monkeypatch.setattr(provision, "open_all_ports_on_subnet",
+                        lambda p, s, include_ipv6=True: {"added": []})
+    monkeypatch.setattr(provision, "add_ipv6_to_instance",
+                        lambda *a, **kw: extra.append(1) or {"ipv6": "x", "warnings": []})
+    monkeypatch.setattr(provision, "launch_instance",
+                        lambda p, spec: {"id": "i1", "display_name": spec["display_name"],
+                                         "lifecycle_state": "PROVISIONING",
+                                         "ipv6_addresses": ["2603:c020::99"]})
+
+    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
+    assert r.json()["ipv6"] == "2603:c020::99"
+    assert extra == [], "launch 已经给了地址，不该再调补挂"
+
+
 def test_post_launch_failures_do_not_fail_the_request(app_client, stub_launch, monkeypatch):
     """实例已经建出来了，收尾步骤失败只能警告——报 500 会让人以为没建成而重复创建。"""
     from ocix.oci_cli import OCICLIError

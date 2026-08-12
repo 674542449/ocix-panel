@@ -20,6 +20,7 @@ services:
       - OCIX_API_LIMIT=${OCIX_API_LIMIT:-120}
       - OCIX_TRUST_PROXY=${OCIX_TRUST_PROXY:-false}
       - OCIX_HOME=${OCIX_HOME:-/opt/ocix}
+      - OCIX_BACKEND=${OCIX_BACKEND:-cli}
     volumes:
       - oci_config:/root/.oci
       - ocix_data:/app/data
