@@ -76,7 +76,7 @@ sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/
 - 免费额度对照、CPU / 内存时序图（1 小时 ~ 7 天）
 - 审计日志（登录 / 改密 / 开关机 / 账户增删，含来源 IP）
 - 登录鉴权（JWT）、限流、自动 HTTPS、**密码有效期**（默认 120 天，可设 0 关闭）
-- **账户等级检测**：区分纯免费号与已升级的付费号
+- **账户等级**：账户列表直接标出免费号 / 已升级，依据租户订阅记录
 - **网页一键更新**：点一下就更新，不用 SSH
 
 > ⚠️ **合规说明**：本面板**仅管理你自己的 OCI 租户**，不做账号注册 / 养号 / 自动抢机。
@@ -262,12 +262,29 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 
 ## 账户等级
 
-「免费额度」页可以查这个账户是**纯免费号**还是**已升级为付费**。
+「账户配置」页的账户列表直接显示每个账户是**免费号**还是**已升级为付费**，
+「免费额度」页也能看到当前账户的详细判定依据。
 
-Oracle 并没有给普通租户一个直白的等级标志位，所以是两条线一起看：
-订阅接口里的 `subscription_tier` / `payment_model`（免费号常常没权限调），
-以及计算服务的**核数限额**——免费号除 E2.1.Micro 和 A1 之外的机型配额全是 0，
-一旦升级成按量付费就会放开。判断依据会一并列出来，可以自己核对。
+判定**只看租户的订阅记录**（`payment_model` / `subscription_tier`）：
+
+| 订阅记录 | 结论 |
+|---|---|
+| `Pay as you go` / `Monthly` / `Annual` / `Commit` | 已升级 / 付费（PAYG） |
+| 含 `Free` / `Trial` / `Promo` | Always Free / 未升级 |
+| 读不到（多为权限不足） | 无法确定，并给出要加的策略 |
+
+两个**不能**用来判断的信号，都踩过：
+
+- **服务配额（Service Limits）不能用**。Oracle 在纯免费账号上同样会给付费机型返回
+  非零配额，拿它当证据会把免费号判成已升级。配额现在只作参考展示，不参与结论。
+- **有没有产生账单也不能用**。升级成 PAYG 但只跑免费资源的账号账单是 0，
+  和纯免费号分不开。
+
+读不到订阅记录时不会瞎猜，会直接说「无法确定」并提示补一条策略：
+
+```
+Allow group <你所在的组> to inspect subscriptions in tenancy
+```
 
 > 分辨这个的实际意义：免费号超额只是开不出机器，**已升级的号超额是真扣钱**。
 
@@ -322,7 +339,7 @@ systemctl status ocix-updater
 |---|---|---|
 | GET | `/api/health` | 探活（无需鉴权，只回 ok） |
 | GET | `/api/diagnostics` | 环境自检：版本 / SDK / 配置状态（需登录） |
-| GET | `/api/profiles/{name}/tier` | 账户等级：免费号 / 已升级 |
+| GET | `/api/profiles/{name}/tier` | 账户等级；`?limits=false` 可省掉配额查询 |
 | GET · PUT | `/api/auth/password-policy` | 密码有效期（0 = 永不过期） |
 | POST | `/api/system/update` | 请求更新（由宿主机代理执行） |
 | GET | `/api/system/update/status` | 更新进度与日志 |

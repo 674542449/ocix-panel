@@ -106,6 +106,9 @@
                     background:var(--crit); color:#fff; border-radius:9px; padding:1px 6px; }
     .main { flex:1; min-width:0; padding:var(--sp-5); max-width:1400px; }
     .pane { display:block; }
+    /* 同一页里堆叠的卡片，间距统一由这里决定。
+       之前是各写各的行内 margin（12px / 14px / 没有），页面之间对不齐。 */
+    .pane > .card + .card { margin-top:var(--sp-4); }
 
     .container { max-width:1400px; margin:0 auto; padding:var(--sp-5); }
     .toolbar { display:flex; gap:var(--sp-3); flex-wrap:wrap; align-items:center; margin-bottom:var(--sp-4); }
@@ -134,7 +137,13 @@
     .dot.warn { background:var(--warn); color:var(--warn); animation:pulse 1.6s ease-out infinite; }
     .dot.crit { background:var(--crit); color:var(--crit); }
     .dot.idle { background:var(--idle); color:var(--idle); }
+    /* 需要留意、但并不是「正在变化」的状态（比如账户已升级为付费）。
+       用同一个警示色，但**不脉动**——脉动只留给真正的过渡态。 */
+    .dot.attn { background:var(--warn); color:var(--warn); }
     .state-label { font-size:12px; font-variant-numeric:tabular-nums; }
+
+    /* 一行状态摘要：状态点 + 一句说明 */
+    .kv { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(245,158,11,.55); } 70% { box-shadow:0 0 0 7px rgba(245,158,11,0); } 100% { box-shadow:0 0 0 0 rgba(245,158,11,0); } }
 
     /* 自动刷新指示灯 */
@@ -245,6 +254,14 @@
                margin:var(--sp-2) 0 var(--sp-3); overflow-x:auto; }
     .cmd-box code { background:none; padding:0; color:#cbd5e1; white-space:nowrap; font-size:12.5px; }
     .cmd-box .copy-btn { margin-left:auto; flex:none; }
+    /* 多行日志。和 .cmd-box 同一套配色，但 .cmd-box 是给单行命令用的
+       flex 行（code 还带 nowrap），塞多行文本会错位，所以单独一个类。 */
+    .log-box { background:#0b1220; border:1px solid var(--line); border-radius:7px;
+               padding:10px 12px; margin:var(--sp-3) 0 0;
+               max-height:260px; overflow:auto; }
+    .log-box pre { margin:0; white-space:pre-wrap; word-break:break-word;
+                   color:#cbd5e1; font-size:12px; line-height:1.65; }
+
     .link { color:var(--accent); text-decoration:none; }
     .link:hover { text-decoration:underline; }
 
@@ -707,29 +724,29 @@
 
         <!-- 免费额度 -->
         <section class="pane" v-show="activeTab === 'usage'">
-          <div class="card" style="margin-bottom:12px;">
+          <div class="card">
             <div class="card-head">
               <div class="card-title">账户等级</div>
               <el-button size="small" @click="loadTier(true)" :loading="tierLoading">
                 {{ tier.tier ? '重新检测' : '检测' }}
               </el-button>
             </div>
-            <div v-if="tier.tier" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-              <el-tag :type="tier.tier === 'paid' ? 'warning' : (tier.tier === 'free' ? 'success' : 'info')"
-                      size="large">{{ tier.label }}</el-tag>
-              <span class="who" v-if="tier.tier === 'paid'">超出免费额度的部分会真实扣费，注意账单</span>
-              <span class="who" v-else-if="tier.tier === 'free'">超出免费额度就开不出机器，不会产生费用</span>
+
+            <div class="kv" v-if="tier.tier">
+              <span class="state">
+                <i :class="['dot', tierDotOf(tier)]"></i>
+                <span class="state-label" style="font-size:13px;">{{ tier.label }}</span>
+              </span>
+              <span class="who">{{ (tier.reasons || [])[0] }}</span>
             </div>
             <div v-else-if="!tierLoading" class="hint" style="margin-top:0;">
               点「检测」查询这个账户是纯免费号还是已升级为付费。
             </div>
-            <ul class="hint" v-if="tier.reasons && tier.reasons.length" style="margin:8px 0 0; padding-left:18px;">
-              <li v-for="(r,i) in tier.reasons" :key="i">{{ r }}</li>
-            </ul>
-            <p class="hint" v-if="tier.tier">
-              Oracle 没有给普通租户一个直白的等级标志位，这里是综合订阅信息和服务限额推断的，
-              依据已列在上面，可以自行核对。
+
+            <p class="hint" v-if="tier.tier && (tier.reasons || []).length > 1">
+              {{ tier.reasons.slice(1).join(' ') }}
             </p>
+            <p class="hint" v-if="tier.limits_note">{{ tier.limits_note }}</p>
           </div>
 
           <div class="card" v-if="loading && !usage" aria-label="加载中">
@@ -1016,6 +1033,65 @@
 
         <!-- 配置 -->
         <section class="pane" v-show="activeTab === 'profile'">
+          <!-- 已配置账户放最上面：来这一页多半是看/管已有账户，导入是低频操作 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">已配置账户</div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="who" v-if="profiles.length">{{ profiles.length }} 个</span>
+                <el-button size="small" @click="loadAllTiers(true)"
+                           :disabled="!profiles.length || tierBusy">
+                  {{ tierBusy ? '检测中…' : '重新检测等级' }}
+                </el-button>
+              </div>
+            </div>
+
+            <div class="table-wrap" v-if="profiles.length">
+              <el-table :data="profiles" size="small" stripe border style="width:100%;">
+                <el-table-column prop="name" label="名称" width="120" />
+                <el-table-column label="账户等级" width="128">
+                  <template #default="{row}">
+                    <span class="state" :title="tierTitle(row.name)">
+                      <i :class="['dot', tierDot(row.name)]"></i>
+                      <span class="state-label">{{ tierText(row.name) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="区域" width="126">
+                  <template #default="{row}"><span class="mono">{{ row.region || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="User OCID" min-width="190" show-overflow-tooltip>
+                  <template #default="{row}"><span class="mono">{{ row.user_ocid || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="Fingerprint" min-width="140" show-overflow-tooltip>
+                  <template #default="{row}"><span class="mono">{{ row.fingerprint || '—' }}</span></template>
+                </el-table-column>
+                <el-table-column label="私钥" width="86">
+                  <template #default="{row}">
+                    <span class="state">
+                      <i :class="['dot', row.key_exists ? 'ok' : 'crit']"></i>
+                      <span class="state-label">{{ row.key_exists ? '在位' : '缺失' }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="142" fixed="right">
+                  <template #default="{row}">
+                    <el-button size="small" @click="testProfile(row.name)">校验</el-button>
+                    <el-button size="small" type="danger" @click="delProfile(row.name)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div class="empty" v-else>
+              <b>还没有配置任何账户</b>
+              在下面「导入账户」里粘贴一份 ~/.oci/config 并附上私钥即可开始。
+            </div>
+            <p class="hint">
+              账户等级依据租户的<strong>订阅记录</strong>判定。
+              免费号超额只是开不出机器；已升级的账号超额会真实计费。
+            </p>
+          </div>
+
           <div class="card">
             <div class="card-head"><div class="card-title">导入账户</div></div>
             <el-alert type="info" :closable="false" show-icon
@@ -1056,36 +1132,6 @@
               <span class="hint" style="margin-left:12px;">导入时会立刻调用 oci iam user get 验证，失败会自动回滚。</span>
             </div>
 
-            <el-divider />
-            <div class="card-head"><div class="card-title">已配置账户</div></div>
-            <div class="table-wrap">
-              <el-table :data="profiles" size="small" stripe border style="width:100%;">
-                <el-table-column prop="name" label="名称" width="130" />
-                <el-table-column label="区域" width="130">
-                  <template #default="{row}"><span class="mono">{{ row.region || '—' }}</span></template>
-                </el-table-column>
-                <el-table-column label="User OCID" min-width="200" show-overflow-tooltip>
-                  <template #default="{row}"><span class="mono">{{ row.user_ocid || '—' }}</span></template>
-                </el-table-column>
-                <el-table-column label="Fingerprint" min-width="150" show-overflow-tooltip>
-                  <template #default="{row}"><span class="mono">{{ row.fingerprint || '—' }}</span></template>
-                </el-table-column>
-                <el-table-column label="私钥" width="92">
-                  <template #default="{row}">
-                    <span class="state">
-                      <i :class="['dot', row.key_exists ? 'ok' : 'crit']"></i>
-                      <span class="state-label">{{ row.key_exists ? '在位' : '缺失' }}</span>
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="150" fixed="right">
-                  <template #default="{row}">
-                    <el-button size="small" @click="testProfile(row.name)">校验</el-button>
-                    <el-button size="small" type="danger" @click="delProfile(row.name)">删除</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
           </div>
         </section>
 
@@ -1198,8 +1244,8 @@
               更新过程中面板容器会被重启，这个页面可能短暂连不上——属正常，稍等会自动恢复。
             </p>
 
-            <div v-if="upd.log" class="cmd-box" style="margin-top:12px; max-height:260px; overflow:auto;">
-              <pre class="mono" style="margin:0; white-space:pre-wrap; font-size:12px;">{{ upd.log }}</pre>
+            <div v-if="upd.log" class="log-box">
+              <pre class="mono">{{ upd.log }}</pre>
             </div>
 
             <div class="card-head" style="margin-top:18px;">
@@ -1251,7 +1297,7 @@
             <p class="hint">改密后所有已登录的会话立即失效，需要重新登录。密码存在数据卷里，重启容器不会丢。</p>
           </div>
 
-          <div class="card" style="max-width:420px; margin-top:14px;">
+          <div class="card" style="max-width:420px;">
             <div class="card-head"><div class="card-title">密码有效期</div></div>
 
             <el-alert v-if="pwPolicy.expired" type="error" show-icon :closable="false"
@@ -1417,6 +1463,9 @@ createApp({
     const usage = ref(null);
     const tier = ref({});
     const tierLoading = ref(false);
+    // 账户配置页按账户存一份等级结论；额度页那个 tier 是「当前账户」的
+    const tiers = ref({});
+    const tierBusy = ref(false);
     const allAccounts = ref([]);
     const allWithIp = ref(false);
     const allSelection = ref([]);
@@ -2190,6 +2239,7 @@ createApp({
       }
       if (name === 'password') loadPwPolicy();
       if (name === 'usage') loadTier(false);
+      if (name === 'profile') loadAllTiers(false);
       if (name === 'firewall') {
         if (!instances.value.length) loadSingle();
         if (!fwInstance.value && instances.value.length) {
@@ -2382,6 +2432,49 @@ createApp({
       } catch (e) {
         ElMessage.error(errMsg(e, '发起更新失败'));
       } finally { updBusy.value = false; }
+    }
+
+    // paid 用橙色（要花钱，值得注意）、free 绿色、未知灰色，
+    // 和全站其它状态点保持同一套语义
+    const TIER_DOT = { paid: 'attn', free: 'ok', unknown: 'idle' };
+    const TIER_SHORT = { paid: '已升级', free: '免费', unknown: '未知' };
+    const tierDotOf = (t) => TIER_DOT[t && t.tier] || 'idle';
+    const tierDot = (name) => {
+      const t = tiers.value[name];
+      return t ? (TIER_DOT[t.tier] || 'idle') : 'idle';
+    };
+    const tierText = (name) => {
+      const t = tiers.value[name];
+      if (t === undefined) return tierBusy.value ? '检测中…' : '未检测';
+      return TIER_SHORT[t.tier] || '未知';
+    };
+    const tierTitle = (name) => {
+      const t = tiers.value[name];
+      return t ? [t.label].concat(t.reasons || []).join('\n') : '还没有检测过';
+    };
+
+    async function loadAllTiers(force) {
+      const names = profiles.value.map(p => p.name);
+      if (!names.length) return;
+      if (force) tiers.value = {};
+      tierBusy.value = true;
+      try {
+        // 并发查，账户多的时候不至于一个个排队等
+        await Promise.all(names.map(async (name) => {
+          if (!force && tiers.value[name]) return;
+          try {
+            // 列表只显示一个标签，不要限额，省一次请求
+            const { data } = await axios.get(
+              `/api/profiles/${encodeURIComponent(name)}/tier`, { params: { limits: false } });
+            tiers.value = { ...tiers.value, [name]: data };
+          } catch (e) {
+            // 单个账户失败不影响其它账户，把失败原因留在悬浮提示里
+            tiers.value = { ...tiers.value, [name]: {
+              tier: 'unknown', label: '检测失败',
+              reasons: [errMsg(e, '检测失败')] } };
+          }
+        }));
+      } finally { tierBusy.value = false; }
     }
 
     async function loadTier(force) {
@@ -2590,7 +2683,8 @@ createApp({
       ruleForm, addRule, deleteRule, clearRules, vpuRange, vpuTier,
       upd, updBusy, updRunning, updStateText, updTagType, doUpdate,
       pwPolicy, savePwPolicy,
-      tier, tierLoading, loadTier,
+      tier, tierLoading, loadTier, tiers, tierBusy, loadAllTiers,
+      tierDot, tierText, tierTitle, tierDotOf,
       sys, sysLoading, loadSystem,
       changeIp, changePerformance,
       token, user, loginForm, loginErr, loading, netBusy,

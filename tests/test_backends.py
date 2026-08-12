@@ -207,6 +207,10 @@ BINDINGS = [
     ("identity.IdentityClient", "list_compartments", ("t1",),
      {"compartment_id_in_subtree": True, "access_level": "ACCESSIBLE"}),
     ("identity.IdentityClient", "list_availability_domains", ("cid",), {}),
+    ("limits.LimitsClient", "list_limit_values", (), {"compartment_id": "t1", "service_name": "compute"}),
+    ("tenant_manager_control_plane.SubscriptionClient", "list_subscriptions", (),
+     {"compartment_id": "t1", "entity_version": "V1"}),
+    ("tenant_manager_control_plane.SubscriptionClient", "get_subscription", ("sub1",), {}),
 ]
 
 
@@ -228,3 +232,34 @@ def test_list_volumes_rejects_positional_compartment():
     """把上面那个 bug 单独钉死：别再改回位置传参。"""
     with pytest.raises(TypeError, match="positional argument"):
         oci.core.BlockstorageClient.list_volumes(None, "cid")
+
+
+def test_get_subscription_rejects_entity_version():
+    """entity_version 只有 list_subscriptions 收；传给 get_subscription 会 ValueError。
+
+    这个坑很隐蔽：两个方法名字挨着、参数看着也该通用，
+    但 SDK 对未知 kwargs 是硬报错的。
+    """
+    with pytest.raises(ValueError, match="unknown kwargs"):
+        oci.tenant_manager_control_plane.SubscriptionClient.get_subscription(
+            None, "sub1", entity_version="V1")
+
+
+def test_list_subscriptions_accepts_entity_version():
+    """反过来，list_subscriptions 必须收得下——不带 V1 就拿不到 payment_model。"""
+    try:
+        oci.tenant_manager_control_plane.SubscriptionClient.list_subscriptions(
+            None, compartment_id="t1", entity_version="V1")
+    except ValueError as e:
+        if "unknown kwargs" in str(e):
+            pytest.fail("list_subscriptions 不再接受 entity_version，等级判断会失效")
+    except Exception:
+        pass
+
+
+def test_subscription_summary_v1_subtype_has_payment_model():
+    """判断等级全靠 payment_model，它只存在于 V1 的 Classic 子类型上。"""
+    from oci.tenant_manager_control_plane.models import ClassicSubscriptionSummary
+    assert "payment_model" in ClassicSubscriptionSummary().attribute_map
+    subtype = ClassicSubscriptionSummary.get_subtype({"entityVersion": "V1"})
+    assert subtype == "ClassicSubscriptionSummary"

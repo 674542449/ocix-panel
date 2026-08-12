@@ -166,6 +166,9 @@ class Backend(ABC):
     @abstractmethod
     def list_subscriptions(self, profile: str, compartment_id: str) -> list: ...
 
+    @abstractmethod
+    def get_subscription(self, profile: str, subscription_id: str) -> dict: ...
+
     # ---------- Monitoring ----------
     @abstractmethod
     def summarize_metrics(self, profile: str, compartment_id: str, namespace: str,

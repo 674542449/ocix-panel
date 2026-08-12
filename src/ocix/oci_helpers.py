@@ -1208,16 +1208,24 @@ def get_metrics(profile: str, instance_id: str, compartment_id: str = None, hour
 
 
 # ---------------- 账户等级 ----------------
-# Oracle 并没有给普通租户一个直白的「你是免费号还是升级号」标志位，
-# 所以这里两条线一起看，并把依据一并返回，让人能自己判断而不是只看一个结论：
-#   1) 租户管理接口里的订阅信息（有 subscription_tier / payment_model），
-#      免费租户常常没权限调，拿不到很正常；
-#   2) 计算服务的限额——免费号只有 E2.1.Micro 和 A1 这两类是非零，
-#      其余机型全是 0；一旦升级成按量付费，其它机型就会放开。
+# 判断依据**只有租户的订阅记录**（payment_model / subscription_tier）。
+#
+# 早先还拿「付费机型的服务限额是否为 0」当证据，那是错的：Oracle 在纯免费账号上
+# 同样会给付费机型返回非零限额，于是免费号被判成已升级。限额现在只作为参考信息
+# 展示，不参与结论。
+#
+# 反过来也不能用「有没有产生账单」来判断——升级成 PAYG 但只跑免费资源的账号
+# 账单是 0，和纯免费号分不开。订阅记录则不受这些影响。
+_PAID_HINTS = ("pay as you go", "payg", "monthly", "annual", "commit")
+_FREE_HINTS = ("free", "trial", "promo")
+
+# 展示用：这些是免费额度里的机型，单独列出来便于核对
 _FREE_LIMIT_HINTS = ("micro", "standard-a1", "ampere")
 
-# 这些字样出现在订阅信息里基本可以确定已经不是纯免费号了
-_PAID_TIER_HINTS = ("PAYG", "PAY_AS_YOU_GO", "COMMIT", "MONTHLY", "ANNUAL")
+_TIER_POLICY_HINT = (
+    "读不到订阅记录，通常是当前用户缺少权限。在 OCI 控制台加一条策略即可："
+    "Allow group <你所在的组> to inspect subscriptions in tenancy"
+)
 
 
 def _is_free_shape_limit(name: str) -> bool:
@@ -1226,12 +1234,7 @@ def _is_free_shape_limit(name: str) -> bool:
 
 
 def _core_limits(profile: str, tenancy: str) -> list:
-    """只保留「XX 核数上限」这类条目。
-
-    必须卡到 -core-count：只判 -count 的话，vcn-count、vnic-count 这种
-    跟机型无关的条目也会混进来，非零就被当成「有付费机型配额」，
-    免费号会被误判成已升级。
-    """
+    """计算服务的核数限额，**仅供参考展示**，不参与等级判断。"""
     values = _b().list_limit_values(profile, tenancy, "compute")
     out = []
     for v in values:
@@ -1243,78 +1246,95 @@ def _core_limits(profile: str, tenancy: str) -> list:
         except (TypeError, ValueError):
             continue
         out.append({"name": name, "value": value, "free_shape": _is_free_shape_limit(name)})
-    return out
+    return sorted(out, key=lambda x: (not x["free_shape"], x["name"]))
 
 
-def account_tier(profile: str) -> dict:
-    """判断账户是免费号还是已升级，并给出判断依据。"""
-    ck = (profile, "account_tier")
+def _subscription_verdict(profile: str, tenancy: str) -> tuple:
+    """从订阅记录判断等级，返回 (verdict, note, details)。"""
+    try:
+        items = _b().list_subscriptions(profile, tenancy)
+    except OCIError as e:
+        return "unknown", f"订阅查询失败：{e.message}", {}
+    if not items:
+        return "unknown", "未返回订阅记录", {}
+
+    payment_models, tiers, promo_active = [], [], False
+    for item in items:
+        model = str(_get(item, "payment-model", "payment_model") or "").strip()
+        if model:
+            payment_models.append(model)
+        sub_id = _get(item, "id")
+        if not sub_id:
+            continue
+        # 详情里才有 subscription_tier 和 promotion；拿不到不影响主判断
+        try:
+            full = _b().get_subscription(profile, sub_id)
+        except OCIError:
+            continue
+        tier = str(_get(full, "subscription-tier", "subscription_tier") or "").strip()
+        if tier:
+            tiers.append(tier)
+        promos = _get(full, "promotion") or []
+        if not isinstance(promos, (list, tuple)):
+            promos = [promos]
+        for promo in promos:
+            if isinstance(promo, dict) and str(promo.get("status") or "").upper() == "ACTIVE":
+                promo_active = True
+
+    details = {"payment_models": payment_models, "subscription_tiers": tiers,
+               "promotion_active": promo_active}
+    # OCI 文档里这个字段是给人看的字符串（"Pay as you go" / "Monthly"），
+    # 但不同接口/版本也见过 PAY_AS_YOU_GO 这种下划线写法。
+    # 统一把下划线和连字符换成空格再匹配，两种形态都认。
+    blob = " ".join(payment_models + tiers).lower().replace("_", " ").replace("-", " ")
+    summary = "、".join([v for v in payment_models + tiers if v]) or "无"
+    if any(k in blob for k in _PAID_HINTS):
+        return "paid", f"订阅付费模式：{summary}", details
+    if any(k in blob for k in _FREE_HINTS):
+        return "free", f"订阅层级：{summary}", details
+    return "unknown", f"订阅信息看不出层级：{summary}", details
+
+
+def account_tier(profile: str, with_limits: bool = True) -> dict:
+    """判断账户是免费号还是已升级，并给出判断依据。
+
+    with_limits=False 时不去查服务限额。账户列表里只显示一个等级标签，
+    多查一次限额纯属白等——这个面板的原则是「调用次数就是等待时间」。
+    """
+    ck = (profile, "account_tier", with_limits)
     cached = _read_cache.get(ck)
     if cached is not None:
         return cached
 
     tenancy = tenancy_of(profile)
-    subscription, sub_error = {}, None
-    try:
-        subs = _b().list_subscriptions(profile, tenancy)
-    except OCIError as e:
-        subs, sub_error = [], e.message
-    for s in subs or []:
-        tier = _get(s, "subscription-tier", "subscription_tier")
-        payment = _get(s, "payment-model", "payment_model")
-        promo = _get(s, "promotion") or {}
-        subscription = {
-            "service_name": _get(s, "service-name", "service_name"),
-            "tier": tier,
-            "payment_model": payment,
-            "is_classic": bool(_get(s, "is-classic-subscription", "is_classic_subscription")),
-            # promotion 就是那 300 美元试用额度，status/到期时间能看出试用期状态
-            "promotion_status": (promo or {}).get("status") if isinstance(promo, dict) else None,
-            "promotion_expires": ((promo or {}).get("timeExpired")
-                                  or (promo or {}).get("time_expired")
-                                  if isinstance(promo, dict) else None),
-        }
-        break
+    verdict, note, details = _subscription_verdict(profile, tenancy)
 
-    paid_evidence, limits, limit_error = [], [], None
-    try:
-        limits = _core_limits(profile, tenancy)
-        paid_evidence = [x for x in limits if not x["free_shape"] and x["value"] > 0]
-    except OCIError as e:
-        limit_error = e.message
-
-    blob = " ".join(str(v).upper() for v in subscription.values() if v)
-    sub_says_paid = any(h in blob for h in _PAID_TIER_HINTS)
-
-    if sub_says_paid or paid_evidence:
-        tier, label = "paid", "已升级（付费/按量）"
-    elif limits:
-        tier, label = "free", "免费账户（Always Free）"
+    if verdict == "paid":
+        label = "已升级 / 付费（PAYG）"
+        reasons = [f"订阅记录显示为付费账号。依据：{note}",
+                   "超出免费额度的部分会真实计费。"]
+    elif verdict == "free":
+        label = "Always Free / 未升级"
+        reasons = [f"订阅记录显示为免费层级。依据：{note}",
+                   "超出免费额度只会开不出机器，不会产生费用。"]
     else:
-        # 两条线都没拿到数据就别硬猜，如实说不确定
-        tier, label = "unknown", "无法确定"
+        label = "无法确定"
+        reasons = [f"未能读取订阅记录，无法判定等级。（{note}）", _TIER_POLICY_HINT]
 
-    reasons = []
-    if sub_says_paid:
-        reasons.append(f"订阅信息显示为 {subscription.get('tier') or subscription.get('payment_model')}")
-    if paid_evidence:
-        top = sorted(paid_evidence, key=lambda x: -x["value"])[:3]
-        reasons.append("以下付费机型已有配额：" + "、".join(f"{x['name']}={x['value']:g}" for x in top))
-    if tier == "free":
-        reasons.append("除 E2.1.Micro / A1 之外的机型配额全是 0，符合纯免费号特征")
-    if limit_error:
-        reasons.append(f"读取服务限额失败：{limit_error}")
-    if sub_error:
-        reasons.append(f"读取订阅信息失败：{sub_error}")
-    if not subscription and not sub_error:
-        reasons.append("订阅接口无权限或无数据（免费号常见，不影响判断）")
+    # 限额只作参考展示，拿不到也不影响结论
+    limits, limit_error = [], None
+    if with_limits:
+        try:
+            limits = _core_limits(profile, tenancy)
+        except OCIError as e:
+            limit_error = e.message
 
     return _read_cache.set(ck, {
-        "tier": tier,
+        "tier": verdict,
         "label": label,
         "reasons": reasons,
-        "subscription": subscription or None,
-        "free_shape_limits": [x for x in limits if x["free_shape"]],
-        "paid_shape_limits": paid_evidence,
-        "checked_limits": len(limits),
+        "subscription": details or None,
+        "limits": limits,
+        "limit_error": limit_error,
+        "limits_note": "服务配额仅供参考——免费账号上也可能非零，不能作为付费依据。",
     })

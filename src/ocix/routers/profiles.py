@@ -3,7 +3,16 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 
 from .. import security
 from ..common import OCIError, list_profiles_from_config, read_config_parser
@@ -313,6 +322,7 @@ def delete_profile(
 def profile_tier(
     name: str,
     request: Request,
+    limits: bool = Query(True, description="是否附带服务限额（列表页不需要，可关掉少一次请求）"),
     user: str = Depends(security.get_current_user),
 ):
     """账户等级：免费号还是已升级。
@@ -323,6 +333,6 @@ def profile_tier(
     security.check_rate(request, security.API_RATE_LIMIT)
     _check_name(name)
     try:
-        return account_tier(name)
+        return account_tier(name, with_limits=limits)
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)

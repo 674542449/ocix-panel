@@ -341,17 +341,26 @@ class SDKBackend(Backend):
                          compartment_id=compartment_id, service_name=service_name)
 
     def list_subscriptions(self, profile, compartment_id):
-        """订阅信息里有 subscription_tier / payment_model / promotion。
+        """租户的订阅记录——判断账户等级的权威依据。
 
-        这套接口属于「租户管理」，普通免费租户经常没有权限，
-        401/404 是常态而不是故障——所以这里吞掉异常返回空列表，
-        让上层退回到用服务限额判断。
+        entity_version="V1" 不能省：带上它返回的才是 ClassicSubscriptionSummary
+        子类型，里面有 payment_model；不带的话拿到的是基类，没有这个字段，
+        等级就无从判断了。
+
+        返回的是 SubscriptionCollection，取 .items；租户的订阅条数极少，不用翻页。
         """
-        try:
-            return self._all(self._client(profile, "subscription").list_subscriptions,
-                             compartment_id=compartment_id)
-        except (OCIError, ServiceError, ClientError, OSError):
-            return []
+        resp = _wrap(self._client(profile, "subscription").list_subscriptions,
+                     compartment_id=compartment_id, entity_version="V1")
+        return [to_dict(x) for x in (getattr(resp.data, "items", None) or [])]
+
+    def get_subscription(self, profile, subscription_id):
+        """订阅详情，含 subscription_tier 与 promotion。
+
+        注意别传 entity_version：这个方法的 kwargs 白名单里没有它，
+        传了会直接 ValueError（list_subscriptions 才接受）。
+        """
+        return to_dict(_wrap(self._client(profile, "subscription").get_subscription,
+                             subscription_id).data)
 
 
 def _port_range(opt: dict):

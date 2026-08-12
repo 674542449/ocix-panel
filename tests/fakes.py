@@ -21,7 +21,9 @@ class FakeBackend(Backend):
             {"name": "standard3-core-count", "value": 0},
             {"name": "gpu2-count", "value": 0},
         ]
+        # 默认：读不到订阅记录（免费号常见，权限不足）
         self.subscriptions = []
+        self.subscription_details = {}
         self.instances: list = []
         self.images: list = []
         self.compartments: list = []
@@ -214,3 +216,7 @@ class FakeBackend(Backend):
     def list_subscriptions(self, profile, compartment_id):
         self._rec("list_subscriptions")
         return list(self.subscriptions)
+
+    def get_subscription(self, profile, subscription_id):
+        self._rec("get_subscription")
+        return dict(self.subscription_details.get(subscription_id, {}))

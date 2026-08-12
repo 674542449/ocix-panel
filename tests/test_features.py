@@ -8,6 +8,13 @@ import pytest
 from fakes import FakeBackend
 from ocix import oci_helpers as H
 from ocix.backends import set_backend
+from ocix.common import OCIError
+
+
+def fake_tier(_fake):
+    """每次都要清缓存，否则第二个用例读到的是上一个的结论。"""
+    H.invalidate_read_cache()
+    return H.account_tier("P")
 
 
 @pytest.fixture()
@@ -22,69 +29,105 @@ def fake():
 
 
 # ── 账户等级 ──
+#
+# 结论只看订阅记录。**服务限额不能用来判断**：Oracle 在纯免费账号上
+# 也会给付费机型返回非零限额，早先拿它当证据，免费号被判成了已升级。
 
-def test_pure_free_account_is_detected(fake):
-    """免费号：除 micro / A1 外的机型配额全是 0。"""
-    res = H.account_tier("P")
+def _sub(payment_model="", tier="", promo_status=None):
+    detail = {"subscription_tier": tier}
+    if promo_status:
+        detail["promotion"] = [{"status": promo_status}]
+    return ([{"id": "sub1", "payment_model": payment_model}],
+            {"sub1": detail})
+
+
+def test_payg_payment_model_means_paid(fake):
+    fake.subscriptions, fake.subscription_details = _sub(payment_model="PAY_AS_YOU_GO")
+    res = fake_tier(fake)
+    assert res["tier"] == "paid"
+    assert "付费" in res["label"]
+
+
+@pytest.mark.parametrize("model", [
+    "Pay as you go",   # OCI 文档里的实际写法
+    "PAY_AS_YOU_GO",   # 下划线变体也得认
+    "Monthly", "ANNUAL", "COMMIT", "PayG",
+])
+def test_other_paid_payment_models(fake, model):
+    fake.subscriptions, fake.subscription_details = _sub(payment_model=model)
+    assert fake_tier(fake)["tier"] == "paid"
+
+
+def test_free_tier_subscription(fake):
+    fake.subscriptions, fake.subscription_details = _sub(payment_model="FREE_TIER")
+    res = fake_tier(fake)
     assert res["tier"] == "free"
     assert "Always Free" in res["label"]
-    assert not res["paid_shape_limits"]
 
 
-def test_upgraded_account_is_detected(fake):
-    """一旦有付费机型拿到非零配额，就不是纯免费号了。"""
+def test_promo_trial_counts_as_free(fake):
+    fake.subscriptions, fake.subscription_details = _sub(tier="PROMOTIONAL_TRIAL")
+    assert fake_tier(fake)["tier"] == "free"
+
+
+def test_paid_limits_do_not_make_a_free_account_look_upgraded(fake):
+    """这就是用户遇到的误判：免费账号上付费机型的限额本来就可能非零。"""
+    fake.subscriptions, fake.subscription_details = _sub(payment_model="FREE_TIER")
     fake.limit_values = [
         {"name": "standard-e2-micro-core-count", "value": 2},
         {"name": "standard-a1-core-count", "value": 4},
-        {"name": "standard-e4-core-count", "value": 20},
+        {"name": "standard-e4-core-count", "value": 20},     # 免费号上也可能有
+        {"name": "standard3-core-count", "value": 16},
     ]
-    res = H.account_tier("P")
-    assert res["tier"] == "paid"
-    assert any("standard-e4-core-count" in r for r in res["reasons"])
-
-
-def test_subscription_tier_alone_marks_paid(fake):
-    """限额看不出来，但订阅信息写着按量付费时也算已升级。"""
-    fake.subscriptions = [{"service_name": "PIC", "subscription_tier": "PAYG",
-                           "payment_model": "PAY_AS_YOU_GO"}]
-    assert H.account_tier("P")["tier"] == "paid"
-
-
-def test_free_shape_limits_are_not_counted_as_paid(fake):
-    """A1 / micro 本来就是免费额度的一部分，不能当成升级证据。"""
-    fake.limit_values = [
-        {"name": "standard-a1-core-count", "value": 4},
-        {"name": "standard-e2-micro-core-count", "value": 2},
-    ]
-    res = H.account_tier("P")
-    assert res["tier"] == "free"
-    assert {x["name"] for x in res["free_shape_limits"]} == {
-        "standard-a1-core-count", "standard-e2-micro-core-count"}
-
-
-def test_tier_is_unknown_when_nothing_can_be_read(fake):
-    """两条线都没数据时如实说不确定，不要瞎猜一个结论。"""
-    fake.limit_values = []
-    fake.subscriptions = []
-    assert H.account_tier("P")["tier"] == "unknown"
-
-
-def test_non_count_limits_are_ignored(fake):
-    """存储、带宽之类的限额跟账户等级无关，混进来会误判。"""
-    fake.limit_values = [
-        {"name": "standard-e2-micro-core-count", "value": 2},
-        {"name": "total-storage-gb", "value": 200},
-        # 这两个非零但跟机型无关，早先只判 -count 时会被当成「有付费配额」
-        {"name": "vcn-count", "value": 5},
-        {"name": "vnic-count", "value": 20},
-    ]
-    res = H.account_tier("P")
+    res = fake_tier(fake)
     assert res["tier"] == "free", res["reasons"]
-    assert res["checked_limits"] == 1
-    assert not res["paid_shape_limits"]
+    # 限额仍然照常展示，只是不参与结论
+    assert any(x["name"] == "standard-e4-core-count" for x in res["limits"])
+    assert "不能作为付费依据" in res["limits_note"]
+
+
+def test_limits_alone_never_decide_the_verdict(fake):
+    """没有订阅记录时，哪怕限额再漂亮也只能说「无法确定」。"""
+    fake.subscriptions, fake.subscription_details = [], {}
+    fake.limit_values = [{"name": "standard-e4-core-count", "value": 64}]
+    res = fake_tier(fake)
+    assert res["tier"] == "unknown"
+    assert any("inspect subscriptions" in r for r in res["reasons"])
+
+
+def test_unknown_when_subscription_query_fails(fake):
+    def boom(profile, compartment_id):
+        raise OCIError("NotAuthorizedOrNotFound")
+    fake.list_subscriptions = boom
+    res = fake_tier(fake)
+    assert res["tier"] == "unknown"
+    assert any("订阅查询失败" in r for r in res["reasons"])
+
+
+def test_verdict_survives_get_subscription_failure(fake):
+    """详情拿不到不影响主判断——payment_model 在列表里就有了。"""
+    fake.subscriptions, fake.subscription_details = _sub(payment_model="PAY_AS_YOU_GO")
+
+    def boom(profile, subscription_id):
+        raise OCIError("no permission")
+    fake.get_subscription = boom
+    assert fake_tier(fake)["tier"] == "paid"
+
+
+def test_limit_failure_does_not_break_the_verdict(fake):
+    fake.subscriptions, fake.subscription_details = _sub(payment_model="FREE_TIER")
+
+    def boom(profile, compartment_id, service_name):
+        raise OCIError("limits unreadable")
+    fake.list_limit_values = boom
+    res = fake_tier(fake)
+    assert res["tier"] == "free"
+    assert res["limit_error"]
 
 
 def test_tier_endpoint(app_client, live_backend):
+    live_backend.subscriptions = [{"id": "sub1", "payment_model": "FREE_TIER"}]
+    live_backend.subscription_details = {"sub1": {"subscription_tier": ""}}
     r = app_client.get("/api/profiles/EXISTING/tier")
     assert r.status_code == 200, r.text
     assert r.json()["tier"] == "free"
@@ -271,3 +314,31 @@ def test_normal_403_has_no_expiry_header(app_client):
     r = app_client.get("/api/profiles")
     assert r.status_code == 200
     assert "X-OCIX-Password-Expired" not in r.headers
+
+
+def test_list_view_skips_the_limits_call(fake):
+    """列表只显示一个标签，不该为它多查一次限额。"""
+    fake.subscriptions, fake.subscription_details = _sub(payment_model="Free Tier")
+    H.invalidate_read_cache()
+    res = H.account_tier("P", with_limits=False)
+    assert res["tier"] == "free"
+    assert res["limits"] == []
+    assert fake.count("list_limit_values") == 0
+
+
+def test_limits_and_no_limits_are_cached_separately(fake):
+    """两种口径的结果不能串味：先要精简版，再要完整版得真去查。"""
+    fake.subscriptions, fake.subscription_details = _sub(payment_model="Free Tier")
+    H.invalidate_read_cache()
+    H.account_tier("P", with_limits=False)
+    full = H.account_tier("P", with_limits=True)
+    assert full["limits"], "完整版应当带上限额"
+    assert fake.count("list_limit_values") == 1
+
+
+def test_tier_endpoint_honours_limits_flag(app_client, live_backend):
+    live_backend.subscriptions = [{"id": "s1", "payment_model": "Free Tier"}]
+    live_backend.subscription_details = {"s1": {}}
+    body = app_client.get("/api/profiles/EXISTING/tier?limits=false").json()
+    assert body["limits"] == []
+    assert live_backend.count("list_limit_values") == 0
