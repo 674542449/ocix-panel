@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from .. import __version__, security
 from ..config import ADMIN_USER, DEV_MODE
 from ..db import audit
-from ..schemas import ChangePasswordRequest, LoginRequest, PasswordPolicyRequest
+from ..schemas import ChangePasswordRequest, LoginRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -26,46 +26,22 @@ def login(req: LoginRequest, request: Request):
             "expires_in": security.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             # 登录后不会再调 /auth/me，版本号得在这儿一并给出，
             # 否则侧栏会一直显示 v—
-            "version": __version__,
-            "password": security.password_status()}
+            "version": __version__}
 
 
 @router.get("/me")
-def me(user: str = Depends(security.get_current_user_allow_expired)):
+def me(user: str = Depends(security.get_current_user)):
     return {"user": user, "is_admin": user == ADMIN_USER,
             # 版本号搭个顺风车：前端启动本来就要调这个接口，
             # 单独为版本号再发一次请求没必要
-            "version": __version__,
-            "password": security.password_status()}
-
-
-@router.get("/password-policy")
-def get_password_policy(user: str = Depends(security.get_current_user_allow_expired)):
-    """当前的密码有效期设置与剩余天数。"""
-    return security.password_status()
-
-
-@router.put("/password-policy")
-def set_password_policy(
-    req: PasswordPolicyRequest,
-    request: Request,
-    user: str = Depends(security.get_current_user),
-):
-    """修改密码有效期。0 = 永不过期。"""
-    security.check_rate(request, security.API_RATE_LIMIT)
-    security.set_password_max_age_days(req.max_age_days)
-    audit(user, "password-policy", result="ok",
-          detail=("已关闭密码有效期" if req.max_age_days == 0
-                  else f"密码有效期设为 {req.max_age_days} 天"),
-          ip=security.client_ip(request))
-    return {"ok": True, **security.password_status()}
+            "version": __version__}
 
 
 @router.post("/change-password")
 def change_password(
     req: ChangePasswordRequest,
     request: Request,
-    user: str = Depends(security.get_current_user_allow_expired),
+    user: str = Depends(security.get_current_user),
 ):
     security.check_rate(request, security.LOGIN_RATE_LIMIT, scope="login")
     ip = security.client_ip(request)

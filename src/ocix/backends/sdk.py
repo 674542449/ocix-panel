@@ -55,6 +55,10 @@ def _wrap(fn, *a, **kw):
         raise OCIError(f"连接 OCI 失败: {e}") from None
 
 
+def _get_bool(d: dict, key: str) -> bool:
+    return bool(d.get(key) or d.get(key.replace("_", "-")))
+
+
 def _d(obj) -> dict:
     return to_dict(obj) if obj is not None else {}
 
@@ -95,6 +99,7 @@ class SDKBackend(Backend):
             "identity": oci.identity.IdentityClient,
             "monitoring": oci.monitoring.MonitoringClient,
             "limits": oci.limits.LimitsClient,
+            "usage": oci.usage_api.UsageapiClient,
             "subscription": oci.tenant_manager_control_plane.SubscriptionClient,
         }[kind]
         client = _wrap(ctor, cfg)
@@ -329,10 +334,51 @@ class SDKBackend(Backend):
         return _d(_wrap(self._block(profile).update_volume, volume_id, details).data)
 
     # ---------- Monitoring ----------
-    def summarize_metrics(self, profile, compartment_id, namespace, query, start_time, end_time):
+    def summarize_metrics(self, profile, compartment_id, namespace, query,
+                          start_time, end_time, subtree=False):
         details = oci.monitoring.models.SummarizeMetricsDataDetails(
             namespace=namespace, query=query, start_time=start_time, end_time=end_time)
-        return _list(_wrap(self._mon(profile).summarize_metrics_data, compartment_id, details))
+        kw = {"compartment_id_in_subtree": True} if subtree else {}
+        return _list(_wrap(self._mon(profile).summarize_metrics_data,
+                           compartment_id, details, **kw))
+
+    # ---------- 账单 / 用量 ----------
+    def home_region(self, profile, tenancy_id):
+        """主区域。账单接口只在主区域的端点上有数据。"""
+        for r in self._all(self._iam(profile).list_region_subscriptions, tenancy_id):
+            if _get_bool(r, "is_home_region"):
+                return str(r.get("region_name") or "")
+        return ""
+
+    def list_invoices(self, profile, tenancy_id, home_region, limit):
+        """账单列表（OSP Gateway）。
+
+        这跟用量接口不是一回事：用量只说这个月**花了**多少，
+        账单才说 Oracle 实际开了多少票、付没付。
+        """
+        cfg = self._cfg(profile)
+        if home_region:
+            cfg = dict(cfg, region=home_region)
+        client = _wrap(oci.osp_gateway.InvoiceServiceClient, cfg)
+        resp = _wrap(client.list_invoices, home_region or cfg.get("region"), tenancy_id,
+                     limit=max(1, min(int(limit or 24), 100)),
+                     sort_by="INVOICE_DATE", sort_order="DESC")
+        data = resp.data
+        items = getattr(data, "items", None)
+        if items is None:
+            items = data if isinstance(data, list) else []
+        return [to_dict(x) for x in items]
+
+    def summarize_usage(self, profile, tenant_id, start, end, granularity, group_by):
+        details = oci.usage_api.models.RequestSummarizedUsagesDetails(
+            tenant_id=tenant_id, time_usage_started=start, time_usage_ended=end,
+            granularity=granularity, query_type="COST", group_by=list(group_by))
+        resp = _wrap(self._client(profile, "usage").request_summarized_usages, details)
+        data = resp.data
+        items = getattr(data, "items", None)
+        if items is None:
+            items = data if isinstance(data, list) else []
+        return [to_dict(x) for x in items]
 
     # ---------- Limits / 订阅 ----------
     def list_limit_values(self, profile, compartment_id, service_name):

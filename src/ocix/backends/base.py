@@ -180,7 +180,20 @@ class Backend(ABC):
     def set_password_expiry(self, profile: str, domain_url: str,
                             policy_id: str, days: int) -> dict: ...
 
+    # ---------- 账单 / 用量 ----------
+    @abstractmethod
+    def home_region(self, profile: str, tenancy_id: str) -> str: ...
+
+    @abstractmethod
+    def list_invoices(self, profile: str, tenancy_id: str, home_region: str,
+                      limit: int) -> list: ...
+
+    @abstractmethod
+    def summarize_usage(self, profile: str, tenant_id: str, start, end,
+                        granularity: str, group_by: list) -> list: ...
+
     # ---------- Monitoring ----------
     @abstractmethod
     def summarize_metrics(self, profile: str, compartment_id: str, namespace: str,
-                          query: str, start_time: str, end_time: str) -> list: ...
+                          query: str, start_time: str, end_time: str,
+                          subtree: bool = False) -> list: ...

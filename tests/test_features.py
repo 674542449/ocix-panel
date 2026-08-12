@@ -137,95 +137,6 @@ def test_tier_endpoint_rejects_bad_profile_name(app_client, live_backend):
     assert app_client.get("/api/profiles/..%2Fetc/tier").status_code in (400, 404)
 
 
-# ── 密码有效期 ──
-
-def _set_changed_at(seconds_ago: int):
-    from ocix.db import set_setting
-    set_setting("admin_password_changed_at", str(int(time.time()) - seconds_ago))
-
-
-def test_panel_password_never_expires_by_default(app_client):
-    """面板自己的密码默认不过期。
-
-    120 天那条说的是 Oracle 账号的控制台密码，在 Identity Domain 里，
-    跟面板登录密码是两回事——默认给面板加个强制改密期反而是打扰。
-    """
-    body = app_client.get("/api/auth/password-policy").json()
-    assert body["max_age_days"] == 0
-    assert body["expired"] is False
-
-
-def test_zero_means_never_expires(app_client):
-    app_client.put("/api/auth/password-policy", json={"max_age_days": 0})
-    _set_changed_at(9999 * 86400)
-    body = app_client.get("/api/auth/password-policy").json()
-    assert body["max_age_days"] == 0
-    assert body["expired"] is False
-    assert body["days_left"] is None
-    # 关掉有效期后业务接口照常可用
-    assert app_client.get("/api/profiles").status_code == 200
-
-
-def test_expired_password_blocks_business_endpoints(app_client):
-    app_client.put("/api/auth/password-policy", json={"max_age_days": 1})
-    _set_changed_at(2 * 86400)
-    r = app_client.get("/api/profiles")
-    assert r.status_code == 403
-    assert "有效期" in r.json()["detail"]
-
-
-def test_expired_password_still_allows_me_and_change_password(app_client):
-    """过期后必须还能看状态和改密，否则就把自己锁死在门外了。"""
-    app_client.put("/api/auth/password-policy", json={"max_age_days": 1})
-    _set_changed_at(2 * 86400)
-
-    me = app_client.get("/api/auth/me")
-    assert me.status_code == 200
-    assert me.json()["password"]["expired"] is True
-
-    r = app_client.post("/api/auth/change-password",
-                        json={"old_password": "devpass123", "new_password": "brand-new-pass-1"})
-    assert r.status_code == 200, r.text
-
-
-def test_changing_password_clears_expiry(app_client):
-    app_client.put("/api/auth/password-policy", json={"max_age_days": 1})
-    _set_changed_at(2 * 86400)
-    app_client.post("/api/auth/change-password",
-                    json={"old_password": "devpass123", "new_password": "brand-new-pass-1"})
-    # 改密后令牌失效，重新登录再看
-    tok = app_client.post("/api/auth/login",
-                          json={"username": "admin", "password": "brand-new-pass-1"})
-    assert tok.status_code == 200
-    assert tok.json()["password"]["expired"] is False
-    app_client.headers.update({"Authorization": "Bearer " + tok.json()["token"]})
-    assert app_client.get("/api/profiles").status_code == 200
-
-
-def test_days_left_rounds_up(app_client):
-    """还剩几小时也该显示「还有 1 天」，显示 0 会让人以为已经过期。"""
-    app_client.put("/api/auth/password-policy", json={"max_age_days": 10})
-    _set_changed_at(int(9.5 * 86400))
-    assert app_client.get("/api/auth/password-policy").json()["days_left"] == 1
-
-
-def test_policy_rejects_out_of_range(app_client):
-    assert app_client.put("/api/auth/password-policy",
-                          json={"max_age_days": -1}).status_code == 422
-    assert app_client.put("/api/auth/password-policy",
-                          json={"max_age_days": 99999}).status_code == 422
-
-
-def test_upgrade_from_old_version_is_not_instantly_expired(app_client):
-    """老库里没有改密时间字段，缺了不能一升级就判过期。"""
-    from ocix import security
-    from ocix.db import get_setting, set_setting
-    set_setting("admin_password_changed_at", "")   # 老库里没有这个字段
-    security.bootstrap_admin()
-    assert get_setting("admin_password_changed_at")
-    assert security.password_expired() is False
-
-
 # ── 一键更新 ──
 
 def _control(app_client):
@@ -305,20 +216,6 @@ def test_update_log_tolerates_invalid_utf8(app_client):
     assert "bad bytes" in r.json()["log"]
 
 
-def test_expired_response_carries_a_machine_readable_header(app_client):
-    """前端靠这个头把用户送到密码页；匹配中文文案太脆，改个字就失灵。"""
-    app_client.put("/api/auth/password-policy", json={"max_age_days": 1})
-    _set_changed_at(2 * 86400)
-    r = app_client.get("/api/profiles")
-    assert r.status_code == 403
-    assert r.headers.get("X-OCIX-Password-Expired") == "1"
-
-
-def test_normal_403_has_no_expiry_header(app_client):
-    """没过期时不该带这个头，否则前端会莫名其妙跳到密码页。"""
-    r = app_client.get("/api/profiles")
-    assert r.status_code == 200
-    assert "X-OCIX-Password-Expired" not in r.headers
 
 
 def test_list_view_skips_the_limits_call(fake):
@@ -455,3 +352,176 @@ def test_account_gate_is_reentrant_for_the_same_account():
     with account_gate("P"):
         with account_gate("P"):
             pass
+
+
+# ── 锁定账户 ──
+
+def test_lock_and_unlock_a_profile(app_client):
+    assert app_client.get("/api/profiles/lock").json()["locked"] is None
+    assert app_client.post("/api/profiles/EXISTING/lock").status_code == 200
+    assert app_client.get("/api/profiles/lock").json()["locked"] == "EXISTING"
+
+    # 回归：DELETE /lock 曾被 DELETE /{name} 抢先匹配，
+    # 变成「删除一个叫 lock 的账户」，解锁永远不生效
+    assert app_client.delete("/api/profiles/lock").status_code == 200
+    assert app_client.get("/api/profiles/lock").json()["locked"] is None
+
+
+def test_unlocking_does_not_delete_a_profile(app_client):
+    """把上面那个路由顺序的坑单独钉死。"""
+    app_client.post("/api/profiles/EXISTING/lock")
+    app_client.delete("/api/profiles/lock")
+    names = [p["name"] for p in app_client.get("/api/profiles").json()["profiles"]]
+    assert "EXISTING" in names, "解锁把账户删了"
+
+
+def test_locking_an_unknown_profile_is_rejected(app_client):
+    assert app_client.post("/api/profiles/NOPE/lock").status_code == 404
+
+
+def test_lock_clears_itself_when_the_profile_is_gone(app_client):
+    """账户被删掉后锁定要自动失效，否则界面卡在一个不存在的账户上。"""
+    from ocix.db import set_setting
+    app_client.post("/api/profiles/EXISTING/lock")
+    set_setting("locked_profile", "DELETED-ONE")
+    assert app_client.get("/api/profiles/lock").json()["locked"] is None
+
+
+# ── 当月流量 ──
+
+def test_egress_sums_hourly_buckets(fake):
+    """VnicToNetworkBytes 是每段区间的字节数，直接求和即可。"""
+    gb = 1024 ** 3
+    fake.metrics = [{"name": "VnicToNetworkBytes", "aggregated_datapoints": [
+        {"timestamp": "2026-08-01T00:00:00Z", "value": 2 * gb},
+        {"timestamp": "2026-08-01T01:00:00Z", "value": 3 * gb},
+    ]}]
+    H.invalidate_read_cache()
+    res = H.egress_usage("P", "cid")
+    assert res["egress_gb"] == 5.0
+    assert res["limit_gb"] == 10 * 1024
+    assert "上限估算" in res["note"]
+
+
+def test_egress_ignores_negative_and_nan(fake):
+    """计数器回绕或 NaN 会把总量算飞。"""
+    gb = 1024 ** 3
+    fake.metrics = [{"name": "VnicToNetworkBytes", "aggregated_datapoints": [
+        {"timestamp": "t1", "value": 1 * gb},
+        {"timestamp": "t2", "value": -5 * gb},
+        {"timestamp": "t3", "value": float("nan")},
+    ]}]
+    H.invalidate_read_cache()
+    assert H.egress_usage("P", "cid")["egress_gb"] == 1.0
+
+
+def test_egress_failure_is_reported_not_raised(fake):
+    def boom(*a, **kw):
+        raise OCIError("no monitoring permission")
+    fake.summarize_metrics = boom
+    H.invalidate_read_cache()
+    res = H.egress_usage("P", "cid")
+    assert res["egress_gb"] == 0
+    assert "no monitoring permission" in res["error"]
+
+
+# ── 账单 ──
+
+def _inv(**over):
+    row = {"invoice_id": "inv1", "invoice_number": "OCI-001", "is_paid": False,
+           "invoice_status": "OPEN", "invoice_type": "SUBSCRIPTION",
+           "currency": {"currency_code": "USD"},
+           "invoice_amount": 12.5, "invoice_amount_due": 12.5,
+           "time_invoice": "2026-07-01T00:00:00+00:00",
+           "time_invoice_due": "2026-07-31T00:00:00+00:00"}
+    row.update(over)
+    return row
+
+
+def test_invoice_states_are_classified(fake):
+    """待支付 / 已支付 / 已逾期 三种要分清。"""
+    future = "2099-01-01T00:00:00+00:00"
+    fake.invoices = [
+        _inv(invoice_id="a", is_paid=True),                       # 已支付
+        _inv(invoice_id="b", is_paid=False, time_invoice_due=future),   # 未到期 -> 待支付
+        _inv(invoice_id="c", is_paid=False),                      # 已过期 -> 已逾期
+    ]
+    H.invalidate_read_cache()
+    res = H.list_invoices("P")
+    states = {x["invoice_id"]: x["state"] for x in res["invoices"]}
+    assert states == {"a": "paid", "b": "unpaid", "c": "overdue"}
+    assert res["summary"]["paid"] == 1
+    assert res["summary"]["unpaid"] == 1
+    assert res["summary"]["overdue"] == 1
+
+
+def test_paid_invoice_wins_over_due_date(fake):
+    """已付清的账单即使早过了到期日，也不能算逾期。"""
+    fake.invoices = [_inv(is_paid=True, time_invoice_due="2020-01-01T00:00:00+00:00")]
+    H.invalidate_read_cache()
+    assert H.list_invoices("P")["invoices"][0]["state"] == "paid"
+
+
+def test_free_account_has_no_invoices_and_that_is_fine(fake):
+    """免费号没有订阅，查不到账单是正确答案，不该报成故障。"""
+    def boom(*a, **kw):
+        raise OCIError("NotAuthorizedOrNotFound", 404, "NotAuthorizedOrNotFound")
+    fake.list_invoices = boom
+    H.invalidate_read_cache()
+    res = H.list_invoices("P")
+    assert res["unavailable"] is True
+    assert res["invoices"] == []
+    assert "read invoices in tenancy" in res["note"]
+
+
+def test_currency_object_is_flattened(fake):
+    """currency 回的是对象，直接塞给前端会显示成 [object Object]。"""
+    fake.invoices = [_inv()]
+    H.invalidate_read_cache()
+    assert H.list_invoices("P")["invoices"][0]["currency"] == "USD"
+
+
+def test_month_cost_groups_by_service(fake):
+    fake.usage_items = [
+        {"service": "Compute", "computed_amount": 1.25, "currency": "USD",
+         "time_usage_started": "2026-08-01T00:00:00+00:00"},
+        {"service": "Compute", "computed_amount": 0.75, "currency": "USD",
+         "time_usage_started": "2026-08-02T00:00:00+00:00"},
+        # 故意和 Compute 合计（2.0）拉开差距，否则并列时排序就没有确定答案
+        {"service": "Block Storage", "computed_amount": 3.0, "currency": "USD",
+         "time_usage_started": "2026-08-02T00:00:00+00:00"},
+    ]
+    H.invalidate_read_cache()
+    res = H.month_cost("P")
+    assert res["total"] == 5.0
+    assert res["currency"] == "USD"
+    assert res["by_service"][0] == {"service": "Block Storage", "amount": 3.0}
+    assert len(res["daily"]) == 2
+
+
+def test_month_cost_failure_is_reported_not_raised(fake):
+    def boom(*a, **kw):
+        raise OCIError("no usage permission")
+    fake.summarize_usage = boom
+    H.invalidate_read_cache()
+    res = H.month_cost("P")
+    assert res["total"] == 0.0
+    assert "no usage permission" in res["error"]
+
+
+def test_billing_endpoints(app_client, live_backend):
+    live_backend.invoices = [_inv(is_paid=True)]
+    live_backend.usage_items = [{"service": "Compute", "computed_amount": 1.0,
+                                 "currency": "USD",
+                                 "time_usage_started": "2026-08-01T00:00:00+00:00"}]
+    inv = app_client.get("/api/monitor/invoices?profile=EXISTING")
+    assert inv.status_code == 200, inv.text
+    assert inv.json()["summary"]["paid"] == 1
+
+    cost = app_client.get("/api/monitor/cost?profile=EXISTING")
+    assert cost.status_code == 200
+    assert cost.json()["total"] == 1.0
+
+    eg = app_client.get("/api/monitor/egress?profile=EXISTING")
+    assert eg.status_code == 200
+    assert eg.json()["limit_gb"] == 10 * 1024

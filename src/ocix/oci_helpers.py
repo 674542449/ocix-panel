@@ -1487,3 +1487,200 @@ def set_console_password_expiry(profile: str, days: int, policy_id: str = None) 
         "failed": failed,
         "policy": console_password_policy(profile),
     }
+
+
+# ---------------- 账单与流量 ----------------
+# 两件不同的事，别混：
+#   * 用量（Usage API）说这个月**花了**多少钱，按天/按服务拆开；
+#   * 账单（OSP Gateway）说 Oracle 实际开了多少张票、付没付、有没有逾期。
+# 纯 Always Free 账号两边都是空的——那是正确答案，不是故障。
+
+FREE_EGRESS_GB = 10 * 1024   # Always Free 每月含 10TB 出网流量
+
+
+def _home_region(profile: str) -> str:
+    ck = (profile, "home_region")
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+    try:
+        region = _b().home_region(profile, tenancy_of(profile))
+    except OCIError:
+        region = ""
+    return _read_cache.set(ck, region or _region_of(profile))
+
+
+def _region_of(profile: str) -> str:
+    """区域只用来在界面上标注，取不到不该让整个查询失败。"""
+    try:
+        return read_profile_config(profile).get("region", "") or ""
+    except OCIError:
+        return ""
+
+
+def _month_window():
+    now = datetime.now(timezone.utc)
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return start, now
+
+
+def egress_usage(profile: str, compartment_id: str = None) -> dict:
+    """当月出网流量。
+
+    刻意是**上限估算**，不是账单：
+      * VnicToNetworkBytes 统计的是离开网卡的全部流量，含 VCN 内与区域内
+        这些 Oracle 并不计费的部分；
+      * 免费额度按租户算，而这个查询是按区域的，开了副区会各算各的。
+    这两点都写在返回值里，不做无声的四舍五入。
+    """
+    ck = (profile, "egress", compartment_id)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+
+    start, end = _month_window()
+    cid = compartment_id or tenancy_of(profile)
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    total = 0.0
+    error = None
+    try:
+        # 这个指标本身就是每段区间的字节数，直接求和即可；
+        # 不像 oci_computeagent 的 NetworksBytesOut 是累计计数器还得 .rate()
+        series = _b().summarize_metrics(
+            profile, cid, "oci_vcn", "VnicToNetworkBytes[1h].sum()",
+            start.strftime(fmt), end.strftime(fmt), subtree=True)
+        for s in series:
+            for dp in _get(s, "aggregated-datapoints", default=[]) or []:
+                v = _num(dp.get("value"), 0.0)
+                if v != v or v < 0:      # NaN / 计数器回绕
+                    continue
+                total += v
+    except OCIError as e:
+        error = e.message
+
+    gb = round(total / (1024 ** 3), 3)
+    return _read_cache.set(ck, {
+        "egress_gb": gb,
+        "limit_gb": FREE_EGRESS_GB,
+        "percent": round(min(gb / FREE_EGRESS_GB * 100, 999), 2) if FREE_EGRESS_GB else 0,
+        "since": start.isoformat(),
+        "until": end.isoformat(),
+        "region": _region_of(profile),
+        "error": error,
+        "note": "上限估算：含 VCN 内与区域内不计费的流量，且按区域统计，"
+                "而免费额度是按租户算的。实际计费流量只会更少。",
+    })
+
+
+def _invoice_state(inv: dict) -> str:
+    """待支付 / 已支付 / 已逾期。"""
+    if _get(inv, "is-paid", default=False):
+        return "paid"
+    due = _get(inv, "time-invoice-due")
+    if due:
+        try:
+            when = datetime.fromisoformat(str(due).replace("Z", "+00:00"))
+            if when < datetime.now(timezone.utc):
+                return "overdue"
+        except (TypeError, ValueError):
+            pass
+    return "unpaid"
+
+
+def list_invoices(profile: str, limit: int = 24) -> dict:
+    """账单列表，按状态分类。"""
+    ck = (profile, "invoices", limit)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+
+    tenancy = tenancy_of(profile)
+    try:
+        rows = _b().list_invoices(profile, tenancy, _home_region(profile), limit)
+    except OCIError as e:
+        msg = e.message or ""
+        # 没订阅的租户会回 404 / NotAuthorizedOrNotFound。
+        # 对免费号来说「没有账单」就是正确答案，不该报成故障。
+        if "NotAuthorizedOrNotFound" in msg or str(getattr(e, "status", "")) == "404":
+            return _read_cache.set(ck, {
+                "invoices": [], "summary": {}, "unavailable": True,
+                "note": "没查到账单。Always Free / 试用账号没有订阅，本来就不会产生账单；"
+                        "若这是付费账号，请确认当前用户有账单读取权限："
+                        "Allow group <你所在的组> to read invoices in tenancy",
+            })
+        raise
+
+    invoices = []
+    for inv in rows:
+        cur = _get(inv, "currency")
+        invoices.append({
+            "invoice_id": _get(inv, "invoice-id") or "",
+            "number": _get(inv, "invoice-number") or "",
+            "state": _invoice_state(inv),
+            "status_raw": _get(inv, "invoice-status") or "",
+            "type": _get(inv, "invoice-type") or "",
+            "currency": (cur or {}).get("currency_code") if isinstance(cur, dict) else (cur or ""),
+            "amount": _num(_get(inv, "invoice-amount"), None),
+            "amount_due": _num(_get(inv, "invoice-amount-due"), None),
+            "time_invoice": _get(inv, "time-invoice"),
+            "time_due": _get(inv, "time-invoice-due"),
+            "payment_failed": bool(_get(inv, "is-payment-failed", default=False)),
+        })
+
+    summary = {"total": len(invoices)}
+    for state in ("paid", "unpaid", "overdue"):
+        picked = [x for x in invoices if x["state"] == state]
+        summary[state] = len(picked)
+        summary[f"{state}_amount"] = round(
+            sum(x["amount_due"] if state != "paid" and x["amount_due"] is not None
+                else (x["amount"] or 0) for x in picked), 2)
+    return _read_cache.set(ck, {"invoices": invoices, "summary": summary,
+                                "unavailable": False, "note": None})
+
+
+def month_cost(profile: str) -> dict:
+    """当月消费：按天与按服务拆开。"""
+    ck = (profile, "month_cost")
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+
+    start, now = _month_window()
+    end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    try:
+        items = _b().summarize_usage(profile, tenancy_of(profile), start, end,
+                                     "DAILY", ["service", "currency"])
+    except OCIError as e:
+        return _read_cache.set(ck, {
+            "total": 0.0, "currency": "", "daily": [], "by_service": [],
+            "error": e.message,
+            "note": "读不到用量数据。免费账号本来就没有消费；"
+                    "付费账号请确认有 usage-report 读取权限。",
+        })
+
+    daily, by_service, currency, total = {}, {}, "", 0.0
+    for it in items:
+        amount = _num(_get(it, "computed-amount"), None)
+        if amount is None:
+            amount = _num(_get(it, "attributed-cost"), 0.0)
+        cur = _get(it, "currency") or ""
+        if cur and not currency:
+            currency = cur
+        svc = _get(it, "service") or "其它"
+        ts = _get(it, "time-usage-started") or _get(it, "time-usage-ended")
+        day = str(ts)[:10] if ts else "未知"
+        total += amount
+        by_service[svc] = by_service.get(svc, 0.0) + amount
+        daily[day] = daily.get(day, 0.0) + amount
+
+    return _read_cache.set(ck, {
+        "total": round(total, 4),
+        "currency": currency,
+        "since": start.isoformat(),
+        "daily": [{"date": d, "amount": round(v, 4)} for d, v in sorted(daily.items())],
+        "by_service": sorted(
+            ({"service": k, "amount": round(v, 4)} for k, v in by_service.items()),
+            key=lambda x: -x["amount"])[:20],
+        "error": None,
+        "note": None if total else "本月暂无消费记录（免费额度内不产生费用）。",
+    })

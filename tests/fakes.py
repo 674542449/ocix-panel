@@ -47,6 +47,9 @@ class FakeBackend(Backend):
         self.route_rules_existing = []
         # 监控数据点，按 SDK 形态回给上层
         self.metrics = []
+        self.home_region_name = "us-ashburn-1"
+        self.invoices = []
+        self.usage_items = []
         # Identity Domain 与控制台密码策略（默认就是 Oracle 那个 120 天）
         self.domains = [{"id": "dom1", "display_name": "Default",
                          "url": "https://idcs-x.identity.oraclecloud.com", "type": "DEFAULT"}]
@@ -240,7 +243,7 @@ class FakeBackend(Backend):
 
     # ---------- Monitoring ----------
     def summarize_metrics(self, profile, compartment_id, namespace, query,
-                          start_time, end_time):
+                          start_time, end_time, subtree=False):
         self._rec("summarize_metrics")
         # 真实 SDK 回 snake_case 的 aggregated_datapoints
         return [_to_sdk_shape(m) for m in self.metrics
@@ -253,6 +256,18 @@ class FakeBackend(Backend):
     def list_subscriptions(self, profile, compartment_id):
         self._rec("list_subscriptions")
         return list(self.subscriptions)
+
+    def home_region(self, profile, tenancy_id):
+        self._rec("home_region")
+        return self.home_region_name
+
+    def list_invoices(self, profile, tenancy_id, home_region, limit):
+        self._rec("list_invoices")
+        return [_to_sdk_shape(x) for x in self.invoices[:limit]]
+
+    def summarize_usage(self, profile, tenant_id, start, end, granularity, group_by):
+        self._rec("summarize_usage")
+        return [_to_sdk_shape(x) for x in self.usage_items]
 
     def list_domains(self, profile, compartment_id):
         self._rec("list_domains")

@@ -33,11 +33,6 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
-class PasswordPolicyRequest(BaseModel):
-    # 0 = 永不过期；上限 3650 天纯粹是防手滑输成年份
-    max_age_days: int = Field(ge=0, le=3650)
-
-
 class ConsolePasswordPolicyRequest(BaseModel):
     """Oracle 账号（控制台登录）的密码有效期。0 = 永不过期。"""
     days: int = Field(ge=0, le=3650)

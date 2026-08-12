@@ -515,7 +515,8 @@
       <main class="main">
         <div class="toolbar">
           <el-select v-model="currentProfile" placeholder="选择账户" style="width:220px;" size="default"
-                     :loading="profilesLoading" @change="onProfileChange">
+                     :loading="profilesLoading" @change="onProfileChange"
+                     :disabled="!!lockedProfile">
             <el-option v-for="p in profiles" :key="p.name" :value="p.name"
                        :label="p.name + (p.region ? ' · ' + p.region : '')" />
           </el-select>
@@ -795,6 +796,29 @@
               {{ tier.reasons.slice(1).join(' ') }}
             </p>
             <p class="hint" v-if="tier.limits_note">{{ tier.limits_note }}</p>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">当月出网流量</div>
+              <el-button size="small" @click="loadEgress(true)" :loading="egressLoading">
+                {{ egress.egress_gb === undefined ? '查询' : '重新查询' }}
+              </el-button>
+            </div>
+            <template v-if="egress.egress_gb !== undefined">
+              <div class="quota">
+                <div class="label">出网流量（{{ egress.region }}）</div>
+                <div :class="['bar', egress.percent >= 100 ? 'over' : (egress.percent >= 80 ? 'warn' : '')]">
+                  <i :style="{ width: Math.min(egress.percent, 100) + '%' }"></i>
+                </div>
+                <div class="val mono">{{ fmtGb(egress.egress_gb) }} / 10 TB</div>
+              </div>
+              <p class="hint" v-if="egress.error" style="color:var(--crit);">{{ egress.error }}</p>
+              <p class="hint">{{ egress.note }}</p>
+            </template>
+            <div class="hint" v-else-if="!egressLoading" style="margin-top:0;">
+              Always Free 每月含 10 TB 出网流量。点「查询」按当月统计。
+            </div>
           </div>
 
           <div class="card" v-if="loading && !usage" aria-label="加载中">
@@ -1122,8 +1146,12 @@
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="142" fixed="right">
+                <el-table-column label="操作" width="212" fixed="right">
                   <template #default="{row}">
+                    <el-button size="small" :type="lockedProfile === row.name ? 'warning' : ''"
+                               @click="toggleLock(row.name)">
+                      {{ lockedProfile === row.name ? '解除锁定' : '锁定' }}
+                    </el-button>
                     <el-button size="small" @click="testProfile(row.name)">校验</el-button>
                     <el-button size="small" type="danger" @click="delProfile(row.name)">删除</el-button>
                   </template>
@@ -1134,6 +1162,10 @@
               <b>还没有配置任何账户</b>
               在下面「导入账户」里粘贴一份 ~/.oci/config 并附上私钥即可开始。
             </div>
+            <p class="hint">
+              <strong>锁定</strong>后所有页面都固定用这个账户，顶部不再能切换，
+              省得每次操作前先确认选对了没有。设置存在服务端，换浏览器一样生效。
+            </p>
             <p class="hint">
               账户等级依据租户的<strong>订阅记录</strong>判定。
               免费号超额只是开不出机器；已升级的账号超额会真实计费。
@@ -1180,6 +1212,91 @@
               <span class="hint" style="margin-left:12px;">导入时会立刻调用 oci iam user get 验证，失败会自动回滚。</span>
             </div>
 
+          </div>
+        </section>
+
+        <!-- 账单 -->
+        <section class="pane" v-show="activeTab === 'billing'">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">当月消费</div>
+              <el-button size="small" @click="loadBilling(true)" :loading="billingLoading">刷新</el-button>
+            </div>
+            <template v-if="cost.total !== undefined">
+              <div class="stats" style="margin-bottom:14px;">
+                <div class="stat"><div class="v">{{ cost.currency || '' }} {{ cost.total }}</div><div class="k">本月至今</div></div>
+                <div class="stat"><div class="v">{{ (cost.by_service || []).length }}</div><div class="k">计费服务</div></div>
+              </div>
+              <div class="table-wrap" v-if="(cost.by_service || []).length">
+                <el-table :data="cost.by_service" size="small" stripe border>
+                  <el-table-column prop="service" label="服务" min-width="200" />
+                  <el-table-column label="金额" width="140">
+                    <template #default="{row}">
+                      <span class="mono">{{ cost.currency }} {{ row.amount }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+              <p class="hint" v-if="cost.note">{{ cost.note }}</p>
+              <p class="hint" v-if="cost.error" style="color:var(--crit);">{{ cost.error }}</p>
+            </template>
+            <div class="empty" v-else-if="!billingLoading">
+              <b>还没查询</b>
+              点「刷新」查询当月消费与账单。
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">账单记录</div>
+              <span class="who" v-if="invoices.summary && invoices.summary.total">
+                共 {{ invoices.summary.total }} 张
+              </span>
+            </div>
+            <template v-if="invoices.invoices">
+              <div class="stats" style="margin-bottom:14px;" v-if="invoices.summary.total">
+                <div class="stat crit" v-if="invoices.summary.overdue">
+                  <div class="v">{{ invoices.summary.overdue }}</div><div class="k">已逾期</div>
+                </div>
+                <div class="stat"><div class="v">{{ invoices.summary.unpaid }}</div><div class="k">待支付</div></div>
+                <div class="stat ok"><div class="v">{{ invoices.summary.paid }}</div><div class="k">已支付</div></div>
+              </div>
+              <div class="table-wrap" v-if="invoices.invoices.length">
+                <el-table :data="invoices.invoices" size="small" stripe border>
+                  <el-table-column label="状态" width="104">
+                    <template #default="{row}">
+                      <span class="state">
+                        <i :class="['dot', invoiceDot(row.state)]"></i>
+                        <span class="state-label">{{ invoiceText(row.state) }}</span>
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="number" label="账单号" min-width="140" show-overflow-tooltip />
+                  <el-table-column label="账单日期" width="120">
+                    <template #default="{row}"><span class="mono">{{ fmtDay(row.time_invoice) }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="到期日" width="120">
+                    <template #default="{row}"><span class="mono">{{ fmtDay(row.time_due) }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="金额" width="130">
+                    <template #default="{row}">
+                      <span class="mono">{{ row.currency }} {{ row.amount ?? '—' }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="待付" width="130">
+                    <template #default="{row}">
+                      <span class="mono" :style="row.state !== 'paid' && row.amount_due ? 'color:var(--warn);' : ''">
+                        {{ row.amount_due ?? '—' }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+              <div class="empty" v-else>
+                <b>没有账单记录</b>
+                {{ invoices.note || 'Always Free 账号不会产生账单。' }}
+              </div>
+            </template>
           </div>
         </section>
 
@@ -1415,32 +1532,6 @@
             </el-form>
             <p class="hint">改密后所有已登录的会话立即失效，需要重新登录。密码存在数据卷里，重启容器不会丢。</p>
           </div>
-
-          <div class="card" style="max-width:420px;">
-            <div class="card-head"><div class="card-title">面板登录密码有效期</div></div>
-
-            <el-alert v-if="pwPolicy.expired" type="error" show-icon :closable="false"
-                      style="margin-bottom:12px;" title="面板密码已过期"
-                      description="改密之前，其它功能都用不了。" />
-            <el-alert v-else-if="pwPolicy.days_left !== null && pwPolicy.days_left <= 7"
-                      type="warning" show-icon :closable="false" style="margin-bottom:12px;"
-                      :title="'密码还有 ' + pwPolicy.days_left + ' 天到期'" />
-
-            <el-form label-position="top" @submit.prevent>
-              <el-form-item label="多少天后必须改密">
-                <el-input-number v-model="pwPolicy.max_age_days" :min="0" :max="3650"
-                                 :step="30" style="width:180px;" />
-              </el-form-item>
-              <el-button type="primary" @click="savePwPolicy" :loading="loading">保存</el-button>
-            </el-form>
-            <p class="hint">
-              管的是<strong>面板自己</strong>的登录密码，默认 <strong>0</strong>（永不过期）。
-              Oracle 账号那条 120 天的规则在上面单独设。
-              <template v-if="pwPolicy.max_age_days > 0 && pwPolicy.days_left !== null">
-                当前还剩 {{ pwPolicy.days_left }} 天。
-              </template>
-            </p>
-          </div>
         </section>
       </main>
     </div>
@@ -1528,6 +1619,7 @@ const NAV = [
   { title: '观测', items: [
     { name: 'usage', label: '免费额度', icon: 'M20 12a8 8 0 1 0-8 8M12 12l4.5-3M12 20v.01' },
     { name: 'metrics', label: '监控', icon: 'M3 12h4l3 8 4-16 3 8h4' },
+    { name: 'billing', label: '账单', icon: 'M4 4h16v16l-3-2-2 2-3-2-3 2-2-2-3 2zM8 9h8M8 13h5' },
     { name: 'audit', label: '审计', icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
   ]},
   { title: '设置', items: [
@@ -1586,6 +1678,14 @@ createApp({
     const instSelection = ref([]);
     const instTableRef = ref(null);
     const usage = ref(null);
+    // 锁定的账户（服务端持久化）
+    const lockedProfile = ref('');
+    // 当月流量 / 账单
+    const egress = ref({});
+    const egressLoading = ref(false);
+    const cost = ref({});
+    const invoices = ref({});
+    const billingLoading = ref(false);
     const tier = ref({});
     const tierLoading = ref(false);
     // 账户配置页按账户存一份等级结论；额度页那个 tier 是「当前账户」的
@@ -1708,9 +1808,6 @@ createApp({
     const updBusy = ref(false);
     let updTimer = null;
 
-    // ---- 面板自己的登录密码有效期 ----
-    const pwPolicy = ref({ max_age_days: 0, days_left: null, expired: false });
-
     // ---- Oracle 账号（控制台登录）的密码有效期 ----
     const consolePolicy = ref({ supported: false, policies: [] });
     const consoleForm = reactive({ days: 0 });
@@ -1761,24 +1858,11 @@ createApp({
       axios.defaults.headers.common['Authorization'] = t ? 'Bearer ' + t : '';
     }
     applyToken(token.value);
-    let pwRedirected = false;
     axios.interceptors.response.use(null, (err) => {
       const res = err.response;
       if (res && res.status === 401 && token.value) {
         clearSession();
         ElMessage.warning('登录已失效，请重新登录');
-      }
-      // 密码过期后所有业务接口都会 403。不引导的话用户只会看到满屏报错，
-      // 却不知道去哪改密——直接把他送到密码页。
-      if (res && res.status === 403 && res.headers &&
-          res.headers['x-ocix-password-expired'] === '1') {
-        if (!pwRedirected) {
-          pwRedirected = true;
-          ElMessage.error(errMsg(err, '密码已过期，请先修改密码'));
-          activeTab.value = 'password';
-          loadPwPolicy();
-          setTimeout(() => { pwRedirected = false; }, 3000);
-        }
       }
       return Promise.reject(err);
     });
@@ -1828,7 +1912,14 @@ createApp({
         const { data } = await axios.get('/api/profiles');
         profiles.value = data.profiles;
         const names = profiles.value.map(p => p.name);
-        if (!names.includes(currentProfile.value)) currentProfile.value = names[0] || '';
+        // 锁定的账户优先。必须等账户列表回来之后再定值：
+        // 提前设的话下拉框里还没有对应选项，框会显示成空的，
+        // 明明用着 DEFAULT 却看不出来。
+        if (lockedProfile.value && names.includes(lockedProfile.value)) {
+          currentProfile.value = lockedProfile.value;
+        } else if (!names.includes(currentProfile.value)) {
+          currentProfile.value = names[0] || '';
+        }
       } catch (e) {
         ElMessage.error(errMsg(e, '账户列表加载失败'));
       } finally { profilesLoading.value = false; }
@@ -2331,6 +2422,7 @@ createApp({
       storage.value = null; preflight.value = null;
       // 等级是按账户算的，换账户必须清掉，否则会把上一个账户的结论安在新账户头上
       tier.value = {};
+      egress.value = {}; cost.value = {}; invoices.value = {};
       consolePolicy.value = { supported: false, policies: [] };
       firewall.value = null; fwInstance.value = '';
       opts.value = { ...opts.value, availability_domains: [], images: [], subnets: [] };
@@ -2361,8 +2453,9 @@ createApp({
       } else {
         watchUpdate(false);
       }
-      if (name === 'password') { loadPwPolicy(); loadConsolePolicy(false); }
-      if (name === 'usage') loadTier(false);
+      if (name === 'password') loadConsolePolicy(false);
+      if (name === 'usage') { loadTier(false); loadEgress(false); }
+      if (name === 'billing') loadBilling(false);
       if (name === 'profile') loadAllTiers(false);
       if (name === 'firewall') {
         if (!instances.value.length) loadSingle();
@@ -2602,6 +2695,68 @@ createApp({
       } finally { tierBusy.value = false; }
     }
 
+    const fmtGb = (gb) => {
+      const v = Number(gb) || 0;
+      return v >= 1024 ? (v / 1024).toFixed(2) + ' TB' : v.toFixed(2) + ' GB';
+    };
+    const fmtDay = (iso) => (iso ? String(iso).slice(0, 10) : '—');
+    const INVOICE_DOT = { paid: 'ok', unpaid: 'attn', overdue: 'crit' };
+    const INVOICE_TEXT = { paid: '已支付', unpaid: '待支付', overdue: '已逾期' };
+    const invoiceDot = (st) => INVOICE_DOT[st] || 'idle';
+    const invoiceText = (st) => INVOICE_TEXT[st] || st;
+
+    async function loadLock() {
+      try {
+        const { data } = await axios.get('/api/profiles/lock');
+        lockedProfile.value = data.locked || '';
+        // 只记下来；真正切账户由 loadProfiles 在拿到列表后做
+      } catch (e) { /* 拿不到就当没锁定 */ }
+    }
+
+    async function toggleLock(name) {
+      const locking = lockedProfile.value !== name;
+      try {
+        if (locking) {
+          await axios.post(`/api/profiles/${encodeURIComponent(name)}/lock`);
+          lockedProfile.value = name;
+          ElMessage.success(`已锁定为 ${name}，其它页面不会再切走`);
+          if (currentProfile.value !== name) { currentProfile.value = name; onProfileChange(); }
+        } else {
+          await axios.delete('/api/profiles/lock');
+          lockedProfile.value = '';
+          ElMessage.success('已解除锁定，顶部又可以切换账户了');
+        }
+      } catch (e) { ElMessage.error(errMsg(e, locking ? '锁定失败' : '解除锁定失败')); }
+    }
+
+    async function loadEgress(force) {
+      if (!currentProfile.value) return;
+      if (egress.value.egress_gb !== undefined && !force) return;
+      egressLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/monitor/egress', { params: scopeParams() });
+        egress.value = data;
+      } catch (e) {
+        egress.value = {};
+        ElMessage.error(errMsg(e, '流量查询失败'));
+      } finally { egressLoading.value = false; }
+    }
+
+    async function loadBilling(force) {
+      if (!currentProfile.value) return;
+      if (cost.value.total !== undefined && !force) return;
+      billingLoading.value = true;
+      try {
+        // 串起来查，不并发：这两个都打 OCI
+        const c = await axios.get('/api/monitor/cost', { params: { profile: currentProfile.value } });
+        cost.value = c.data;
+        const inv = await axios.get('/api/monitor/invoices', { params: { profile: currentProfile.value } });
+        invoices.value = inv.data;
+      } catch (e) {
+        ElMessage.error(errMsg(e, '账单查询失败'));
+      } finally { billingLoading.value = false; }
+    }
+
     async function loadTier(force) {
       if (!currentProfile.value) return;
       if (tier.value.tier && !force) return;
@@ -2665,24 +2820,7 @@ createApp({
       } finally { consoleSaving.value = false; }
     }
 
-    async function loadPwPolicy() {
-      try {
-        const { data } = await axios.get('/api/auth/password-policy');
-        pwPolicy.value = data;
-      } catch (e) { /* 拿不到就按不限制显示，不打扰 */ }
-    }
 
-    async function savePwPolicy() {
-      loading.value = true;
-      try {
-        const { data } = await axios.put('/api/auth/password-policy',
-                                         { max_age_days: pwPolicy.value.max_age_days });
-        pwPolicy.value = data;
-        ElMessage.success(data.max_age_days === 0
-          ? '已设为永不过期' : `密码有效期已设为 ${data.max_age_days} 天`);
-      } catch (e) { ElMessage.error(errMsg(e, '保存失败')); }
-      finally { loading.value = false; }
-    }
 
     async function changePw() {
       if (pw.new_password.length < 8) { ElMessage.warning('新密码至少 8 位'); return; }
@@ -2848,6 +2986,7 @@ createApp({
         const { data } = await axios.get('/api/auth/me');
         user.value = data.user;
         appVersion.value = data.version || '';
+        await loadLock();
         await bootData();
       } catch { /* 401 已由拦截器处理 */ }
     });
@@ -2863,10 +3002,12 @@ createApp({
       firewall, fwInstance, fwLoading, fwBusy, loadFirewall, allowAll, revokeAll,
       ruleForm, addRule, deleteRule, clearRules, vpuRange, vpuTier,
       upd, updBusy, updRunning, updStateText, updTagType, doUpdate,
-      pwPolicy, savePwPolicy,
       consolePolicy, consoleForm, consoleLoading, consoleSaving, consoleDays,
       loadConsolePolicy, saveConsolePolicy,
       tier, tierLoading, loadTier, tiers, tierBusy, loadAllTiers,
+      lockedProfile, toggleLock,
+      egress, egressLoading, loadEgress, fmtGb, fmtDay,
+      cost, invoices, billingLoading, loadBilling, invoiceDot, invoiceText,
       tierDot, tierText, tierTitle, tierDotOf,
       sys, sysLoading, loadSystem,
       changeIp, changePerformance,

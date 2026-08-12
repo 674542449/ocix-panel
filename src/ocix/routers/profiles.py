@@ -17,7 +17,14 @@ from fastapi import (
 from .. import security
 from ..common import OCIError, account_gate, list_profiles_from_config, read_config_parser
 from ..config import KEYS_DIR, OCI_CONFIG_PATH
-from ..db import audit, delete_profile_db, list_profiles_db, upsert_profile
+from ..db import (
+    audit,
+    delete_profile_db,
+    get_setting,
+    list_profiles_db,
+    set_setting,
+    upsert_profile,
+)
 from ..oci_helpers import (
     account_tier,
     console_password_policy,
@@ -250,6 +257,52 @@ async def import_profile(
         msg = e.message if isinstance(e, OCIError) else str(e)
         audit(user, "import-profile", profile=name, target=name, result="fail", detail=msg, ip=ip)
         raise HTTPException(status_code=400, detail=f"配置校验失败，已回滚: {msg}")
+
+
+# ---- 锁定账户 ----
+# 锁定后所有页面固定用这个账户，顶部不再能切换。
+# 存库而不是存 localStorage：换个浏览器进来也该是同一个账户，
+# 不然「锁定」只锁住了一台设备。
+_LOCK_KEY = "locked_profile"
+
+
+@router.get("/lock")
+def get_lock(user: str = Depends(security.get_current_user)):
+    name = get_setting(_LOCK_KEY) or ""
+    # 账户被删掉后锁定要自动失效，否则界面会卡在一个不存在的账户上
+    if name and name not in list_profiles_from_config():
+        set_setting(_LOCK_KEY, "")
+        name = ""
+    return {"locked": name or None}
+
+
+@router.post("/{name}/lock")
+def lock_profile(
+    name: str,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """把这个账户锁成当前账户。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    _check_name(name)
+    if name not in list_profiles_from_config():
+        raise HTTPException(status_code=404, detail=f"账户 {name} 不存在")
+    set_setting(_LOCK_KEY, name)
+    audit(user, "lock-profile", profile=name, target=name, result="ok",
+          detail="已锁定为当前账户", ip=security.client_ip(request))
+    return {"ok": True, "locked": name}
+
+
+@router.delete("/lock")
+def unlock_profile(
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    set_setting(_LOCK_KEY, "")
+    audit(user, "lock-profile", result="ok", detail="已解除锁定",
+          ip=security.client_ip(request))
+    return {"ok": True, "locked": None}
 
 
 @router.post("/{name}/test")
