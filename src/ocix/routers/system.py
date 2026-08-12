@@ -1,13 +1,16 @@
 import json
+import os
+import re
 import threading
 import time
 import urllib.error
 import urllib.request
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .. import __version__, security
-from ..config import GITHUB_REPO, INSTALL_DIR
+from ..config import CONTROL_DIR, GITHUB_REPO, INSTALL_DIR
+from ..db import audit
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -64,8 +67,8 @@ def system_info(
 ):
     """版本信息与更新指引。
 
-    面板不会自己去改宿主机上的代码——那需要把 docker socket 交给容器，
-    风险远大于收益。这里只负责告诉你有没有新版本、以及该敲哪条命令。
+    面板容器本身不碰 docker——真正执行更新的是宿主机上的代理进程，
+    面板只负责往交换目录里写一个「请求更新」的标记。
     """
     security.check_rate(request, security.API_RATE_LIMIT)
     remote = _latest_cached(force=refresh)
@@ -84,4 +87,117 @@ def system_info(
             f"https://github.com/{GITHUB_REPO}/compare/v{__version__}...v{latest}"
             if available else None
         ),
+        "agent": _agent_state(),
     }
+
+
+# ---- 一键更新：面板只写请求，宿主机代理负责执行 ----
+_REQUEST_FILE = "update.request"
+_STATUS_FILE = "update.status"
+_ALIVE_FILE = "agent.alive"
+_LOG_FILE = "update.log"
+# 更新日志里的 ANSI 颜色码，得剥掉才好在网页上显示。
+# 必须带上开头的 ESC，否则会把日志里正常的 "[0-9]" 之类文本也吃掉。
+_ANSI_RE = re.compile("\x1b\\[[0-9;]*[a-zA-Z]")
+# 代理每 10 秒摸一次心跳文件，留三倍余量判定在线
+_ALIVE_TIMEOUT = 30
+
+
+def _control_path(name: str):
+    return CONTROL_DIR / name
+
+
+def _read_json(name: str) -> dict:
+    try:
+        with open(_control_path(name), encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _agent_state() -> dict:
+    """宿主机代理在不在。
+
+    不在的话点更新只会让请求文件一直躺着没人管，
+    所以要在界面上直接说清楚，而不是让用户对着转圈等。
+    """
+    alive = _control_path(_ALIVE_FILE)
+    try:
+        age = time.time() - os.path.getmtime(alive)
+    except OSError:
+        return {"online": False, "last_seen": None,
+                "hint": f"宿主机更新代理未运行。在宿主机执行： bash {INSTALL_DIR}/scripts/install.sh"}
+    if age > _ALIVE_TIMEOUT:
+        return {"online": False, "last_seen": int(time.time() - age),
+                "hint": f"更新代理已 {int(age)} 秒没有心跳，检查： systemctl status ocix-updater"}
+    return {"online": True, "last_seen": int(time.time() - age), "hint": None}
+
+
+def _read_log(limit: int = 4000) -> str | None:
+    """读更新日志。
+
+    日志是纯文本文件，不由代理往 JSON 里塞——shell 侧做 JSON 转义又脆又难验证。
+    这里读进来交给 Python 的 json 编码器，任意字节都能安全处理。
+    """
+    try:
+        with open(_control_path(_LOG_FILE), "rb") as f:
+            try:
+                f.seek(-limit, os.SEEK_END)
+            except OSError:
+                f.seek(0)
+            raw = f.read()
+    except OSError:
+        return None
+    # 日志里有 ANSI 颜色码，直接显示在网页上是一堆乱码
+    text = _ANSI_RE.sub("", raw.decode("utf-8", errors="replace"))
+    return text.strip() or None
+
+
+@router.get("/update/status")
+def update_status(user: str = Depends(security.get_current_user)):
+    """更新进度。容器会在更新过程中被重启，前端断连后继续轮询即可。"""
+    status = _read_json(_STATUS_FILE)
+    pending = _control_path(_REQUEST_FILE).exists()
+    return {
+        "state": status.get("state") or ("pending" if pending else "idle"),
+        "message": status.get("message"),
+        "version": status.get("version"),
+        "started_at": status.get("started_at"),
+        "finished_at": status.get("finished_at"),
+        "log": _read_log(),
+        "queued": pending,
+        "current": __version__,
+        "agent": _agent_state(),
+    }
+
+
+@router.post("/update")
+def trigger_update(request: Request, user: str = Depends(security.get_current_user)):
+    """请求更新。
+
+    这里只写一个标记文件，绝不执行任何命令——宿主机代理读到标记后跑的是
+    固定的 update.sh，文件内容不会以任何形式进入命令行。
+    """
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    agent = _agent_state()
+    if not agent["online"]:
+        raise HTTPException(status_code=409, detail=agent["hint"])
+
+    running = _read_json(_STATUS_FILE).get("state")
+    if running == "running":
+        raise HTTPException(status_code=409, detail="已经有一次更新在进行中，请等它跑完")
+
+    try:
+        CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {"requested_by": user, "requested_at": int(time.time()), "from": __version__}
+        with open(_control_path(_REQUEST_FILE), "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"写入更新请求失败：{e}")
+
+    audit(user, "system-update", result="ok",
+          detail=f"从 v{__version__} 请求更新", ip=ip)
+    return {"ok": True, "state": "pending",
+            "msg": "更新请求已提交，宿主机代理会在几秒内开始执行"}

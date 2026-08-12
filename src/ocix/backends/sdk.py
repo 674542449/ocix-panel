@@ -94,6 +94,8 @@ class SDKBackend(Backend):
             "block": oci.core.BlockstorageClient,
             "identity": oci.identity.IdentityClient,
             "monitoring": oci.monitoring.MonitoringClient,
+            "limits": oci.limits.LimitsClient,
+            "subscription": oci.tenant_manager_control_plane.SubscriptionClient,
         }[kind]
         client = _wrap(ctor, cfg)
         with self._lock:
@@ -114,6 +116,9 @@ class SDKBackend(Backend):
 
     def _mon(self, p):
         return self._client(p, "monitoring")
+
+    def _limits(self, p):
+        return self._client(p, "limits")
 
     def _all(self, fn, *a, **kw) -> list:
         """自动翻页，等价于 CLI 的 --all。"""
@@ -328,6 +333,25 @@ class SDKBackend(Backend):
         details = oci.monitoring.models.SummarizeMetricsDataDetails(
             namespace=namespace, query=query, start_time=start_time, end_time=end_time)
         return _list(_wrap(self._mon(profile).summarize_metrics_data, compartment_id, details))
+
+    # ---------- Limits / 订阅 ----------
+    def list_limit_values(self, profile, compartment_id, service_name):
+        # 注意全是关键字参数，位置传参会直接 TypeError
+        return self._all(self._limits(profile).list_limit_values,
+                         compartment_id=compartment_id, service_name=service_name)
+
+    def list_subscriptions(self, profile, compartment_id):
+        """订阅信息里有 subscription_tier / payment_model / promotion。
+
+        这套接口属于「租户管理」，普通免费租户经常没有权限，
+        401/404 是常态而不是故障——所以这里吞掉异常返回空列表，
+        让上层退回到用服务限额判断。
+        """
+        try:
+            return self._all(self._client(profile, "subscription").list_subscriptions,
+                             compartment_id=compartment_id)
+        except (OCIError, ServiceError, ClientError, OSError):
+            return []
 
 
 def _port_range(opt: dict):

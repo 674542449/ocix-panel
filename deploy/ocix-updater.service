@@ -1,0 +1,20 @@
+[Unit]
+Description=OCIX 更新代理（面板点「立即更新」后由它在宿主机上执行）
+Documentation=https://github.com/674542449/ocix-panel
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+# OCIX_HOME 由 install.sh 渲染成实际安装目录
+WorkingDirectory=__OCIX_HOME__
+Environment=OCIX_CONTROL_DIR=__OCIX_HOME__/var/control
+ExecStart=/usr/bin/env bash __OCIX_HOME__/scripts/update-agent.sh
+Restart=always
+RestartSec=5
+# 更新要调 docker，必须是 root；它只会执行固定的 update.sh，
+# 不接受来自面板的任何参数
+User=root
+
+[Install]
+WantedBy=multi-user.target

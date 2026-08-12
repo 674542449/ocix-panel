@@ -1205,3 +1205,116 @@ def get_metrics(profile: str, instance_id: str, compartment_id: str = None, hour
     order = {m[0]: idx for idx, m in enumerate(_METRIC_QUERIES)}
     out.sort(key=lambda x: order.get(x["metric"], 99))
     return out
+
+
+# ---------------- 账户等级 ----------------
+# Oracle 并没有给普通租户一个直白的「你是免费号还是升级号」标志位，
+# 所以这里两条线一起看，并把依据一并返回，让人能自己判断而不是只看一个结论：
+#   1) 租户管理接口里的订阅信息（有 subscription_tier / payment_model），
+#      免费租户常常没权限调，拿不到很正常；
+#   2) 计算服务的限额——免费号只有 E2.1.Micro 和 A1 这两类是非零，
+#      其余机型全是 0；一旦升级成按量付费，其它机型就会放开。
+_FREE_LIMIT_HINTS = ("micro", "standard-a1", "ampere")
+
+# 这些字样出现在订阅信息里基本可以确定已经不是纯免费号了
+_PAID_TIER_HINTS = ("PAYG", "PAY_AS_YOU_GO", "COMMIT", "MONTHLY", "ANNUAL")
+
+
+def _is_free_shape_limit(name: str) -> bool:
+    n = (name or "").lower()
+    return any(h in n for h in _FREE_LIMIT_HINTS)
+
+
+def _core_limits(profile: str, tenancy: str) -> list:
+    """只保留「XX 核数上限」这类条目。
+
+    必须卡到 -core-count：只判 -count 的话，vcn-count、vnic-count 这种
+    跟机型无关的条目也会混进来，非零就被当成「有付费机型配额」，
+    免费号会被误判成已升级。
+    """
+    values = _b().list_limit_values(profile, tenancy, "compute")
+    out = []
+    for v in values:
+        name = _get(v, "name") or ""
+        if not name.endswith("-core-count"):
+            continue
+        try:
+            value = float(_get(v, "value") or 0)
+        except (TypeError, ValueError):
+            continue
+        out.append({"name": name, "value": value, "free_shape": _is_free_shape_limit(name)})
+    return out
+
+
+def account_tier(profile: str) -> dict:
+    """判断账户是免费号还是已升级，并给出判断依据。"""
+    ck = (profile, "account_tier")
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+
+    tenancy = tenancy_of(profile)
+    subscription, sub_error = {}, None
+    try:
+        subs = _b().list_subscriptions(profile, tenancy)
+    except OCIError as e:
+        subs, sub_error = [], e.message
+    for s in subs or []:
+        tier = _get(s, "subscription-tier", "subscription_tier")
+        payment = _get(s, "payment-model", "payment_model")
+        promo = _get(s, "promotion") or {}
+        subscription = {
+            "service_name": _get(s, "service-name", "service_name"),
+            "tier": tier,
+            "payment_model": payment,
+            "is_classic": bool(_get(s, "is-classic-subscription", "is_classic_subscription")),
+            # promotion 就是那 300 美元试用额度，status/到期时间能看出试用期状态
+            "promotion_status": (promo or {}).get("status") if isinstance(promo, dict) else None,
+            "promotion_expires": ((promo or {}).get("timeExpired")
+                                  or (promo or {}).get("time_expired")
+                                  if isinstance(promo, dict) else None),
+        }
+        break
+
+    paid_evidence, limits, limit_error = [], [], None
+    try:
+        limits = _core_limits(profile, tenancy)
+        paid_evidence = [x for x in limits if not x["free_shape"] and x["value"] > 0]
+    except OCIError as e:
+        limit_error = e.message
+
+    blob = " ".join(str(v).upper() for v in subscription.values() if v)
+    sub_says_paid = any(h in blob for h in _PAID_TIER_HINTS)
+
+    if sub_says_paid or paid_evidence:
+        tier, label = "paid", "已升级（付费/按量）"
+    elif limits:
+        tier, label = "free", "免费账户（Always Free）"
+    else:
+        # 两条线都没拿到数据就别硬猜，如实说不确定
+        tier, label = "unknown", "无法确定"
+
+    reasons = []
+    if sub_says_paid:
+        reasons.append(f"订阅信息显示为 {subscription.get('tier') or subscription.get('payment_model')}")
+    if paid_evidence:
+        top = sorted(paid_evidence, key=lambda x: -x["value"])[:3]
+        reasons.append("以下付费机型已有配额：" + "、".join(f"{x['name']}={x['value']:g}" for x in top))
+    if tier == "free":
+        reasons.append("除 E2.1.Micro / A1 之外的机型配额全是 0，符合纯免费号特征")
+    if limit_error:
+        reasons.append(f"读取服务限额失败：{limit_error}")
+    if sub_error:
+        reasons.append(f"读取订阅信息失败：{sub_error}")
+    if not subscription and not sub_error:
+        reasons.append("订阅接口无权限或无数据（免费号常见，不影响判断）")
+
+    return _read_cache.set(ck, {
+        "tier": tier,
+        "label": label,
+        "reasons": reasons,
+        "subscription": subscription or None,
+        "free_shape_limits": [x for x in limits if x["free_shape"]],
+        "paid_shape_limits": paid_evidence,
+        "checked_limits": len(limits),
+    })

@@ -707,6 +707,31 @@
 
         <!-- 免费额度 -->
         <section class="pane" v-show="activeTab === 'usage'">
+          <div class="card" style="margin-bottom:12px;">
+            <div class="card-head">
+              <div class="card-title">账户等级</div>
+              <el-button size="small" @click="loadTier(true)" :loading="tierLoading">
+                {{ tier.tier ? '重新检测' : '检测' }}
+              </el-button>
+            </div>
+            <div v-if="tier.tier" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <el-tag :type="tier.tier === 'paid' ? 'warning' : (tier.tier === 'free' ? 'success' : 'info')"
+                      size="large">{{ tier.label }}</el-tag>
+              <span class="who" v-if="tier.tier === 'paid'">超出免费额度的部分会真实扣费，注意账单</span>
+              <span class="who" v-else-if="tier.tier === 'free'">超出免费额度就开不出机器，不会产生费用</span>
+            </div>
+            <div v-else-if="!tierLoading" class="hint" style="margin-top:0;">
+              点「检测」查询这个账户是纯免费号还是已升级为付费。
+            </div>
+            <ul class="hint" v-if="tier.reasons && tier.reasons.length" style="margin:8px 0 0; padding-left:18px;">
+              <li v-for="(r,i) in tier.reasons" :key="i">{{ r }}</li>
+            </ul>
+            <p class="hint" v-if="tier.tier">
+              Oracle 没有给普通租户一个直白的等级标志位，这里是综合订阅信息和服务限额推断的，
+              依据已列在上面，可以自行核对。
+            </p>
+          </div>
+
           <div class="card" v-if="loading && !usage" aria-label="加载中">
             <div class="skel skel-row" v-for="i in 6" :key="i"></div>
           </div>
@@ -1145,11 +1170,43 @@
                       style="margin-bottom:12px;" title="已经是最新版本" />
 
             <div class="card-head" style="margin-top:18px;">
-              <div class="card-title">更新方式</div>
+              <div class="card-title">一键更新</div>
+            </div>
+
+            <el-alert v-if="upd.agent && !upd.agent.online" type="warning" show-icon :closable="false"
+                      style="margin-bottom:12px;" title="宿主机更新代理没在运行"
+                      :description="upd.agent.hint" />
+
+            <p class="hint" style="margin-top:0;">
+              点下面的按钮就会在宿主机上执行更新。面板容器本身<strong>没有</strong> docker 权限——
+              它只是写一个请求标记，真正干活的是宿主机上的更新代理。
+            </p>
+
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <el-button type="primary" @click="doUpdate"
+                         :loading="updBusy"
+                         :disabled="updRunning || (upd.agent && !upd.agent.online)">
+                {{ updRunning ? '更新中…' : '立即更新' }}
+              </el-button>
+              <el-tag v-if="upd.state && upd.state !== 'idle'" :type="updTagType" size="small">
+                {{ updStateText }}
+              </el-tag>
+              <span class="who" v-if="upd.message">{{ upd.message }}</span>
+            </div>
+
+            <p class="hint" v-if="updRunning">
+              更新过程中面板容器会被重启，这个页面可能短暂连不上——属正常，稍等会自动恢复。
+            </p>
+
+            <div v-if="upd.log" class="cmd-box" style="margin-top:12px; max-height:260px; overflow:auto;">
+              <pre class="mono" style="margin:0; white-space:pre-wrap; font-size:12px;">{{ upd.log }}</pre>
+            </div>
+
+            <div class="card-head" style="margin-top:18px;">
+              <div class="card-title">手动更新</div>
             </div>
             <p class="hint" style="margin-top:0;">
-              在服务器上执行下面这条命令即可。面板不会自己动宿主机上的代码——那需要把
-              docker 控制权交给容器，风险比省这一步大得多。
+              也可以直接在服务器上执行：
             </p>
             <div class="cmd-box">
               <code class="mono">{{ sys.update_command }}</code>
@@ -1192,6 +1249,31 @@
               <el-button type="primary" @click="changePw" :loading="loading">保存新密码</el-button>
             </el-form>
             <p class="hint">改密后所有已登录的会话立即失效，需要重新登录。密码存在数据卷里，重启容器不会丢。</p>
+          </div>
+
+          <div class="card" style="max-width:420px; margin-top:14px;">
+            <div class="card-head"><div class="card-title">密码有效期</div></div>
+
+            <el-alert v-if="pwPolicy.expired" type="error" show-icon :closable="false"
+                      style="margin-bottom:12px;" title="密码已过期"
+                      description="改密之前，其它功能都用不了。" />
+            <el-alert v-else-if="pwPolicy.days_left !== null && pwPolicy.days_left <= 7"
+                      type="warning" show-icon :closable="false" style="margin-bottom:12px;"
+                      :title="'密码还有 ' + pwPolicy.days_left + ' 天到期'" />
+
+            <el-form label-position="top" @submit.prevent>
+              <el-form-item label="多少天后必须改密">
+                <el-input-number v-model="pwPolicy.max_age_days" :min="0" :max="3650"
+                                 :step="30" style="width:180px;" />
+              </el-form-item>
+              <el-button type="primary" @click="savePwPolicy" :loading="loading">保存</el-button>
+            </el-form>
+            <p class="hint">
+              填 <strong>0</strong> 表示永不过期。默认 120 天。
+              <template v-if="pwPolicy.max_age_days > 0 && pwPolicy.days_left !== null">
+                当前还剩 {{ pwPolicy.days_left }} 天。
+              </template>
+            </p>
           </div>
         </section>
       </main>
@@ -1333,6 +1415,8 @@ createApp({
     const instSelection = ref([]);
     const instTableRef = ref(null);
     const usage = ref(null);
+    const tier = ref({});
+    const tierLoading = ref(false);
     const allAccounts = ref([]);
     const allWithIp = ref(false);
     const allSelection = ref([]);
@@ -1449,6 +1533,14 @@ createApp({
          createForm.availability_domain && createForm.image_id &&
          createForm.ssh_public_key));
 
+    // ---- 一键更新状态 ----
+    const upd = ref({});
+    const updBusy = ref(false);
+    let updTimer = null;
+
+    // ---- 密码有效期 ----
+    const pwPolicy = ref({ max_age_days: 0, days_left: null, expired: false });
+
     // ---- 版本 / 更新 ----
     const sys = ref({ current: '', latest: null, update_available: false,
                       install_dir: '/opt/ocix', update_command: '', check_command: '' });
@@ -1484,10 +1576,24 @@ createApp({
       axios.defaults.headers.common['Authorization'] = t ? 'Bearer ' + t : '';
     }
     applyToken(token.value);
+    let pwRedirected = false;
     axios.interceptors.response.use(null, (err) => {
-      if (err.response && err.response.status === 401 && token.value) {
+      const res = err.response;
+      if (res && res.status === 401 && token.value) {
         clearSession();
         ElMessage.warning('登录已失效，请重新登录');
+      }
+      // 密码过期后所有业务接口都会 403。不引导的话用户只会看到满屏报错，
+      // 却不知道去哪改密——直接把他送到密码页。
+      if (res && res.status === 403 && res.headers &&
+          res.headers['x-ocix-password-expired'] === '1') {
+        if (!pwRedirected) {
+          pwRedirected = true;
+          ElMessage.error(errMsg(err, '密码已过期，请先修改密码'));
+          activeTab.value = 'password';
+          loadPwPolicy();
+          setTimeout(() => { pwRedirected = false; }, 3000);
+        }
       }
       return Promise.reject(err);
     });
@@ -2051,12 +2157,15 @@ createApp({
       compartmentId.value = '';
       metricInstance.value = ''; metrics.value = []; usage.value = null;
       storage.value = null; preflight.value = null;
+      // 等级是按账户算的，换账户必须清掉，否则会把上一个账户的结论安在新账户头上
+      tier.value = {};
       firewall.value = null; fwInstance.value = '';
       opts.value = { ...opts.value, availability_domains: [], images: [], subnets: [] };
       createForm.availability_domain = ''; createForm.image_id = '';
       createForm.assign_ipv6 = false;
       loadCompartments();
       loadSingle(activeTab.value === 'usage');
+      if (activeTab.value === 'usage') loadTier(false);
       if (activeTab.value === 'create') { loadCreateOptions(); doPreflight(); }
       if (activeTab.value === 'storage') loadStorage();
       if (activeTab.value === 'firewall') firewall.value = null;
@@ -2071,7 +2180,16 @@ createApp({
         if (!opts.value.availability_domains.length) loadCreateOptions();
         doPreflight();
       }
-      if (name === 'update' && !sys.value.current) loadSystem(false);
+      if (name === 'update') {
+        if (!sys.value.current) loadSystem(false);
+        loadUpdateStatus();
+        // 只在更新页轮询，离开就停，别在后台空转
+        watchUpdate(true);
+      } else {
+        watchUpdate(false);
+      }
+      if (name === 'password') loadPwPolicy();
+      if (name === 'usage') loadTier(false);
       if (name === 'firewall') {
         if (!instances.value.length) loadSingle();
         if (!fwInstance.value && instances.value.length) {
@@ -2214,6 +2332,89 @@ createApp({
         ElMessage.success(`已清空 ${data.deleted} 条记录`);
         loadAudit(1);
       } catch (e) { ElMessage.error(errMsg(e, '清空失败')); }
+    }
+
+    const updRunning = computed(() =>
+      upd.value.state === 'running' || upd.value.state === 'pending' || upd.value.queued);
+    const updStateText = computed(() => ({
+      pending: '排队中', running: '更新中', done: '已完成', failed: '失败',
+    }[upd.value.state] || ''));
+    const updTagType = computed(() => ({
+      done: 'success', failed: 'danger', running: 'warning', pending: 'info',
+    }[upd.value.state] || 'info'));
+
+    async function loadUpdateStatus() {
+      try {
+        const { data } = await axios.get('/api/system/update/status');
+        const wasRunning = updRunning.value;
+        upd.value = data;
+        // 更新完成后版本号变了，把版本卡片一起刷新
+        if (wasRunning && !updRunning.value) {
+          if (data.state === 'done') ElMessage.success(`已更新到 v${data.version}`);
+          if (data.state === 'failed') ElMessage.error('更新失败，展开日志看原因');
+          loadSystem(false);
+        }
+      } catch (e) {
+        // 更新时容器正在重启，请求失败是预期内的，别弹错误吓人
+      }
+    }
+
+    function watchUpdate(on) {
+      if (updTimer) { clearInterval(updTimer); updTimer = null; }
+      if (on) updTimer = setInterval(loadUpdateStatus, 3000);
+    }
+
+    async function doUpdate() {
+      try {
+        await ElMessageBox.confirm(
+          '现在更新到最新版？\n' +
+          '过程中面板会重启，大约需要一两分钟。配置、密码和审计记录都不会动。',
+          '确认更新',
+          { type: 'warning', confirmButtonText: '开始更新', cancelButtonText: '再想想',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      updBusy.value = true;
+      try {
+        const { data } = await axios.post('/api/system/update');
+        upd.value = { ...upd.value, state: data.state, message: data.msg };
+        ElMessage.success(data.msg);
+        watchUpdate(true);
+      } catch (e) {
+        ElMessage.error(errMsg(e, '发起更新失败'));
+      } finally { updBusy.value = false; }
+    }
+
+    async function loadTier(force) {
+      if (!currentProfile.value) return;
+      if (tier.value.tier && !force) return;
+      tierLoading.value = true;
+      try {
+        const { data } = await axios.get(
+          `/api/profiles/${encodeURIComponent(currentProfile.value)}/tier`);
+        tier.value = data;
+      } catch (e) {
+        tier.value = {};
+        ElMessage.error(errMsg(e, '账户等级检测失败'));
+      } finally { tierLoading.value = false; }
+    }
+
+    async function loadPwPolicy() {
+      try {
+        const { data } = await axios.get('/api/auth/password-policy');
+        pwPolicy.value = data;
+      } catch (e) { /* 拿不到就按不限制显示，不打扰 */ }
+    }
+
+    async function savePwPolicy() {
+      loading.value = true;
+      try {
+        const { data } = await axios.put('/api/auth/password-policy',
+                                         { max_age_days: pwPolicy.value.max_age_days });
+        pwPolicy.value = data;
+        ElMessage.success(data.max_age_days === 0
+          ? '已设为永不过期' : `密码有效期已设为 ${data.max_age_days} 天`);
+      } catch (e) { ElMessage.error(errMsg(e, '保存失败')); }
+      finally { loading.value = false; }
     }
 
     async function changePw() {
@@ -2387,6 +2588,9 @@ createApp({
       rollName, onPubKeyFile, addIpv6,
       firewall, fwInstance, fwLoading, fwBusy, loadFirewall, allowAll, revokeAll,
       ruleForm, addRule, deleteRule, clearRules, vpuRange, vpuTier,
+      upd, updBusy, updRunning, updStateText, updTagType, doUpdate,
+      pwPolicy, savePwPolicy,
+      tier, tierLoading, loadTier,
       sys, sysLoading, loadSystem,
       changeIp, changePerformance,
       token, user, loginForm, loginErr, loading, netBusy,

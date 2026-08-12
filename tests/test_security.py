@@ -159,12 +159,20 @@ def test_profile_name_cannot_escape_the_keys_directory(app_client):
 # ── 凭据与令牌 ──
 
 def test_jwt_algorithm_is_pinned():
-    """不锁定算法会被 alg=none / 算法混淆攻击。"""
+    """不锁定算法会被 alg=none / 算法混淆攻击。
+
+    查整个模块而不是某个函数：解码逻辑挪过位置，
+    盯着单个函数的话搬个家测试就废了。
+    """
     import inspect
+    import re
 
     from ocix import security
-    src = inspect.getsource(security.get_current_user)
-    assert 'algorithms=["HS256"]' in src
+    src = inspect.getsource(security)
+    decodes = re.findall(r"jwt\.decode\([^)]*\)", src, re.S)
+    assert decodes, "没找到 jwt.decode 调用"
+    for call in decodes:
+        assert 'algorithms=["HS256"]' in call, call
 
 
 def test_token_from_another_secret_is_rejected(app_client):

@@ -20,10 +20,15 @@ services:
       - OCIX_TRUST_PROXY=${OCIX_TRUST_PROXY:-false}
       - OCIX_PROXY_HOPS=${OCIX_PROXY_HOPS:-1}
       - OCIX_ENABLE_DOCS=${OCIX_ENABLE_DOCS:-false}
+      - OCIX_PASSWORD_MAX_AGE_DAYS=${OCIX_PASSWORD_MAX_AGE_DAYS:-120}
       - OCIX_HOME=${OCIX_HOME:-/opt/ocix}
+      - OCIX_CONTROL_DIR=/app/control
     volumes:
       - oci_config:/root/.oci
       - ocix_data:/app/data
+      # 与宿主机更新代理的交换目录：面板只往里写「请求更新」的标记，
+      # 真正执行更新的是宿主机上的代理。刻意不挂 docker socket。
+      - ${OCIX_HOME:-/opt/ocix}/var/control:/app/control
     expose:
       - "8000"
     restart: unless-stopped

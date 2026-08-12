@@ -3,6 +3,7 @@
 #
 #   bash /opt/ocix/scripts/update.sh          更新到最新版
 #   bash /opt/ocix/scripts/update.sh --check  只看有没有新版本，不动手
+#   bash /opt/ocix/scripts/update.sh --yes    不交互，本地改动直接丢弃（更新代理用这个）
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,7 +15,13 @@ warn() { printf '%s!%s %s\n' "$c_ylw" "$c_off" "$*"; }
 die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_off" >&2; exit 1; }
 
 CHECK_ONLY=0
-[[ "${1:-}" == "--check" ]] && CHECK_ONLY=1
+ASSUME_YES=0
+for arg in "$@"; do
+  case "$arg" in
+    --check) CHECK_ONLY=1 ;;
+    -y|--yes) ASSUME_YES=1 ;;
+  esac
+done
 
 git rev-parse --git-dir >/dev/null 2>&1 || die "${REPO_ROOT} 不是 git 仓库，没法自动更新。请重新 git clone 一份。"
 
@@ -48,8 +55,16 @@ fi
 if ! git diff --quiet || ! git diff --cached --quiet; then
   warn "检测到本地有未提交的改动："
   git --no-pager status --short
-  read -r -p "丢弃这些改动并继续更新？[y/N]: " a
-  [[ "$a" == "y" || "$a" == "Y" ]] || die "已取消。请先处理本地改动。"
+  if [[ $ASSUME_YES -eq 1 ]]; then
+    warn "--yes 已指定，丢弃本地改动继续"
+  else
+    # 没有终端时 read 会直接 EOF，别把脚本卡在这儿
+    if [[ ! -t 0 ]]; then
+      die "有本地改动且当前不是交互终端。确认要丢弃就加 --yes 重跑。"
+    fi
+    read -r -p "丢弃这些改动并继续更新？[y/N]: " a
+    [[ "$a" == "y" || "$a" == "Y" ]] || die "已取消。请先处理本地改动。"
+  fi
   git reset --hard HEAD
 fi
 

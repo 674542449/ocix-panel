@@ -158,6 +158,14 @@ class Backend(ABC):
     @abstractmethod
     def update_volume_vpus(self, profile: str, volume_id: str, vpus: int) -> dict: ...
 
+    # ---------- Limits / 订阅（判断账户等级）----------
+    @abstractmethod
+    def list_limit_values(self, profile: str, compartment_id: str,
+                          service_name: str) -> list: ...
+
+    @abstractmethod
+    def list_subscriptions(self, profile: str, compartment_id: str) -> list: ...
+
     # ---------- Monitoring ----------
     @abstractmethod
     def summarize_metrics(self, profile: str, compartment_id: str, namespace: str,

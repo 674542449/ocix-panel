@@ -75,7 +75,9 @@ sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/
 **运维**
 - 免费额度对照、CPU / 内存时序图（1 小时 ~ 7 天）
 - 审计日志（登录 / 改密 / 开关机 / 账户增删，含来源 IP）
-- 登录鉴权（JWT）、限流、自动 HTTPS
+- 登录鉴权（JWT）、限流、自动 HTTPS、**密码有效期**（默认 120 天，可设 0 关闭）
+- **账户等级检测**：区分纯免费号与已升级的付费号
+- **网页一键更新**：点一下就更新，不用 SSH
 
 > ⚠️ **合规说明**：本面板**仅管理你自己的 OCI 租户**，不做账号注册 / 养号 / 自动抢机。
 > 被回收的免费实例**只提醒、不自动重生**；ARM 抢不到容量时只报错、**不后台循环重试**。
@@ -154,14 +156,15 @@ ocix-panel/
 │   ├── backends/        OCI 通信层（官方 Python SDK）
 │   ├── routers/         API 路由
 │   ├── freetier.py      Always Free 额度模型与预检闸门
-│   ├── oci_helpers.py   oci CLI 封装
+│   ├── oci_helpers.py   业务逻辑（额度、防火墙、账户等级…）
 │   └── web/index.html   单文件面板 (Vue3 + Element Plus)
-├── deploy/              docker compose 编排 + Caddy 模板
+├── deploy/              docker compose 编排 + Caddy 模板 + systemd 单元
 ├── docker/Dockerfile
 ├── scripts/
-│   ├── install.sh       一键部署（域名 / IP 二选一）
+│   ├── install.sh       一键部署（域名 / IP 二选一）+ 安装更新代理
 │   ├── release.sh       提版本号 + 打 tag + 推送
 │   ├── update.sh        在线更新（拉代码 + 重建 + 重启）
+│   ├── update-agent.sh  宿主机更新代理，网页一键更新由它执行
 │   └── ocix.sh          docker compose 包装
 ├── tests/               pytest
 └── VERSION              唯一版本号来源
@@ -179,8 +182,10 @@ bash /opt/ocix/scripts/ocix.sh ps           # 看状态
 
 ## 更新
 
-面板「更新」页会显示当前版本、检查 GitHub 上有没有新版本，并给出该执行的命令。
-在服务器上跑这一条即可，配置、密码、审计记录都不动：
+「更新」页会显示当前版本并检查 GitHub 上有没有新版本，**点「立即更新」就能直接更新**，
+配置、密码、审计记录都不动。原理见下面的[网页一键更新](#网页一键更新)。
+
+也可以在服务器上手动执行：
 
 ```bash
 bash /opt/ocix/scripts/update.sh
@@ -189,8 +194,6 @@ bash /opt/ocix/scripts/update.sh
 ```bash
 bash /opt/ocix/scripts/update.sh --check    # 只看有没有新版本和改了什么
 ```
-
-> 面板**不会**自己去改宿主机上的代码——那需要把 docker 控制权交给容器，风险远大于省这一步。
 
 ## 本地开发
 
@@ -257,6 +260,41 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 界面上，任何请求在飞时顶部会有进度条，刷新按钮显示「刷新中…」并带旋转图标，
 首次加载显示骨架屏、二次刷新保留旧数据并压暗。
 
+## 账户等级
+
+「免费额度」页可以查这个账户是**纯免费号**还是**已升级为付费**。
+
+Oracle 并没有给普通租户一个直白的等级标志位，所以是两条线一起看：
+订阅接口里的 `subscription_tier` / `payment_model`（免费号常常没权限调），
+以及计算服务的**核数限额**——免费号除 E2.1.Micro 和 A1 之外的机型配额全是 0，
+一旦升级成按量付费就会放开。判断依据会一并列出来，可以自己核对。
+
+> 分辨这个的实际意义：免费号超额只是开不出机器，**已升级的号超额是真扣钱**。
+
+## 网页一键更新
+
+「更新」页点「立即更新」即可，不用再 SSH 上去敲命令。
+
+面板容器**刻意没有** docker 权限——它只往交换目录里写一个「请求更新」的标记，
+真正执行的是宿主机上常驻的 `ocix-updater` 服务，跑的是固定的 `scripts/update.sh`，
+标记文件的内容不会以任何形式进入命令行。这样即便面板被攻破，
+攻击者能做的也只是触发一次正常更新，而不是拿到整台宿主机。
+
+代理由 `install.sh` 用 root 安装为 systemd 服务。没装或没运行时，
+更新页会直接说明并给出处理命令，而不是让你对着转圈等。
+
+```bash
+systemctl status ocix-updater
+```
+
+## 密码有效期
+
+默认 **120 天**必须改一次密码，可在「密码」页自由调整，**填 0 表示永不过期**。
+
+超期后所有业务接口返回 403，只留 `/api/auth/me` 和改密接口可用——
+否则就把自己锁在门外了。前端收到带 `X-OCIX-Password-Expired` 标记的响应会
+自动跳到密码页。
+
 ## 安全要点
 
 - OCI 凭据**不入库**：只引用 `~/.oci/config`，私钥落在容器卷并设 `600`
@@ -284,6 +322,10 @@ bash scripts/release.sh 1.2.0    # 指定版本号
 |---|---|---|
 | GET | `/api/health` | 探活（无需鉴权，只回 ok） |
 | GET | `/api/diagnostics` | 环境自检：版本 / SDK / 配置状态（需登录） |
+| GET | `/api/profiles/{name}/tier` | 账户等级：免费号 / 已升级 |
+| GET · PUT | `/api/auth/password-policy` | 密码有效期（0 = 永不过期） |
+| POST | `/api/system/update` | 请求更新（由宿主机代理执行） |
+| GET | `/api/system/update/status` | 更新进度与日志 |
 | POST | `/api/auth/login` | 登录获取 JWT |
 | GET | `/api/profiles` · POST `/api/profiles/import` | 账户管理 |
 | GET | `/api/instances` · `/api/instances/all` | 实例列表 / 跨账户聚合 |

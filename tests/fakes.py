@@ -13,6 +13,15 @@ class FakeBackend(Backend):
 
     def __init__(self, **overrides):
         self.calls: list[str] = []
+        # 默认按纯免费号构造：只有 micro / A1 非零，其余机型都是 0
+        self.limit_values = [
+            {"name": "standard-e2-micro-core-count", "value": 2},
+            {"name": "standard-a1-core-count", "value": 4},
+            {"name": "standard-e4-core-count", "value": 0},
+            {"name": "standard3-core-count", "value": 0},
+            {"name": "gpu2-count", "value": 0},
+        ]
+        self.subscriptions = []
         self.instances: list = []
         self.images: list = []
         self.compartments: list = []
@@ -197,3 +206,11 @@ class FakeBackend(Backend):
                           start_time, end_time):
         self._rec("summarize_metrics")
         return []
+
+    def list_limit_values(self, profile, compartment_id, service_name):
+        self._rec("list_limit_values")
+        return list(self.limit_values)
+
+    def list_subscriptions(self, profile, compartment_id):
+        self._rec("list_subscriptions")
+        return list(self.subscriptions)

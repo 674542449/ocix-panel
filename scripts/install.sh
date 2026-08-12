@@ -255,6 +255,32 @@ else
   URL="http://${host_ip}:${PORT}"
 fi
 
+# ---------- 更新代理（网页一键更新靠它执行）----------
+# 面板容器刻意不挂 docker socket，自己更新不了自己；
+# 这个常驻在宿主机上的小进程负责看到请求后跑 update.sh。
+mkdir -p "${REPO_ROOT}/var/control"
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+  if [[ $EUID -eq 0 ]]; then
+    info ""
+    info "安装更新代理（网页端一键更新）…"
+    sed "s|__OCIX_HOME__|${REPO_ROOT}|g" "${REPO_ROOT}/deploy/ocix-updater.service"       > /etc/systemd/system/ocix-updater.service
+    systemctl daemon-reload
+    systemctl enable --now ocix-updater.service >/dev/null 2>&1 || true
+    if systemctl is-active --quiet ocix-updater.service; then
+      ok "更新代理已启动，之后可直接在网页上点「立即更新」"
+    else
+      warn "更新代理没起来： systemctl status ocix-updater"
+    fi
+  else
+    warn "不是 root，跳过更新代理安装；网页端一键更新将不可用。"
+    warn "需要的话用 sudo 重跑本脚本，或手动执行："
+    warn "  sudo sed 's|__OCIX_HOME__|${REPO_ROOT}|g' ${REPO_ROOT}/deploy/ocix-updater.service > /etc/systemd/system/ocix-updater.service"
+    warn "  sudo systemctl enable --now ocix-updater"
+  fi
+else
+  warn "没有 systemd，跳过更新代理；网页端一键更新不可用，更新请手动执行 scripts/update.sh"
+fi
+
 # ---------- 构建并启动 ----------
 info ""
 info "构建镜像并启动…"

@@ -70,6 +70,10 @@ TRUST_PROXY = _bool_env("OCIX_TRUST_PROXY", False)
 # 取最左边那个等于直接采信客户端自己写的值。
 TRUSTED_PROXY_HOPS = max(1, int(os.getenv("OCIX_PROXY_HOPS", "1")))
 
+# 面板密码有效期（天）。0 = 永不过期。
+# 这只是初始默认值，装好后可以在「密码」页里随时改，改完存库。
+PASSWORD_MAX_AGE_DAYS = max(0, int(os.getenv("OCIX_PASSWORD_MAX_AGE_DAYS", "120")))
+
 # 允许跨域的来源；留空表示只允许同源（默认部署由 Caddy 同源反代，无需 CORS）
 CORS_ORIGINS = [o.strip() for o in os.getenv("OCIX_CORS_ORIGINS", "").split(",") if o.strip()]
 
@@ -78,6 +82,10 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("OCIX_CORS_ORIGINS", "").split(",")
 ENABLE_DOCS = _bool_env("OCIX_ENABLE_DOCS", False)
 
 # ---- 在线更新 ----
+# 面板与宿主机更新代理之间的交换目录（compose 里从宿主机 bind mount 进来）。
+# 面板只往里写「请求更新」的标记，真正执行更新的是宿主机上的代理进程——
+# 这样容器始终拿不到 docker socket，被攻破也没法直接控制宿主机。
+CONTROL_DIR = _path_env("OCIX_CONTROL_DIR", "/app/control", _REPO_ROOT / "var" / "control")
 # 宿主机上的安装目录，用于在网页上给出正确的更新命令
 INSTALL_DIR = os.getenv("OCIX_HOME", "/opt/ocix")
 _DEFAULT_REPO = "674542449/ocix-panel"

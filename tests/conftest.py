@@ -52,6 +52,9 @@ def app_client(workdir, monkeypatch):
     monkeypatch.setenv("OCIX_ADMIN_PASSWORD", "devpass123")
     monkeypatch.setenv("OCIX_DATA_DIR", str(workdir["root"] / "data"))
     monkeypatch.setenv("OCI_CONFIG_PATH", str(workdir["config"]))
+    # 更新代理的交换目录也要隔离，否则测试会往仓库工作区里写文件，
+    # 而且用例之间互相看到对方留下的 update.request
+    monkeypatch.setenv("OCIX_CONTROL_DIR", str(workdir["root"] / "control"))
 
     with _fresh_ocix():
         from ocix.main import app
@@ -75,6 +78,7 @@ def anon_client(workdir, monkeypatch):
     monkeypatch.setenv("OCIX_ADMIN_PASSWORD", "devpass123")
     monkeypatch.setenv("OCIX_DATA_DIR", str(workdir["root"] / "data2"))
     monkeypatch.setenv("OCI_CONFIG_PATH", str(workdir["config"]))
+    monkeypatch.setenv("OCIX_CONTROL_DIR", str(workdir["root"] / "control2"))
 
     with _fresh_ocix():
         from ocix.main import app
@@ -121,3 +125,24 @@ def _clear_caches():
     _reset()
     yield
     _reset()
+
+
+@pytest.fixture()
+def live_backend(app_client):
+    """给「已经跑起来的 app」注入假后端。
+
+    app_client 会清空 sys.modules 重新导入 ocix，所以测试模块在收集期绑定的
+    set_backend 打的是另一份模块对象，对运行中的 app 不起作用——
+    必须从 sys.modules 里取当前这份。
+    """
+    from fakes import FakeBackend
+
+    backends = sys.modules["ocix.backends"]
+    helpers = sys.modules["ocix.oci_helpers"]
+    b = FakeBackend()
+    backends.set_backend(b)
+    original = helpers.tenancy_of
+    helpers.tenancy_of = lambda p: "root"
+    yield b
+    helpers.tenancy_of = original
+    backends.set_backend(None)

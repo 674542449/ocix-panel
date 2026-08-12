@@ -9,7 +9,12 @@ from .. import security
 from ..common import OCIError, list_profiles_from_config, read_config_parser
 from ..config import KEYS_DIR, OCI_CONFIG_PATH
 from ..db import audit, delete_profile_db, list_profiles_db, upsert_profile
-from ..oci_helpers import get_user, invalidate_compartment_cache, read_profile_config
+from ..oci_helpers import (
+    account_tier,
+    get_user,
+    invalidate_compartment_cache,
+    read_profile_config,
+)
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
@@ -302,3 +307,22 @@ def delete_profile(
     audit(user, "delete-profile", profile=name, target=name,
           result="ok" if removed else "noop", ip=security.client_ip(request))
     return {"ok": True, "removed": removed}
+
+
+@router.get("/{name}/tier")
+def profile_tier(
+    name: str,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """账户等级：免费号还是已升级。
+
+    Oracle 没有给普通租户一个直白的等级标志位，
+    这里综合订阅信息与服务限额来判断，并把依据一并返回。
+    """
+    security.check_rate(request, security.API_RATE_LIMIT)
+    _check_name(name)
+    try:
+        return account_tier(name)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
