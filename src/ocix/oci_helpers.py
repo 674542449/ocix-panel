@@ -999,10 +999,10 @@ def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = 
     before = len(_raw_ingress(profile, sid))
 
     rules = [{"protocol": "all", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
-              "isStateless": False, "description": "OCIX 全放行"}]
+              "isStateless": False, "description": "ocix: allow all (IPv4)"}]
     if include_ipv6 and ipv6_ready:
         rules.append({"protocol": "all", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
-                      "isStateless": False, "description": "OCIX 全放行 (IPv6)"})
+                      "isStateless": False, "description": "ocix: allow all (IPv6)"})
 
     _set_ingress(profile, sid, rules)
     return {"security_list_id": sid, "subnet_id": subnet_id,
@@ -1026,7 +1026,7 @@ def add_port_rule(profile: str, subnet_id: str, protocol: str, port_from: int,
         "source": source,
         "sourceType": "CIDR_BLOCK",
         "isStateless": False,
-        "description": description or f"OCIX {protocol.upper()} {port_from}-{port_to}",
+        "description": description or f"ocix: {protocol.lower()} {port_from}-{port_to}",
     }
     if proto in ("6", "17"):
         key = "tcpOptions" if proto == "6" else "udpOptions"
@@ -1061,7 +1061,7 @@ def clear_ingress_rules(profile: str, subnet_id: str, keep_ssh: bool = True) -> 
     rules = []
     if keep_ssh:
         rules.append({"protocol": "6", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
-                      "isStateless": False, "description": "OCIX 保留 SSH",
+                      "isStateless": False, "description": "ocix: keep ssh",
                       "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}}})
     _set_ingress(profile, sid, rules)
     # removed 报的是「原本删掉了几条」，不是净差值——

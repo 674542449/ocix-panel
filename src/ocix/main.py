@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 from pathlib import PurePosixPath
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, security
@@ -50,6 +51,23 @@ _CSP = (
     "object-src 'none'; "
     "frame-ancestors 'none'"
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """把参数校验错误压成一句人话。
+
+    FastAPI 默认给的 detail 是 [{loc, msg, type, ...}] 这样的数组，
+    而前端 errMsg 直接取 detail 往弹窗里塞，拿到数组就显示成 [object Object]，
+    用户根本看不出是哪个字段填错了。这里统一拍平成字符串。
+    """
+    parts = []
+    for err in exc.errors():
+        # Pydantic 会在自定义报错前面加 "Value error, "，对用户是噪音
+        msg = str(err.get("msg", "")).removeprefix("Value error, ")
+        field = ".".join(str(x) for x in err.get("loc", []) if x not in ("body", "query"))
+        parts.append(f"{field}: {msg}" if field and len(exc.errors()) > 1 else msg)
+    return JSONResponse(status_code=422, content={"detail": "；".join(parts) or "请求参数不合法"})
 
 
 @app.middleware("http")

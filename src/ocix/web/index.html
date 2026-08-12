@@ -1491,8 +1491,18 @@ createApp({
       }
       return Promise.reject(err);
     });
-    const errMsg = (e, fallback) =>
-      (e && e.response && e.response.data && e.response.data.detail) || fallback;
+    const errMsg = (e, fallback) => {
+      const d = e && e.response && e.response.data && e.response.data.detail;
+      if (!d) return fallback;
+      if (typeof d === 'string') return d;
+      // 后端已把校验错误拍平成字符串，这里只是兜底：
+      // 真拿到数组还直接塞进弹窗的话，用户看到的是 [object Object]
+      if (Array.isArray(d)) {
+        const s = d.map(x => (x && x.msg) || '').filter(Boolean).join('；');
+        return s || fallback;
+      }
+      return d.msg || fallback;
+    };
 
     // ---- 登录 ----
     async function doLogin() {
