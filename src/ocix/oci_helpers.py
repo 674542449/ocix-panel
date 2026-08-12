@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import freetier
 from .config import COMPARTMENT_CACHE_TTL, OCI_CONFIG_PATH, OCI_LAUNCH_TIMEOUT
-from .oci_cli import OCICLIError, gather, run_oci
+from .oci_cli import OCICLIError, TTLCache, gather, run_oci
 
 # ---- 通用小工具 ----
 
@@ -152,6 +152,16 @@ def _target_compartments(profile: str, compartment_id: str = None, subtree: bool
 
 # ---- 实例 ----
 
+# 列表类数据缓存 30 秒：每次 CLI 调用固定 ~1.1s 进程开销，
+# 同一个页面里 /instances 和 /monitor/usage 都要用实例列表，不缓存等于翻倍。
+_read_cache = TTLCache(ttl=30)
+
+
+def invalidate_read_cache(profile: str = None):
+    """任何写操作之后调用，保证界面立刻看到新状态。"""
+    _read_cache.invalidate(profile)
+
+
 def list_instances(
     profile: str,
     compartment_id: str = None,
@@ -159,6 +169,10 @@ def list_instances(
     include_terminated: bool = False,
 ) -> list:
     """列出实例。subtree=True 时并发遍历所有可访问的 compartment。"""
+    ck = (profile, "instances", compartment_id, subtree, include_terminated)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     targets = _target_compartments(profile, compartment_id, subtree)
 
     def _one(cid):
@@ -187,7 +201,7 @@ def list_instances(
             continue
         seen.add(i.get("id"))
         deduped.append(i)
-    return deduped
+    return _read_cache.set(ck, deduped)
 
 
 def attach_ips(profile: str, instances: list) -> list:
@@ -259,12 +273,17 @@ def instance_action(profile: str, instance_id: str, action: str) -> dict:
         "--action",
         action.upper(),
     )
+    invalidate_read_cache(profile)
     return data.get("data", {})
 
 
 # ---- 存储 ----
 
 def list_block_volumes(profile: str, compartment_id: str = None, subtree: bool = False) -> list:
+    ck = (profile, "block_volumes", compartment_id, subtree)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     targets = _target_compartments(profile, compartment_id, subtree)
 
     def _one(cid):
@@ -278,7 +297,8 @@ def list_block_volumes(profile: str, compartment_id: str = None, subtree: bool =
                 raise err
             continue
         out.extend(items)
-    return [v for v in out if _get(v, "lifecycle-state", "lifecycle_state") != "TERMINATED"]
+    return _read_cache.set(
+        ck, [v for v in out if _get(v, "lifecycle-state", "lifecycle_state") != "TERMINATED"])
 
 
 def list_boot_volumes(profile: str, compartment_id: str = None, subtree: bool = False) -> list:
@@ -286,6 +306,10 @@ def list_boot_volumes(profile: str, compartment_id: str = None, subtree: bool = 
 
     ListBootVolumes 早期版本要求带可用域，这里先不带，失败再按 AD 逐个查。
     """
+    ck = (profile, "boot_volumes", compartment_id, subtree)
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
     targets = _target_compartments(profile, compartment_id, subtree)
 
     def _one(cid):
@@ -311,7 +335,8 @@ def list_boot_volumes(profile: str, compartment_id: str = None, subtree: bool = 
         if err is not None:
             continue
         out.extend(items)
-    return [v for v in out if _get(v, "lifecycle-state", "lifecycle_state") != "TERMINATED"]
+    return _read_cache.set(
+        ck, [v for v in out if _get(v, "lifecycle-state", "lifecycle_state") != "TERMINATED"])
 
 
 def _availability_domains(profile: str) -> list:
@@ -430,6 +455,7 @@ def delete_volume(profile: str, volume_id: str, kind: str) -> None:
         run_oci(profile, "bv", "boot-volume", "delete", "--boot-volume-id", volume_id, "--force")
     else:
         run_oci(profile, "bv", "volume", "delete", "--volume-id", volume_id, "--force")
+    invalidate_read_cache(profile)
 
 
 # ---- 镜像与网络 ----
@@ -628,6 +654,7 @@ def launch_instance(profile: str, params: dict) -> dict:
     args += ["--metadata", json.dumps(metadata)]
 
     data = run_oci(profile, *args, timeout=OCI_LAUNCH_TIMEOUT)
+    invalidate_read_cache(profile)
     return data.get("data", {})
 
 
@@ -690,6 +717,7 @@ def change_public_ip(profile: str, instance_id: str, compartment_id: str) -> dic
                   "--private-ip-id", private_ip_id,
                   "--wait-for-state", "ASSIGNED",
                   timeout=OCI_LAUNCH_TIMEOUT).get("data", {}) or {}
+    invalidate_read_cache(profile)
     return {"old_ip": old_ip, "new_ip": _get(new, "ip-address", "ip_address")}
 
 
@@ -871,17 +899,38 @@ def add_ipv6_to_instance(profile: str, instance_id: str, compartment_id: str,
     data = run_oci(profile, "network", "ipv6", "create",
                    "--vnic-id", vnic["vnic_id"], timeout=OCI_LAUNCH_TIMEOUT)
     addr = _get(data.get("data", {}) or {}, "ip-address", "ip_address")
+    invalidate_read_cache(profile)
     return {"ipv6": addr, "changed": True, "warnings": net.get("warnings", [])}
 
 
 # ---- 卷性能 ----
 
-# VPU/GB：0=较低成本，10=均衡，20=较高性能。Always Free 只覆盖到均衡档。
-VPU_OPTIONS = [
-    {"vpus": 0, "label": "较低成本", "free": True},
-    {"vpus": 10, "label": "均衡（默认）", "free": True},
-    {"vpus": 20, "label": "较高性能", "free": False},
-]
+# 卷性能以 VPU/GB 表示，取值 0-120，必须是 10 的整数倍。
+# Always Free 覆盖到均衡档（10），更高档位会计费。
+VPU_MIN, VPU_MAX, VPU_STEP = 0, 120, 10
+VPU_FREE_MAX = 10
+
+
+def vpu_tier(vpus: int) -> str:
+    if vpus <= 0:
+        return "较低成本"
+    if vpus <= 10:
+        return "均衡"
+    if vpus <= 20:
+        return "较高性能"
+    return "超高性能"
+
+
+VPU_RANGE = {
+    "min": VPU_MIN,
+    "max": VPU_MAX,
+    "step": VPU_STEP,
+    "free_max": VPU_FREE_MAX,
+    "tiers": [
+        {"vpus": v, "label": vpu_tier(v), "free": v <= VPU_FREE_MAX}
+        for v in range(VPU_MIN, VPU_MAX + 1, VPU_STEP)
+    ],
+}
 
 
 def update_volume_performance(profile: str, volume_id: str, kind: str, vpus: int) -> dict:
@@ -894,6 +943,7 @@ def update_volume_performance(profile: str, volume_id: str, kind: str, vpus: int
                        "--volume-id", volume_id, "--vpus-per-gb", str(vpus),
                        timeout=OCI_LAUNCH_TIMEOUT)
     d = data.get("data", {}) or {}
+    invalidate_read_cache(profile)
     return {"id": volume_id, "vpus_per_gb": _get(d, "vpus-per-gb", "vpus_per_gb", default=vpus)}
 
 
@@ -991,30 +1041,94 @@ def _raw_ingress(profile: str, security_list_id: str) -> list:
     return out
 
 
-def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = True) -> dict:
-    """给子网的安全列表加一条全放行入站规则（保留已有规则）。
-
-    按子网操作，不依赖实例——新建实例时网卡还没挂好就能先把端口放开。
-    """
+def _subnet_security(profile: str, subnet_id: str) -> tuple:
     sub = run_oci(profile, "network", "subnet", "get",
                   "--subnet-id", subnet_id).get("data", {}) or {}
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
     if not sl_ids:
-        raise OCICLIError("这个子网没有关联安全列表，无法修改防火墙")
-    sid = sl_ids[0]
-    ipv6_ready = bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))
+        raise OCICLIError("该子网未关联安全列表，无法修改防火墙规则")
+    return sl_ids[0], bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))
+
+
+def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = True) -> dict:
+    """清空子网安全列表的入站规则，只保留全放行。
+
+    先删除 Oracle 预置的默认规则（仅 22 端口 + ICMP）再写入，
+    避免与全放行规则重复叠加，规则列表也更容易看懂。
+    """
+    sid, ipv6_ready = _subnet_security(profile, subnet_id)
+    before = len(_raw_ingress(profile, sid))
+
+    rules = [{"protocol": "all", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
+              "isStateless": False, "description": "OCIX 全放行"}]
+    if include_ipv6 and ipv6_ready:
+        rules.append({"protocol": "all", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
+                      "isStateless": False, "description": "OCIX 全放行 (IPv6)"})
+
+    _set_ingress(profile, sid, rules)
+    return {"security_list_id": sid, "subnet_id": subnet_id,
+            "removed": before, "added": [r["source"] for r in rules]}
+
+
+_PROTO_NUM = {"TCP": "6", "UDP": "17", "ICMP": "1", "ICMPV6": "58", "ALL": "all"}
+
+
+def add_port_rule(profile: str, subnet_id: str, protocol: str, port_from: int,
+                  port_to: int, source: str, description: str = "") -> dict:
+    """追加一条入站规则。protocol 取 TCP / UDP / ICMP / ALL。"""
+    proto = _PROTO_NUM.get((protocol or "").upper())
+    if not proto:
+        raise OCICLIError(f"不支持的协议: {protocol}")
+    sid, _ = _subnet_security(profile, subnet_id)
     rules = _raw_ingress(profile, sid)
 
-    added = []
-    sources = [_ALL_V4] + ([_ALL_V6] if include_ipv6 and ipv6_ready else [])
-    for src in sources:
-        if not any(r["protocol"] == "all" and r["source"] == src for r in rules):
-            rules.append({"protocol": "all", "source": src, "sourceType": "CIDR_BLOCK",
-                          "isStateless": False, "description": "ocix: allow all"})
-            added.append(src)
-    if added:
-        _set_ingress(profile, sid, rules)
-    return {"security_list_id": sid, "added": added, "subnet_id": subnet_id}
+    rule = {
+        "protocol": proto,
+        "source": source,
+        "sourceType": "CIDR_BLOCK",
+        "isStateless": False,
+        "description": description or f"OCIX {protocol.upper()} {port_from}-{port_to}",
+    }
+    if proto in ("6", "17"):
+        key = "tcpOptions" if proto == "6" else "udpOptions"
+        rule[key] = {"destinationPortRange": {"min": int(port_from), "max": int(port_to)}}
+
+    if any(r.get("protocol") == rule["protocol"] and r.get("source") == rule["source"]
+           and r.get("tcpOptions") == rule.get("tcpOptions")
+           and r.get("udpOptions") == rule.get("udpOptions") for r in rules):
+        return {"security_list_id": sid, "subnet_id": subnet_id, "added": False}
+
+    rules.append(rule)
+    _set_ingress(profile, sid, rules)
+    return {"security_list_id": sid, "subnet_id": subnet_id, "added": True}
+
+
+def delete_port_rule(profile: str, subnet_id: str, index: int) -> dict:
+    """按序号删除一条入站规则（序号与 firewall_status 返回的顺序一致）。"""
+    sid, _ = _subnet_security(profile, subnet_id)
+    rules = _raw_ingress(profile, sid)
+    if index < 0 or index >= len(rules):
+        raise OCICLIError("规则序号超出范围，请刷新后重试")
+    removed = rules.pop(index)
+    _set_ingress(profile, sid, rules)
+    return {"security_list_id": sid, "subnet_id": subnet_id,
+            "removed": removed.get("source"), "remaining": len(rules)}
+
+
+def clear_ingress_rules(profile: str, subnet_id: str, keep_ssh: bool = True) -> dict:
+    """清空全部入站规则；keep_ssh 时保留 22 端口，避免把自己关在门外。"""
+    sid, _ = _subnet_security(profile, subnet_id)
+    before = len(_raw_ingress(profile, sid))
+    rules = []
+    if keep_ssh:
+        rules.append({"protocol": "6", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
+                      "isStateless": False, "description": "OCIX 保留 SSH",
+                      "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}}})
+    _set_ingress(profile, sid, rules)
+    # removed 报的是「原本删掉了几条」，不是净差值——
+    # 保留 SSH 时用净差值会算出 0 条，读起来像什么都没做
+    return {"security_list_id": sid, "subnet_id": subnet_id,
+            "removed": before, "kept_ssh": keep_ssh}
 
 
 def open_all_ports(profile: str, instance_id: str, compartment_id: str,
@@ -1052,6 +1166,7 @@ def terminate_instance(profile: str, instance_id: str, preserve_boot_volume: boo
         "--instance-id", instance_id, "--force",
         "--preserve-boot-volume", "true" if preserve_boot_volume else "false",
     )
+    invalidate_read_cache(profile)
 
 
 # ---- 免费额度 ----

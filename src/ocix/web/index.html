@@ -184,6 +184,15 @@
     .seg button:hover { background:#1a2439; color:var(--text); }
     .seg button.on { background:var(--accent); color:#06121f; font-weight:600; }
 
+    /* 卷性能与防火墙规则表单 */
+    .vpu-cell { display:flex; align-items:center; gap:8px; }
+    .vpu-tier { font-size:11.5px; color:var(--muted); white-space:nowrap; }
+    .vpu-tier.paid { color:var(--warn); }
+    .rule-form { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+                 background:var(--panel-2); border:1px solid var(--line);
+                 border-radius:8px; padding:var(--sp-3); }
+    .rule-sep { color:var(--muted); font-size:12.5px; }
+
     /* 防火墙状态条 */
     .fw-verdict { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;
                   background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
@@ -465,8 +474,8 @@
                           <button class="copy-btn" @click="copy(row.public_ip)" :aria-label="'复制 ' + row.public_ip">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
                           </button>
-                          <el-tooltip content="换一个公网 IPv4" placement="top">
-                            <button class="mini-btn" @click="changeIp(row)" aria-label="更换公网 IP">换</button>
+                          <el-tooltip content="更换公网 IPv4 地址" placement="top">
+                            <button class="mini-btn" @click="changeIp(row)" aria-label="更换公网 IP">更换</button>
                           </el-tooltip>
                         </template>
                         <span v-else class="mono" style="color:var(--muted);">无公网 IP</span>
@@ -506,7 +515,7 @@
               <b>这个账户下没有实例</b>
               换个 compartment，或勾选「含子 compartment」再查一次。
             </div>
-            <p class="hint">被 Oracle 回收或停掉的免费实例不会自动重开，需要你手动点「开机」——这是为了守住 Oracle 的回收策略，不做抢机。</p>
+            <p class="hint">被 Oracle 回收或停掉的免费实例不会自动重开，需要你手动点击「开机」——这是为了守住 Oracle 的回收策略，不做抢机。</p>
           </div>
         </section>
 
@@ -520,7 +529,7 @@
 
             <el-alert v-if="opts.needs_network" type="info" show-icon :closable="false"
                       style="margin-bottom:14px;" title="这个账户还没有网络，创建第一台机器时会自动建好"
-                      description="面板会建一个 VCN + 互联网网关 + 公共子网，之后所有机器都用它，不用你操心。" />
+                      description="面板会建一个 VCN + 互联网网关 + 公共子网，之后所有实例都用它，无需手动干预。" />
 
             <div class="create-grid">
               <div>
@@ -528,7 +537,7 @@
                   <el-form-item label="实例名称">
                     <div style="display:flex; gap:8px; width:100%;">
                       <el-input v-model="createForm.display_name" style="flex:1;" placeholder="例如 payments-api-01" />
-                      <el-button @click="rollName" title="换一个名字">换一个</el-button>
+                      <el-button @click="rollName" title="重新生成名称">重新生成</el-button>
                     </div>
                   </el-form-item>
 
@@ -580,10 +589,10 @@
                       <el-checkbox v-model="createForm.assign_ipv6" label="同时分配 IPv6 地址" />
                       <el-checkbox v-model="createForm.open_all_ports" label="创建后自动放行所有端口" />
                       <p class="hint" style="margin-top:4px;">
-                        子网由面板统一管理，所有机器共用一个。这个账户还没有网络的话，
+                        子网由面板统一管理，所有实例共用一个。这个账户还没有网络的话，
                         创建时会自动建好 VCN、网关和子网。勾选 IPv6 会自动开通子网 IPv6 并分配地址。<br />
                         <b style="color:var(--warn);">放行所有端口</b>会给子网加一条任何来源任何端口的入站规则，
-                        <b>同子网下所有机器都会被放开</b>；有 IPv6 时 <code>::/0</code> 一并放行。
+                        <b>同子网下所有实例都会被放开</b>；有 IPv6 时 <code>::/0</code> 一并放行。
                         实例内部的 iptables 仍需你自己开。
                       </p>
                     </div>
@@ -603,7 +612,7 @@
                   </el-form-item>
                 </el-form>
                 <p class="hint">
-                  选 <code>~/.ssh/id_ed25519.pub</code> 这类 .pub 文件，不是私钥。建好后用
+                  选 <code>~/.ssh/id_ed25519.pub</code> 这类 .pub 文件，不是私钥。创创建完成后成后用
                   <code class="mono">ssh ubuntu@公网IP</code> 登录。
                 </p>
               </div>
@@ -672,7 +681,7 @@
           </div>
           <div class="card empty" v-else-if="!loading">
             <b>还没有额度数据</b>
-            选一个账户后点「刷新」。
+            选一个账户后点击「刷新」。
           </div>
         </section>
 
@@ -694,13 +703,13 @@
                 <div class="stat"><div class="v">{{ storage.summary.block_count }}</div><div class="k">块存储卷</div></div>
                 <div class="stat" :class="storage.summary.orphan_count ? 'crit' : 'idle'">
                   <div class="v">{{ storage.summary.orphan_gb }}</div>
-                  <div class="k">孤儿卷占用 GB</div>
+                  <div class="k">未挂载卷占用 GB</div>
                 </div>
               </div>
 
               <el-alert v-if="storage.summary.orphan_count" type="warning" show-icon :closable="false"
                         style="margin-bottom:12px;"
-                        :title="'有 ' + storage.summary.orphan_count + ' 个孤儿卷，白占 ' + storage.summary.orphan_gb + 'GB 额度'"
+                        :title="'有 ' + storage.summary.orphan_count + ' 个未挂载卷，占用 ' + storage.summary.orphan_gb + 'GB 额度'"
                         description="这些卷没挂在任何实例上——通常是终止实例时勾了「保留引导卷」留下的。删掉即可释放额度，但卷里的数据会一并消失。" />
 
               <div class="table-wrap" v-if="storage.volumes.length">
@@ -710,7 +719,7 @@
                     <template #default="{row}">
                       <span class="state">
                         <i :class="['dot', row.orphan ? 'crit' : 'ok']"></i>
-                        <span class="state-label">{{ row.orphan ? '孤儿（没挂载）' : (row.attached_to || '已挂载') }}</span>
+                        <span class="state-label">{{ row.orphan ? '未挂载' : (row.attached_to || '已挂载') }}</span>
                       </span>
                     </template>
                   </el-table-column>
@@ -721,13 +730,17 @@
                   <el-table-column label="大小" width="90">
                     <template #default="{row}"><span class="mono">{{ row.size_gb }} GB</span></template>
                   </el-table-column>
-                  <el-table-column label="性能" width="190">
+                  <el-table-column label="性能 (VPU/GB)" width="210">
                     <template #default="{row}">
-                      <el-select :model-value="row.vpus_per_gb" size="small" style="width:100%;"
-                                 @change="v => changePerformance(row, v)">
-                        <el-option v-for="o in (opts.vpu_options || [])" :key="o.vpus" :value="o.vpus"
-                                   :label="o.label + (o.free ? '' : '（计费）')" />
-                      </el-select>
+                      <div class="vpu-cell">
+                        <el-input-number :model-value="row.vpus_per_gb" size="small"
+                                         :min="vpuRange.min" :max="vpuRange.max" :step="vpuRange.step"
+                                         step-strictly controls-position="right" style="width:110px;"
+                                         @change="v => changePerformance(row, v)" />
+                        <span class="vpu-tier" :class="{ paid: row.vpus_per_gb > vpuRange.free_max }">
+                          {{ vpuTier(row.vpus_per_gb) }}
+                        </span>
+                      </div>
                     </template>
                   </el-table-column>
                   <el-table-column label="创建于" width="110">
@@ -743,10 +756,10 @@
               </div>
               <div class="empty" v-else><b>这个账户下没有卷</b>建实例后引导卷会出现在这里。</div>
               <p class="hint">
-                只有孤儿卷可以删。要删仍挂载的引导卷，请先到「实例」页终止对应实例。
+                只有未挂载卷可以删。要删仍挂载的引导卷，请先到「实例」页终止对应实例。
               </p>
             </template>
-            <div class="empty" v-else-if="!storageLoading"><b>还没有存储数据</b>点「刷新」加载。</div>
+            <div class="empty" v-else-if="!storageLoading"><b>还没有存储数据</b>点击「刷新」加载。</div>
           </div>
         </section>
 
@@ -774,9 +787,10 @@
                 </div>
                 <div class="fw-actions">
                   <el-button v-if="!firewall.all_open_v4" type="warning" :loading="fwBusy"
-                             @click="allowAll">一键放行所有端口</el-button>
+                             @click="allowAll">放行全部端口</el-button>
                   <el-button v-else type="primary" plain :loading="fwBusy"
-                             @click="revokeAll">移除全放行规则</el-button>
+                             @click="revokeAll">撤销全放行</el-button>
+                  <el-button plain :loading="fwBusy" @click="clearRules">清空规则</el-button>
                 </div>
               </div>
 
@@ -791,12 +805,42 @@
                   <el-table-column label="端口" width="140">
                     <template #default="{row}"><span class="mono">{{ row.ports }}</span></template>
                   </el-table-column>
-                  <el-table-column label="说明" min-width="200">
+                  <el-table-column label="说明" min-width="180">
                     <template #default="{row}">{{ row.description || '—' }}</template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="88" fixed="right">
+                    <template #default="{ $index }">
+                      <el-button size="small" text class="term-btn" :loading="fwBusy"
+                                 @click="deleteRule($index)">删除</el-button>
+                    </template>
                   </el-table-column>
                 </el-table>
               </div>
-              <div class="empty" v-else><b>没有任何入站规则</b>这台机器目前从公网完全不可达。</div>
+              <div class="empty" v-else><b>没有任何入站规则</b>该实例目前从公网完全不可达。</div>
+
+              <div class="card-head" style="margin-top:18px;">
+                <div class="card-title">新增入站规则</div>
+              </div>
+              <div class="rule-form">
+                <el-select v-model="ruleForm.protocol" style="width:104px;" size="default">
+                  <el-option v-for="p in ['TCP','UDP','ICMP','ALL']" :key="p" :value="p" :label="p" />
+                </el-select>
+                <el-input-number v-model="ruleForm.port_from" :min="1" :max="65535"
+                                 :disabled="ruleForm.protocol === 'ICMP' || ruleForm.protocol === 'ALL'"
+                                 controls-position="right" style="width:118px;" />
+                <span class="rule-sep">至</span>
+                <el-input-number v-model="ruleForm.port_to" :min="1" :max="65535"
+                                 :disabled="ruleForm.protocol === 'ICMP' || ruleForm.protocol === 'ALL'"
+                                 controls-position="right" style="width:118px;" />
+                <el-select v-model="ruleForm.source" style="width:158px;" filterable allow-create>
+                  <el-option value="0.0.0.0/0" label="0.0.0.0/0（任意 IPv4）" />
+                  <el-option value="::/0" label="::/0（任意 IPv6）" />
+                </el-select>
+                <el-button type="primary" :loading="fwBusy" @click="addRule">添加</el-button>
+              </div>
+              <p class="hint" style="margin-top:6px;">
+                常用端口：HTTP 80、HTTPS 443、SSH 22。端口范围相同即表示单个端口。
+              </p>
 
               <el-alert type="warning" show-icon :closable="false" style="margin-top:14px;"
                         title="放行后如果端口还是不通，是实例内部的防火墙在挡"
@@ -1296,12 +1340,12 @@ createApp({
           ElMessage.success(`已分配 IPv6：${data.ipv6}`);
           ElMessageBox.alert(
             `地址 ${data.ipv6} 已分配到网卡。\n\n` +
-            `如果机器里 ping 不通 IPv6，在实例内执行一次：\n` +
+            `如果实例内 ping 不通 IPv6，在实例内执行一次：\n` +
             `sudo dhclient -6 或直接重启实例。`,
             'IPv6 已添加',
             { type: 'success', customStyle: { whiteSpace: 'pre-wrap' } });
         } else {
-          ElMessage.info(`这台机器已经有 IPv6：${data.ipv6}`);
+          ElMessage.info(`该实例已经有 IPv6：${data.ipv6}`);
         }
         (data.warnings || []).forEach(w => ElMessage.warning(w));
         await loadSingle();
@@ -1315,6 +1359,17 @@ createApp({
     const fwInstance = ref('');
     const fwLoading = ref(false);
     const fwBusy = ref(false);
+    const ruleForm = reactive({ protocol: 'TCP', port_from: 80, port_to: 80, source: '0.0.0.0/0' });
+
+    // 卷性能：0-120 VPU/GB，步长 10
+    const vpuRange = computed(() => opts.value.vpu_range ||
+      { min: 0, max: 120, step: 10, free_max: 10 });
+    function vpuTier(v) {
+      if (v <= 0) return '较低成本';
+      if (v <= 10) return '均衡';
+      if (v <= 20) return '较高性能';
+      return '超高性能';
+    }
     const isArm = computed(() => createForm.shape !== AMD_SHAPE);
     const canCreate = computed(() =>
       !!(preflight.value && preflight.value.allow && createForm.display_name &&
@@ -1549,9 +1604,9 @@ createApp({
         await ElMessageBox.confirm(
           `创建「${createForm.display_name}」？\n规格 ${spec}，引导卷 ${createForm.boot_gb}GB。\n` +
           `创建后存储将占用 ${p.checks.find(c => c.key === 'storage_gb').after}/200 GB。` +
-          (createForm.assign_ipv6 ? '\n建好后会自动分配 IPv6 地址。' : '') +
+          (createForm.assign_ipv6 ? '\n创创建完成后成后会自动分配 IPv6 地址。' : '') +
           (createForm.open_all_ports
-            ? '\n\n⚠ 会放行子网的全部入站端口，同子网下所有机器都会被放开。'
+            ? '\n\n⚠ 会放行子网的全部入站端口，同子网下所有实例都会被放开。'
             : ''),
           '确认创建',
           { type: 'info', confirmButtonText: '创建', cancelButtonText: '取消',
@@ -1582,11 +1637,11 @@ createApp({
         lines.push('登录： ssh ubuntu@公网IP');
         if ((data.warnings || []).length) {
           ElMessageBox.alert(
-            lines.join('\n') + '\n\n以下步骤没能自动完成：\n· ' + data.warnings.join('\n· '),
-            `${data.display_name} 已创建，但有几项要手动补`,
+            lines.join('\n') + '\n\n以下步骤未能自动完成：\n· ' + data.warnings.join('\n· '),
+            `${data.display_name} 已创建，但有几项需手动处理`,
             { type: 'warning', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '620px' } });
         } else {
-          ElMessageBox.alert(lines.join('\n'), `${data.display_name} 创建完成`,
+          ElMessageBox.alert(lines.join('\n'), `${data.display_name} 创创建完成后成`,
             { type: 'success', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '560px' } });
         }
         createForm.display_name = randomName();
@@ -1680,13 +1735,16 @@ createApp({
     const volRowClass = ({ row }) => (row.orphan ? 'orphan-row' : '');
 
     async function changePerformance(row, vpus) {
-      const opt = (opts.value.vpu_options || []).find(o => o.vpus === vpus) || {};
-      if (opt.free === false) {
+      if (vpus === row.vpus_per_gb) return;
+      const tier = vpuTier(vpus);
+      // 超出免费覆盖档位一律先确认，避免无意中开始计费
+      if (vpus > vpuRange.value.free_max) {
         try {
           await ElMessageBox.confirm(
-            `「${opt.label}」超出 Always Free 覆盖范围，这块卷会开始计费。\n确定要改吗？`,
-            '这会产生费用',
-            { type: 'warning', confirmButtonText: '仍然修改', cancelButtonText: '取消',
+            `将「${row.display_name}」调整为 ${vpus} VPU/GB（${tier}）。` + `\n` +
+            `Always Free 仅覆盖到 ${vpuRange.value.free_max} VPU/GB，超出部分将按量计费。`,
+            '该操作会产生费用',
+            { type: 'warning', confirmButtonText: '确认调整', cancelButtonText: '取消',
               customStyle: { whiteSpace: 'pre-wrap' } });
         } catch { loadStorage(); return; }
       }
@@ -1694,10 +1752,10 @@ createApp({
         await axios.post('/api/provision/storage/performance', {
           profile: currentProfile.value, volume_id: row.id, kind: row.kind, vpus,
         });
-        ElMessage.success(`${row.display_name} 性能已改为「${opt.label || vpus}」`);
+        ElMessage.success(`${row.display_name} 性能已调整为 ${vpus} VPU/GB（${tier}）`);
         await loadStorage();
       } catch (e) {
-        ElMessage.error(errMsg(e, '修改性能失败'));
+        ElMessage.error(errMsg(e, '性能调整失败'));
         loadStorage();
       }
     }
@@ -1706,7 +1764,7 @@ createApp({
       try {
         await ElMessageBox.confirm(
           `给「${row.display_name}」换一个公网 IPv4？\n` +
-          `当前 ${row.public_ip || '（无）'}。旧地址会被立刻释放且拿不回来，` +
+          `当前 ${row.public_ip || '（无）'}。旧地址会被立刻释放且无法恢复，` +
           `更换过程中有几秒钟无法访问。`,
           '更换公网 IP',
           { type: 'warning', confirmButtonText: '更换', cancelButtonText: '取消',
@@ -1748,9 +1806,10 @@ createApp({
     async function allowAll() {
       try {
         await ElMessageBox.confirm(
-          '这会给子网加一条「任何来源、任何协议、任何端口」的入站规则。\n' +
-          '同一子网下的所有实例都会被放开，请确认这些机器上没有不该暴露的服务。',
-          '放行所有端口',
+          '将删除该子网现有的全部入站规则（含 Oracle 预置的默认规则），' +
+          '改为一条「任意来源、任意协议、任意端口」的放行规则。\n' +
+          '同子网下所有实例都会被放开，请确认其上没有不应暴露的服务。',
+          '放行全部端口',
           { type: 'warning', confirmButtonText: '确认放行', cancelButtonText: '取消',
             customStyle: { whiteSpace: 'pre-wrap' } });
       } catch { return; }
@@ -1771,7 +1830,7 @@ createApp({
     async function revokeAll() {
       try {
         await ElMessageBox.confirm(
-          '移除全放行规则后，只剩下具体端口的规则。\n如果一条都不剩，面板会保留 22 端口，避免你被关在门外。',
+          '移除全放行规则后，只剩下具体端口的规则。\n如果一条都不剩，面板会保留 22 端口，避免你失去访问权限。',
           '移除全放行规则',
           { type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消',
             customStyle: { whiteSpace: 'pre-wrap' } });
@@ -1787,6 +1846,74 @@ createApp({
         ElMessage.success(`已移除 ${data.removed} 条全放行规则`);
       } catch (e) {
         ElMessage.error(errMsg(e, '移除失败'));
+      } finally { fwBusy.value = false; }
+    }
+
+    function fwPayload(extra) {
+      const inst = instances.value.find(i => i.id === fwInstance.value);
+      return {
+        profile: currentProfile.value,
+        instance_id: fwInstance.value,
+        compartment_id: inst ? inst.compartment_id : undefined,
+        ...extra,
+      };
+    }
+
+    async function addRule() {
+      const f = ruleForm;
+      if (f.protocol !== 'ICMP' && f.protocol !== 'ALL' && f.port_to < f.port_from) {
+        ElMessage.warning('结束端口不能小于起始端口');
+        return;
+      }
+      fwBusy.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/firewall/rules', fwPayload({
+          protocol: f.protocol, port_from: f.port_from, port_to: f.port_to, source: f.source,
+        }));
+        firewall.value = data.status;
+        ElMessage[data.added ? 'success' : 'info'](
+          data.added ? '规则已添加' : '相同的规则已存在');
+      } catch (e) {
+        ElMessage.error(errMsg(e, '添加规则失败'));
+      } finally { fwBusy.value = false; }
+    }
+
+    async function deleteRule(index) {
+      const rule = firewall.value.ingress_rules[index];
+      try {
+        await ElMessageBox.confirm(
+          `删除规则「${rule.protocol} ${rule.source} ${rule.ports}」？`,
+          '删除入站规则',
+          { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
+      } catch { return; }
+      fwBusy.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/firewall/rules/delete',
+          fwPayload({ index }));
+        firewall.value = data.status;
+        ElMessage.success('规则已删除');
+      } catch (e) {
+        ElMessage.error(errMsg(e, '删除规则失败'));
+      } finally { fwBusy.value = false; }
+    }
+
+    async function clearRules() {
+      try {
+        await ElMessageBox.confirm(
+          '将删除该子网的全部入站规则，仅保留 22 端口以确保 SSH 可用。' + '\n' +
+          '同子网下所有实例都会受影响。',
+          '清空入站规则',
+          { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      fwBusy.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/firewall/clear',
+          fwPayload({ keep_ssh: true }));
+        firewall.value = data.status;
+        ElMessage.success(`已清空 ${data.removed} 条规则${data.kept_ssh ? '，已保留 SSH(22)' : ''}`);
+      } catch (e) {
+        ElMessage.error(errMsg(e, '清空规则失败'));
       } finally { fwBusy.value = false; }
     }
 
@@ -2152,6 +2279,7 @@ createApp({
       pubKeyName, ipv6Busy,
       rollName, onPubKeyFile, addIpv6,
       firewall, fwInstance, fwLoading, fwBusy, loadFirewall, allowAll, revokeAll,
+      ruleForm, addRule, deleteRule, clearRules, vpuRange, vpuTier,
       sys, sysLoading, loadSystem,
       changeIp, changePerformance,
       token, user, loginForm, loginErr, loading,

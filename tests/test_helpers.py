@@ -1,4 +1,6 @@
-"""oci_helpers 里的纯逻辑：镜像筛选、防火墙规则解析、版本号排序。"""
+"""oci_helpers 里的纯逻辑：镜像筛选、防火墙规则、版本号排序、卷性能档位。"""
+
+import json
 
 import pytest
 
@@ -84,6 +86,114 @@ def test_version_number_strips_variant_suffix():
     assert H._version_number("24.04-Minimal") == "24.04"
     assert H._version_number("24.04 Minimal") == "24.04"
     assert H._version_number("24.04") == "24.04"
+
+
+# ── 防火墙规则 ──
+
+@pytest.fixture()
+def fw_store(monkeypatch):
+    """用一份内存里的安全列表模拟 OCI，观察规则被怎么改写。"""
+    store = {"rules": [
+        {"protocol": "6", "source": "0.0.0.0/0", "sourceType": "CIDR_BLOCK", "isStateless": False,
+         "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}}, "description": "Default SSH"},
+        {"protocol": "1", "source": "0.0.0.0/0", "sourceType": "CIDR_BLOCK", "isStateless": False},
+    ]}
+
+    def fake_run(profile, *args, **kwargs):
+        joined = " ".join(args)
+        if joined.startswith("network subnet get"):
+            return {"data": {"security-list-ids": ["sl1"], "ipv6-cidr-block": "2603::/64"}}
+        if joined.startswith("network security-list get"):
+            return {"data": {"ingress-security-rules": store["rules"]}}
+        if joined.startswith("network security-list update"):
+            store["rules"] = json.loads(args[args.index("--ingress-security-rules") + 1])
+            return {"data": {}}
+        raise AssertionError("未预期的调用: " + joined)
+
+    monkeypatch.setattr(H, "run_oci", fake_run)
+    return store
+
+
+def test_open_all_replaces_existing_rules(fw_store):
+    """按需求：先删掉 Oracle 预置的默认规则，再写入全放行，不做叠加。"""
+    res = H.open_all_ports_on_subnet("P", "sub1", include_ipv6=True)
+    assert res["removed"] == 2
+    sources = [r["source"] for r in fw_store["rules"]]
+    assert sources == ["0.0.0.0/0", "::/0"]
+    assert all(r["protocol"] == "all" for r in fw_store["rules"])
+
+
+def test_open_all_skips_ipv6_when_subnet_has_none(fw_store, monkeypatch):
+    real = H.run_oci
+
+    def no_v6(profile, *args, **kwargs):
+        if " ".join(args).startswith("network subnet get"):
+            return {"data": {"security-list-ids": ["sl1"]}}
+        return real(profile, *args, **kwargs)
+
+    monkeypatch.setattr(H, "run_oci", no_v6)
+    H.open_all_ports_on_subnet("P", "sub1", include_ipv6=True)
+    assert [r["source"] for r in fw_store["rules"]] == ["0.0.0.0/0"]
+
+
+def test_add_single_port_rule(fw_store):
+    H.add_port_rule("P", "sub1", "TCP", 443, 443, "0.0.0.0/0")
+    added = fw_store["rules"][-1]
+    assert added["protocol"] == "6"
+    assert added["tcpOptions"]["destinationPortRange"] == {"min": 443, "max": 443}
+    assert len(fw_store["rules"]) == 3
+
+
+def test_add_port_rule_is_idempotent(fw_store):
+    H.add_port_rule("P", "sub1", "TCP", 443, 443, "0.0.0.0/0")
+    res = H.add_port_rule("P", "sub1", "TCP", 443, 443, "0.0.0.0/0")
+    assert res["added"] is False
+    assert len(fw_store["rules"]) == 3
+
+
+def test_add_port_rule_rejects_unknown_protocol(fw_store):
+    with pytest.raises(Exception, match="协议"):
+        H.add_port_rule("P", "sub1", "SCTP", 1, 1, "0.0.0.0/0")
+
+
+def test_delete_rule_by_index(fw_store):
+    H.delete_port_rule("P", "sub1", 0)
+    assert len(fw_store["rules"]) == 1
+    assert fw_store["rules"][0]["protocol"] == "1"
+
+
+def test_delete_rule_rejects_bad_index(fw_store):
+    with pytest.raises(Exception, match="序号"):
+        H.delete_port_rule("P", "sub1", 99)
+
+
+def test_clear_keeps_ssh_and_reports_real_count(fw_store):
+    """removed 要报「删掉了几条」，不能报净差值——保留 SSH 时净差值会是 0。"""
+    res = H.clear_ingress_rules("P", "sub1", keep_ssh=True)
+    assert res["removed"] == 2
+    assert res["kept_ssh"] is True
+    assert len(fw_store["rules"]) == 1
+    assert fw_store["rules"][0]["tcpOptions"]["destinationPortRange"]["min"] == 22
+
+
+def test_clear_without_ssh_leaves_nothing(fw_store):
+    H.clear_ingress_rules("P", "sub1", keep_ssh=False)
+    assert fw_store["rules"] == []
+
+
+# ── 卷性能档位 ──
+
+@pytest.mark.parametrize("vpus,tier", [
+    (0, "较低成本"), (10, "均衡"), (20, "较高性能"), (60, "超高性能"), (120, "超高性能"),
+])
+def test_vpu_tier_naming(vpus, tier):
+    assert H.vpu_tier(vpus) == tier
+
+
+def test_vpu_range_covers_0_to_120_in_steps_of_10():
+    values = [t["vpus"] for t in H.VPU_RANGE["tiers"]]
+    assert values == list(range(0, 121, 10))
+    assert [t["vpus"] for t in H.VPU_RANGE["tiers"] if t["free"]] == [0, 10]
 
 
 # ── instance launch 的参数（这里出过一次线上报错）──

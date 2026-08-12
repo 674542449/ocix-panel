@@ -82,6 +82,30 @@ class FirewallRequest(InstanceRefRequest):
     include_ipv6: bool = True
 
 
+class PortRuleRequest(InstanceRefRequest):
+    protocol: str = "TCP"
+    port_from: int = Field(default=80, ge=1, le=65535)
+    port_to: int = Field(default=80, ge=1, le=65535)
+    source: str = "0.0.0.0/0"
+    description: str = ""
+
+    @field_validator("protocol")
+    @classmethod
+    def _check_proto(cls, v: str) -> str:
+        up = (v or "").strip().upper()
+        if up not in ("TCP", "UDP", "ICMP", "ALL"):
+            raise ValueError("协议仅支持 TCP / UDP / ICMP / ALL")
+        return up
+
+
+class DeleteRuleRequest(InstanceRefRequest):
+    index: int = Field(ge=0)
+
+
+class ClearRulesRequest(InstanceRefRequest):
+    keep_ssh: bool = True
+
+
 class EnableIpv6Request(BaseModel):
     profile: str
     subnet_id: str

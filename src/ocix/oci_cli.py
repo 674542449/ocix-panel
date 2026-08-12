@@ -2,6 +2,8 @@ import json
 import os
 import shutil
 import subprocess
+import threading
+import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from configparser import ConfigParser
@@ -92,6 +94,39 @@ def run_oci(profile: str, *args: str, timeout: int = OCI_CLI_TIMEOUT):
         return json.loads(out)
     except json.JSONDecodeError:
         return {"raw": out}
+
+
+class TTLCache:
+    """极简 TTL 缓存。
+
+    每次 oci CLI 调用光进程启动就要约 1.1 秒（需要 import 整个 oci SDK），
+    因此同一份数据在短时间内被反复请求时，缓存收益非常可观。
+    """
+
+    def __init__(self, ttl: float):
+        self.ttl = ttl
+        self._data: dict = {}
+        self._lock = threading.Lock()
+
+    def get(self, key):
+        with self._lock:
+            hit = self._data.get(key)
+        if hit and time.time() - hit[0] < self.ttl:
+            return hit[1]
+        return None
+
+    def set(self, key, value):
+        with self._lock:
+            self._data[key] = (time.time(), value)
+        return value
+
+    def invalidate(self, profile: str = None):
+        with self._lock:
+            if profile is None:
+                self._data.clear()
+            else:
+                for k in [k for k in self._data if isinstance(k, tuple) and k and k[0] == profile]:
+                    self._data.pop(k, None)
 
 
 def gather(fn: Callable, items: Iterable) -> list[tuple[object, object, Exception]]:

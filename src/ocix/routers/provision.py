@@ -4,10 +4,13 @@ from .. import freetier, security
 from ..db import audit
 from ..oci_cli import OCICLIError
 from ..oci_helpers import (
-    VPU_OPTIONS,
+    VPU_RANGE,
     add_ipv6_to_instance,
+    add_port_rule,
     change_public_ip,
+    clear_ingress_rules,
     create_network,
+    delete_port_rule,
     delete_volume,
     ensure_subnet_ipv6,
     firewall_status,
@@ -25,12 +28,15 @@ from ..oci_helpers import (
     update_volume_performance,
 )
 from ..schemas import (
+    ClearRulesRequest,
     CreateInstanceRequest,
     CreateNetworkRequest,
+    DeleteRuleRequest,
     DeleteVolumeRequest,
     EnableIpv6Request,
     FirewallRequest,
     InstanceRefRequest,
+    PortRuleRequest,
     PreflightRequest,
     TerminateInstanceRequest,
     VolumePerformanceRequest,
@@ -69,7 +75,7 @@ def options(
         "limits": freetier.LIMITS,
         "min_boot_gb": freetier.MIN_BOOT_GB,
         "arm_gb_per_ocpu": freetier.ARM_GB_PER_OCPU,
-        "vpu_options": VPU_OPTIONS,
+        "vpu_range": VPU_RANGE,
         "needs_network": not subnets,
     }
 
@@ -347,6 +353,73 @@ def firewall_revoke_all(
     audit(user, "firewall-revoke-all", profile=req.profile, target=req.instance_id,
           detail=f"移除 {res['removed']} 条全放行规则", result="ok", ip=ip)
     return {"ok": True, **res}
+
+
+@router.post("/firewall/rules")
+def add_firewall_rule(
+    req: PortRuleRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """新增一条入站规则（指定协议与端口范围）。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    cid = _compartment_of(req)
+    try:
+        st = firewall_status(req.profile, req.instance_id, cid)
+        res = add_port_rule(req.profile, st["subnet_id"], req.protocol,
+                            req.port_from, req.port_to, req.source, req.description)
+        status = firewall_status(req.profile, req.instance_id, cid)
+    except OCICLIError as e:
+        audit(user, "firewall-add-rule", profile=req.profile, target=req.instance_id,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "firewall-add-rule", profile=req.profile, target=req.instance_id,
+          detail=f"{req.protocol} {req.port_from}-{req.port_to} from {req.source}",
+          result="ok", ip=ip)
+    return {"ok": True, **res, "status": status}
+
+
+@router.post("/firewall/rules/delete")
+def delete_firewall_rule(
+    req: DeleteRuleRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """按序号删除一条入站规则。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    cid = _compartment_of(req)
+    try:
+        st = firewall_status(req.profile, req.instance_id, cid)
+        res = delete_port_rule(req.profile, st["subnet_id"], req.index)
+        status = firewall_status(req.profile, req.instance_id, cid)
+    except OCICLIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "firewall-delete-rule", profile=req.profile, target=req.instance_id,
+          detail=str(res.get("removed")), result="ok", ip=ip)
+    return {"ok": True, **res, "status": status}
+
+
+@router.post("/firewall/clear")
+def clear_firewall_rules(
+    req: ClearRulesRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """清空全部入站规则（默认保留 22 端口，避免失去 SSH 连接）。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    cid = _compartment_of(req)
+    try:
+        st = firewall_status(req.profile, req.instance_id, cid)
+        res = clear_ingress_rules(req.profile, st["subnet_id"], req.keep_ssh)
+        status = firewall_status(req.profile, req.instance_id, cid)
+    except OCICLIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "firewall-clear", profile=req.profile, target=req.instance_id,
+          detail=f"移除 {res['removed']} 条，保留SSH={req.keep_ssh}", result="ok", ip=ip)
+    return {"ok": True, **res, "status": status}
 
 
 @router.post("/ipv6")
