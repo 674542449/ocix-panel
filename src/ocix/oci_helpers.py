@@ -612,15 +612,10 @@ def launch_instance(profile: str, params: dict) -> dict:
         "--shape", plan["shape"],
         "--boot-volume-size-in-gbs", str(plan["boot_gb"]),
     ]
-    if params.get("assign_ipv6"):
-        # 只有要 IPv6 时才走 create-vnic-details，普通路径保持最简参数
-        args += ["--create-vnic-details", json.dumps({
-            "subnetId": params["subnet_id"],
-            "assignPublicIp": True,
-            "assignIpv6Ip": True,
-        })]
-    else:
-        args += ["--subnet-id", params["subnet_id"], "--assign-public-ip", "true"]
+    # 只用各版本 CLI 都有的扁平参数。
+    # 早先给 IPv6 走 --create-vnic-details，但不少 oci CLI 版本压根没有这个选项
+    # （报 "No such option: --create-vnic-details"），所以 IPv6 改为建完之后单独挂。
+    args += ["--subnet-id", params["subnet_id"], "--assign-public-ip", "true"]
     if plan["family"] == "arm":
         args += ["--shape-config", json.dumps({
             "ocpus": plan["ocpus"], "memoryInGBs": plan["memory_gb"],
@@ -838,9 +833,34 @@ def ensure_subnet_ipv6(profile: str, subnet_id: str, compartment_id: str) -> dic
     return {**subnet_ipv6_status(profile, subnet_id), "changed": True, "warnings": warnings}
 
 
-def add_ipv6_to_instance(profile: str, instance_id: str, compartment_id: str) -> dict:
-    """给已有实例加一个 IPv6 地址（子网没开通 IPv6 就顺手开通）。"""
-    vnic = primary_vnic(profile, instance_id, compartment_id)
+def wait_for_primary_vnic(profile: str, instance_id: str, compartment_id: str,
+                          timeout: int = 150) -> dict:
+    """等实例的网卡挂上来。
+
+    instance launch 立刻返回 PROVISIONING，这时 VNIC 往往还没挂好，
+    直接去分配 IPv6 会找不到网卡。
+    """
+    deadline = time.time() + timeout
+    last_err = None
+    while time.time() < deadline:
+        try:
+            return primary_vnic(profile, instance_id, compartment_id)
+        except OCICLIError as e:
+            last_err = e
+            time.sleep(5)
+    raise last_err or OCICLIError(f"等待网卡就绪超时（{timeout}s）")
+
+
+def add_ipv6_to_instance(profile: str, instance_id: str, compartment_id: str,
+                         wait_seconds: int = 0) -> dict:
+    """给已有实例加一个 IPv6 地址（子网没开通 IPv6 就顺手开通）。
+
+    wait_seconds > 0 时会先等网卡就绪——刚创建出来的实例要用这个。
+    """
+    if wait_seconds > 0:
+        vnic = wait_for_primary_vnic(profile, instance_id, compartment_id, wait_seconds)
+    else:
+        vnic = primary_vnic(profile, instance_id, compartment_id)
     if vnic["ipv6_addresses"]:
         return {"ipv6": vnic["ipv6_addresses"][0], "changed": False, "warnings": []}
 
@@ -969,17 +989,22 @@ def _raw_ingress(profile: str, security_list_id: str) -> list:
     return out
 
 
-def open_all_ports(profile: str, instance_id: str, compartment_id: str,
-                   include_ipv6: bool = True) -> dict:
-    """一键放行：给子网安全列表加一条 0.0.0.0/0 全协议入站规则（保留已有规则）。"""
-    st = firewall_status(profile, instance_id, compartment_id)
-    if not st["security_lists"]:
+def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = True) -> dict:
+    """给子网的安全列表加一条全放行入站规则（保留已有规则）。
+
+    按子网操作，不依赖实例——新建实例时网卡还没挂好就能先把端口放开。
+    """
+    sub = run_oci(profile, "network", "subnet", "get",
+                  "--subnet-id", subnet_id).get("data", {}) or {}
+    sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
+    if not sl_ids:
         raise OCICLIError("这个子网没有关联安全列表，无法修改防火墙")
-    sid = st["security_lists"][0]["id"]
+    sid = sl_ids[0]
+    ipv6_ready = bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))
     rules = _raw_ingress(profile, sid)
 
     added = []
-    sources = [_ALL_V4] + ([_ALL_V6] if include_ipv6 and st["ipv6_enabled"] else [])
+    sources = [_ALL_V4] + ([_ALL_V6] if include_ipv6 and ipv6_ready else [])
     for src in sources:
         if not any(r["protocol"] == "all" and r["source"] == src for r in rules):
             rules.append({"protocol": "all", "source": src, "sourceType": "CIDR_BLOCK",
@@ -987,8 +1012,15 @@ def open_all_ports(profile: str, instance_id: str, compartment_id: str,
             added.append(src)
     if added:
         _set_ingress(profile, sid, rules)
-    return {"security_list_id": sid, "added": added,
-            "status": firewall_status(profile, instance_id, compartment_id)}
+    return {"security_list_id": sid, "added": added, "subnet_id": subnet_id}
+
+
+def open_all_ports(profile: str, instance_id: str, compartment_id: str,
+                   include_ipv6: bool = True) -> dict:
+    """一键放行：给实例所在子网加全放行入站规则。"""
+    st = firewall_status(profile, instance_id, compartment_id)
+    res = open_all_ports_on_subnet(profile, st["subnet_id"], include_ipv6)
+    return {**res, "status": firewall_status(profile, instance_id, compartment_id)}
 
 
 def revoke_all_ports(profile: str, instance_id: str, compartment_id: str) -> dict:

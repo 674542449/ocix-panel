@@ -289,6 +289,80 @@ def test_ipv6_failure_aborts_before_creating_the_instance(app_client, stub_launc
     assert not stub_launch
 
 
+def test_ports_are_opened_after_create(app_client, stub_launch, monkeypatch):
+    """建完自动全开端口，勾了 IPv6 就连 ::/0 一起开。"""
+    from ocix.routers import provision
+    opened = []
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "ocid1.subnet.oc1..s", "created": False})
+    monkeypatch.setattr(provision, "ensure_subnet_ipv6", lambda p, s, c: {"enabled": True, "warnings": []})
+    monkeypatch.setattr(provision, "add_ipv6_to_instance",
+                        lambda p, i, c, **kw: {"ipv6": "2603::1", "warnings": []})
+    def fake_open(p, s, include_ipv6=True):
+        opened.append((s, include_ipv6))
+        return {"added": ["0.0.0.0/0"]}
+
+    monkeypatch.setattr(provision, "open_all_ports_on_subnet", fake_open)
+
+    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
+    assert r.status_code == 200
+    assert opened == [("ocid1.subnet.oc1..s", True)]
+    assert r.json()["ports_opened"] is True
+
+
+def test_ports_are_left_alone_when_unchecked(app_client, stub_launch, monkeypatch):
+    from ocix.routers import provision
+    opened = []
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "s", "created": False})
+    monkeypatch.setattr(provision, "open_all_ports_on_subnet",
+                        lambda p, s, include_ipv6=True: opened.append(s))
+
+    app_client.post("/api/provision/instances", json=_create_payload(open_all_ports=False))
+    assert opened == []
+
+
+def test_ipv6_is_attached_after_launch_not_during(app_client, stub_launch, monkeypatch):
+    """网卡要等实例起来才挂上，所以 IPv6 是建完之后再分配的。"""
+    from ocix.routers import provision
+    calls = []
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "s", "created": False})
+    monkeypatch.setattr(provision, "ensure_subnet_ipv6", lambda p, s, c: {"enabled": True, "warnings": []})
+    monkeypatch.setattr(provision, "open_all_ports_on_subnet",
+                        lambda p, s, include_ipv6=True: {"added": []})
+    monkeypatch.setattr(provision, "add_ipv6_to_instance",
+                        lambda p, i, c, **kw: calls.append(kw.get("wait_seconds")) or
+                        {"ipv6": "2603::abcd", "warnings": []})
+
+    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
+    assert r.json()["ipv6"] == "2603::abcd"
+    assert calls and calls[0] > 0, "必须带等待时间，否则网卡还没挂好"
+
+
+def test_post_launch_failures_do_not_fail_the_request(app_client, stub_launch, monkeypatch):
+    """实例已经建出来了，收尾步骤失败只能警告——报 500 会让人以为没建成而重复创建。"""
+    from ocix.oci_cli import OCICLIError
+    from ocix.routers import provision
+
+    def boom(*a, **kw):
+        raise OCICLIError("权限不足")
+
+    monkeypatch.setattr(provision, "resolve_subnet",
+                        lambda p, c, **kw: {"id": "s", "created": False})
+    monkeypatch.setattr(provision, "ensure_subnet_ipv6", lambda p, s, c: {"enabled": True, "warnings": []})
+    monkeypatch.setattr(provision, "open_all_ports_on_subnet", boom)
+    monkeypatch.setattr(provision, "add_ipv6_to_instance", boom)
+
+    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["instance_id"]
+    assert len(body["warnings"]) == 2
+    assert any("端口" in w for w in body["warnings"])
+    assert any("IPv6" in w for w in body["warnings"])
+
+
 def test_add_ipv6_to_existing_instance(app_client, monkeypatch):
     from ocix.routers import provision
     monkeypatch.setattr(provision, "add_ipv6_to_instance",

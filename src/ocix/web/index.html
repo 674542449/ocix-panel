@@ -216,6 +216,11 @@
     .ip-stack { display:flex; flex-direction:column; gap:1px; line-height:1.35; }
     .ip-sub { font-size:11px; color:var(--muted); }
     .ip-trunc { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* 操作列强制一排：默认的 margin-left 会把 4 个按钮挤到第二行 */
+    .row-actions { display:flex; flex-wrap:nowrap; align-items:center; gap:5px; }
+    .row-actions .el-button { margin-left:0 !important; padding-left:9px; padding-right:9px; }
+    .row-actions .el-button.term-btn { padding-left:5px; padding-right:5px; }
+
     /* 地址旁边的迷你操作按钮 */
     .mini-btn { background:#1d2740; border:1px solid var(--line); color:var(--muted);
                 font-family:var(--sans); font-size:11px; line-height:1; padding:3px 6px;
@@ -446,12 +451,12 @@
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="display_name" label="名称" min-width="125" show-overflow-tooltip />
-                <el-table-column label="规格" min-width="150">
+                <el-table-column prop="display_name" label="名称" min-width="118" show-overflow-tooltip />
+                <el-table-column label="规格" min-width="140">
                   <template #default="{row}"><span class="mono">{{ specText(row) }}</span></template>
                 </el-table-column>
                 <!-- 改地址的操作就放在地址旁边，操作列只留开关机，表格才不会宽到被固定列盖住 -->
-                <el-table-column label="公网 IP" min-width="195">
+                <el-table-column label="公网 IP" min-width="180">
                   <template #default="{row}">
                     <div class="ip-stack">
                       <span class="ip-cell">
@@ -470,7 +475,7 @@
                     </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="IPv6" min-width="165">
+                <el-table-column label="IPv6" min-width="150">
                   <template #default="{row}">
                     <span class="ip-cell" v-if="row.ipv6">
                       <span class="mono ip-trunc" :title="row.ipv6">{{ row.ipv6 }}</span>
@@ -485,12 +490,14 @@
                 <el-table-column label="创建于" width="100">
                   <template #default="{row}"><span class="mono">{{ fmtDate(row.time_created) }}</span></template>
                 </el-table-column>
-                <el-table-column label="操作" width="232" fixed="right">
+                <el-table-column label="操作" width="248" fixed="right">
                   <template #default="{row}">
-                    <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
-                    <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
-                    <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
-                    <el-button size="small" text class="term-btn" @click="terminate(row)">终止</el-button>
+                    <div class="row-actions">
+                      <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
+                      <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
+                      <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
+                      <el-button size="small" text class="term-btn" @click="terminate(row)">终止</el-button>
+                    </div>
                   </template>
                 </el-table-column>
               </el-table>
@@ -571,10 +578,13 @@
                   <el-form-item label="网络">
                     <div style="width:100%;">
                       <el-checkbox v-model="createForm.assign_ipv6" label="同时分配 IPv6 地址" />
+                      <el-checkbox v-model="createForm.open_all_ports" label="创建后自动放行所有端口" />
                       <p class="hint" style="margin-top:4px;">
                         子网由面板统一管理，所有机器共用一个。这个账户还没有网络的话，
-                        创建时会自动建好 VCN、网关和子网。勾选 IPv6 会自动开通子网的 IPv6
-                        并放行 <code>::/0</code> 的 SSH 入站。
+                        创建时会自动建好 VCN、网关和子网。勾选 IPv6 会自动开通子网 IPv6 并分配地址。<br />
+                        <b style="color:var(--warn);">放行所有端口</b>会给子网加一条任何来源任何端口的入站规则，
+                        <b>同子网下所有机器都会被放开</b>；有 IPv6 时 <code>::/0</code> 一并放行。
+                        实例内部的 iptables 仍需你自己开。
                       </p>
                     </div>
                   </el-form-item>
@@ -1239,7 +1249,7 @@ createApp({
       display_name: randomName(), shape: 'VM.Standard.A1.Flex',
       ocpus: 4, memory_gb: 24, boot_gb: 50,
       availability_domain: '', image_id: '', ssh_public_key: '',
-      assign_ipv6: false,
+      assign_ipv6: false, open_all_ports: true,
     });
     const pubKeyName = ref('');
     // 存的是正在加 IPv6 的实例 id，用来只给那一行显示 loading
@@ -1538,7 +1548,11 @@ createApp({
       try {
         await ElMessageBox.confirm(
           `创建「${createForm.display_name}」？\n规格 ${spec}，引导卷 ${createForm.boot_gb}GB。\n` +
-          `创建后存储将占用 ${p.checks.find(c => c.key === 'storage_gb').after}/200 GB。`,
+          `创建后存储将占用 ${p.checks.find(c => c.key === 'storage_gb').after}/200 GB。` +
+          (createForm.assign_ipv6 ? '\n建好后会自动分配 IPv6 地址。' : '') +
+          (createForm.open_all_ports
+            ? '\n\n⚠ 会放行子网的全部入站端口，同子网下所有机器都会被放开。'
+            : ''),
           '确认创建',
           { type: 'info', confirmButtonText: '创建', cancelButtonText: '取消',
             customStyle: { whiteSpace: 'pre-wrap' } });
@@ -1558,8 +1572,23 @@ createApp({
           boot_gb: createForm.boot_gb,
           ssh_public_key: createForm.ssh_public_key,
           assign_ipv6: createForm.assign_ipv6,
+          open_all_ports: createForm.open_all_ports,
         });
         ElMessage.success(`${data.display_name} 已创建，正在初始化`);
+        const lines = [];
+        if (data.network_created) lines.push('已自动创建 VCN + 网关 + 公共子网');
+        if (data.ports_opened) lines.push('已放行子网全部入站端口');
+        if (data.ipv6) lines.push(`IPv6 地址 ${data.ipv6}`);
+        lines.push('登录： ssh ubuntu@公网IP');
+        if ((data.warnings || []).length) {
+          ElMessageBox.alert(
+            lines.join('\n') + '\n\n以下步骤没能自动完成：\n· ' + data.warnings.join('\n· '),
+            `${data.display_name} 已创建，但有几项要手动补`,
+            { type: 'warning', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '620px' } });
+        } else {
+          ElMessageBox.alert(lines.join('\n'), `${data.display_name} 创建完成`,
+            { type: 'success', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '560px' } });
+        }
         createForm.display_name = randomName();
         activeTab.value = 'instances';
         await loadSingle();

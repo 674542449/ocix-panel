@@ -86,6 +86,61 @@ def test_version_number_strips_variant_suffix():
     assert H._version_number("24.04") == "24.04"
 
 
+# ── instance launch 的参数（这里出过一次线上报错）──
+
+@pytest.fixture()
+def capture_launch(monkeypatch):
+    calls = []
+
+    def fake_run(profile, *args, **kwargs):
+        calls.append(list(args))
+        return {"data": {"id": "ocid1.instance.oc1..x", "lifecycle-state": "PROVISIONING"}}
+
+    monkeypatch.setattr(H, "run_oci", fake_run)
+    return calls
+
+
+LAUNCH_PARAMS = {
+    "compartment_id": "ocid1.compartment.oc1..c",
+    "availability_domain": "AD-1",
+    "display_name": "box",
+    "image_id": "ocid1.image.oc1..i",
+    "subnet_id": "ocid1.subnet.oc1..s",
+    "shape": "VM.Standard.E2.1.Micro",
+    "boot_gb": 50,
+    "ssh_public_key": "ssh-ed25519 AAAA test@x",
+}
+
+
+@pytest.mark.parametrize("assign_ipv6", [False, True])
+def test_launch_never_uses_create_vnic_details(capture_launch, assign_ipv6):
+    """回归：--create-vnic-details 在不少 oci CLI 版本里不存在，
+    会直接报 "No such option: --create-vnic-details"。IPv6 改为建完之后单独挂。"""
+    H.launch_instance("P", {**LAUNCH_PARAMS, "assign_ipv6": assign_ipv6})
+    args = capture_launch[0]
+    assert "--create-vnic-details" not in args
+    assert "--subnet-id" in args
+    assert "--assign-public-ip" in args
+
+
+def test_launch_passes_shape_config_only_for_arm(capture_launch):
+    H.launch_instance("P", {**LAUNCH_PARAMS, "shape": "VM.Standard.A1.Flex",
+                            "ocpus": 4, "memory_gb": 24})
+    assert "--shape-config" in capture_launch[0]
+
+    capture_launch.clear()
+    H.launch_instance("P", LAUNCH_PARAMS)
+    assert "--shape-config" not in capture_launch[0]
+
+
+def test_launch_sends_ssh_key_as_metadata(capture_launch):
+    H.launch_instance("P", LAUNCH_PARAMS)
+    args = capture_launch[0]
+    meta = args[args.index("--metadata") + 1]
+    assert "ssh_authorized_keys" in meta
+    assert "ssh-ed25519" in meta
+
+
 @pytest.mark.parametrize("rule,expected", [
     ({"tcp-options": {"destination-port-range": {"min": 22, "max": 22}}}, "22"),
     ({"tcp-options": {"destination-port-range": {"min": 80, "max": 443}}}, "80-443"),

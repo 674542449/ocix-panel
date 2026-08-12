@@ -16,6 +16,7 @@ from ..oci_helpers import (
     list_images,
     list_subnets,
     open_all_ports,
+    open_all_ports_on_subnet,
     preflight_create,
     resolve_subnet,
     revoke_all_ports,
@@ -144,20 +145,52 @@ def create_instance(
               detail=f"{req.shape} -> {msg}", result="fail", ip=ip)
         raise HTTPException(status_code=400, detail=msg)
 
+    instance_id = data.get("id")
     audit(user, "create-instance", profile=req.profile,
-          target=data.get("id") or req.display_name,
+          target=instance_id or req.display_name,
           detail=f"{req.shape} {check['plan']['ocpus']}C/{check['plan']['memory_gb']}G "
                  f"boot={check['plan']['boot_gb']}G",
           result="ok", ip=ip)
+
+    # ---- 收尾步骤：实例已经建出来了，这里失败只警告，不能把整个请求判成失败 ----
+    warnings = list(ipv6_warnings)
+
+    if req.open_all_ports:
+        try:
+            res = open_all_ports_on_subnet(req.profile, params["subnet_id"],
+                                           include_ipv6=req.assign_ipv6)
+            audit(user, "firewall-allow-all", profile=req.profile,
+                  target=params["subnet_id"],
+                  detail="随实例创建自动放行 " + (", ".join(res["added"]) or "（已是全放行）"),
+                  result="ok", ip=ip)
+        except OCICLIError as e:
+            warnings.append(f"实例已创建，但端口没能自动放行：{e.message}（可到「防火墙」页手动放行）")
+
+    ipv6_addr = None
+    if req.assign_ipv6 and instance_id:
+        try:
+            # launch 立刻返回 PROVISIONING，网卡还没挂好，得等一会儿再挂 IPv6
+            res = add_ipv6_to_instance(req.profile, instance_id, req.compartment_id,
+                                       wait_seconds=90)
+            ipv6_addr = res.get("ipv6")
+            warnings.extend(res.get("warnings", []))
+            audit(user, "add-ipv6", profile=req.profile, target=instance_id,
+                  detail=ipv6_addr or "", result="ok", ip=ip)
+        except OCICLIError as e:
+            warnings.append(
+                f"实例已创建，但 IPv6 还没挂上：{e.message}。"
+                f"等实例跑起来后到实例列表点「+ 添加」即可。")
+
     return {
         "ok": True,
-        "instance_id": data.get("id"),
+        "instance_id": instance_id,
         "display_name": data.get("display-name") or data.get("display_name"),
         "state": data.get("lifecycle-state") or data.get("lifecycle_state"),
         "preflight": check,
         "network_created": network_created,
-        "ipv6": req.assign_ipv6,
-        "warnings": ipv6_warnings,
+        "ipv6": ipv6_addr,
+        "ports_opened": req.open_all_ports,
+        "warnings": warnings,
     }
 
 

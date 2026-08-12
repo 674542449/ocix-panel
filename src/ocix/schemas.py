@@ -52,6 +52,8 @@ class CreateInstanceRequest(BaseModel):
     boot_gb: int = 50
     ssh_public_key: str
     assign_ipv6: bool = False
+    # 建完自动放行全部端口；关掉则只留 OCI 默认的 22 端口
+    open_all_ports: bool = True
 
     @field_validator("ssh_public_key")
     @classmethod
