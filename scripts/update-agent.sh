@@ -44,15 +44,15 @@ write_status() {
 run_update() {
   STARTED_AT="$(date +%s)"; FINISHED_AT=""
   : > "$LOGFILE"
-  write_status running "正在更新…"
+  write_status "running" "正在更新…"
 
   # 只跑这一条固定命令；--yes 让它在没有终端的情况下也能走完
   if bash "${REPO_ROOT}/scripts/update.sh" --yes >>"$LOGFILE" 2>&1; then
     FINISHED_AT="$(date +%s)"
-    write_status done "更新完成"
+    write_status "done" "更新完成"
   else
     FINISHED_AT="$(date +%s)"
-    write_status failed "更新失败，展开日志看具体原因"
+    write_status "failed" "更新失败，展开日志看具体原因"
   fi
 }
 
