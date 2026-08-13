@@ -95,30 +95,114 @@ def test_empty_key_is_rejected():
 
 
 # ── 串口控制台连接串 ──
+#
+# OCI 各区域 / 各时期给的串写法不完全一样，解析器不能只认一种。
+# 回归：早先的正则里混进过一个退格字符（写正则时反斜杠-b 被 shell 吃掉写成了 0x08），
+# 于是**所有**连接串都解析失败——而且报的是「格式不认识」，很难往这上面想。
 
-CONSOLE_STR = (
-    'ssh -o ProxyCommand="ssh -W %h:%p -p 443 '
-    'ocid1.instanceconsoleconnection.oc1..abc@instance-console.us-ashburn-1.oci.oraclecloud.com" '
-    'ocid1.instance.oc1..xyz@instance-console.us-ashburn-1.oci.oraclecloud.com'
-)
+BASE = ('ssh -o ProxyCommand="ssh -W %h:%p -p 443 '
+        'ocid1.instanceconsoleconnection.oc1..abc@instance-console.us-ashburn-1.oci.oraclecloud.com" '
+        'ocid1.instance.oc1..xyz@instance-console.us-ashburn-1.oci.oraclecloud.com')
+
+VARIANTS = {
+    "双引号": BASE,
+    "单引号": BASE.replace('"', "'"),
+    "夹杂其它 -o 选项": BASE.replace(
+        "ssh -o ProxyCommand",
+        "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ProxyCommand"),
+    "ProxyCommand 里带 -i": BASE.replace("ssh -W %h:%p", "ssh -i /path/key -W %h:%p"),
+    "折行": BASE.replace(" ocid1.instance.oc1..xyz", "\n   ocid1.instance.oc1..xyz"),
+    "老域名（无 .oci）": BASE.replace(".oci.oraclecloud.com", ".oraclecloud.com"),
+    "等号两侧有空格": BASE.replace("ProxyCommand=", "ProxyCommand = "),
+}
 
 
-def test_parse_console_string():
-    info = terminal.parse_console_string(CONSOLE_STR)
-    assert info["proxy_user"] == "ocid1.instanceconsoleconnection.oc1..abc"
-    assert info["proxy_host"] == "instance-console.us-ashburn-1.oci.oraclecloud.com"
-    assert info["proxy_port"] == 443
-    assert info["target_user"] == "ocid1.instance.oc1..xyz"
+@pytest.mark.parametrize("name", list(VARIANTS))
+def test_parse_console_string_variants(name):
+    info = terminal.parse_console_string(VARIANTS[name])
+    assert info["proxy_user"].startswith("ocid1.instanceconsoleconnection"), name
+    assert info["proxy_host"].startswith("instance-console"), name
+    assert info["proxy_port"] == 443, name
+    assert info["target_user"].startswith("ocid1.instance."), name
+    assert info["target_port"] == 22, name
 
 
-def test_parse_console_string_with_single_quotes():
-    info = terminal.parse_console_string(CONSOLE_STR.replace('"', "'"))
-    assert info["proxy_port"] == 443
+def test_target_is_the_instance_not_the_console_connection():
+    """两跳的用户名不能搞反：外层是实例 OCID，跳板是连接 OCID。"""
+    info = terminal.parse_console_string(BASE)
+    assert info["target_user"] != info["proxy_user"]
+    assert ".instance." in info["target_user"]
+    assert ".instanceconsoleconnection." in info["proxy_user"]
+
+
+def test_outer_port_is_honoured_when_present():
+    s = BASE.replace('" ocid1.instance', '" -p 2222 ocid1.instance')
+    assert terminal.parse_console_string(s)["target_port"] == 2222
+
+
+def test_console_regexes_have_no_control_characters():
+    """回归：正则里混进 0x08 会让所有连接串都匹配不上。"""
+    for rx in (terminal._PROXY_RE, terminal._TARGET_RE, terminal._PORT_RE):
+        bad = [hex(ord(c)) for c in rx.pattern if ord(c) < 32]
+        assert not bad, f"{rx.pattern!r} 里有控制字符 {bad}"
 
 
 def test_unparseable_console_string_is_reported():
     with pytest.raises(OCIError, match="格式不认识"):
         terminal.parse_console_string("ssh someone@example.com")
+
+
+# ── RSA SHA-1 回退 ──
+
+def test_console_retries_with_sha1_when_auth_fails(monkeypatch):
+    """Oracle 网关只认 SHA-1 的 ssh-rsa；第一次认证失败要自动退回去再试。"""
+    calls = []
+
+    def fake_auth(sock, username, pkey, timeout, disabled=None):
+        calls.append(disabled)
+        if disabled is None:
+            raise paramiko.AuthenticationException("Authentication failed.")
+        return _FakeTransport()
+
+    monkeypatch.setattr(terminal, "_auth", fake_auth)
+    monkeypatch.setattr(terminal, "_shell", lambda t, c, r: "chan")
+    sess = terminal.open_console(BASE, object())
+    assert sess.channel == "chan"
+    # 第一次不带限制，随后带上 SHA-1 回退
+    assert calls[0] is None
+    assert terminal._SHA1_FALLBACK in calls
+
+
+def test_console_reports_original_error_when_both_attempts_fail(monkeypatch):
+    """两次都失败时要把原始信息带出来，否则没法排查。"""
+    def always_fail(*a, **kw):
+        raise paramiko.AuthenticationException("Authentication failed.")
+
+    monkeypatch.setattr(terminal, "_auth", always_fail)
+    with pytest.raises(OCIError) as exc:
+        terminal.open_console(BASE, object())
+    assert "创建这条连接时填的公钥" in str(exc.value)
+    assert "Authentication failed" in str(exc.value)
+
+
+def test_console_network_error_names_the_gateway(monkeypatch):
+    """连不上跳板时要说清是哪个地址，好判断是不是出站被挡。"""
+    def boom(*a, **kw):
+        raise OSError("timed out")
+
+    monkeypatch.setattr(terminal, "_auth", boom)
+    with pytest.raises(OCIError) as exc:
+        terminal.open_console(BASE, object())
+    assert "instance-console.us-ashburn-1" in str(exc.value)
+    assert "443" in str(exc.value)
+
+
+class _FakeTransport:
+    def open_channel(self, *a, **kw):
+        return "tunnel"
+
+    def close(self):
+        pass
 
 
 # ── 端到端：对着一台真 SSH 服务端 ──
@@ -159,7 +243,7 @@ def ssh_server():
     port = sock.getsockname()[1]
     state = {"key": client_key, "port": port, "banner": "OCIX-TEST> "}
 
-    def serve():
+    def serve_one():
         try:
             conn, _ = sock.accept()
             t = paramiko.Transport(conn)
@@ -184,6 +268,14 @@ def ssh_server():
             chan.close()
         except Exception:  # noqa: BLE001
             pass
+
+    def serve():
+        # 认证失败会触发一次 SHA-1 回退重连，所以这里要能接多次
+        while True:
+            try:
+                serve_one()
+            except OSError:
+                break
 
     th = threading.Thread(target=serve, daemon=True)
     th.start()
