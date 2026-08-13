@@ -342,6 +342,80 @@ class SDKBackend(Backend):
         return _list(_wrap(self._mon(profile).summarize_metrics_data,
                            compartment_id, details, **kw))
 
+    # ---------- 实例详情 / 改规格 ----------
+    def get_instance(self, profile, instance_id):
+        return _d(_wrap(self._compute(profile).get_instance, instance_id).data)
+
+    def update_instance_shape(self, profile, instance_id, ocpus, memory_gb):
+        """改 Flex 机型的 OCPU / 内存。
+
+        update_operation_constraint 不传就是 ALLOW_DOWNTIME——OCI 会在需要时
+        直接重启实例。这里显式写出来，免得以后有人以为是热变更。
+        """
+        details = oci.core.models.UpdateInstanceDetails(
+            shape_config=oci.core.models.UpdateInstanceShapeConfigDetails(
+                ocpus=float(ocpus), memory_in_gbs=float(memory_gb)),
+            update_operation_constraint="ALLOW_DOWNTIME",
+        )
+        return _d(_wrap(self._compute(profile).update_instance, instance_id, details).data)
+
+    # ---------- 串口控制台 ----------
+    def create_console_connection(self, profile, instance_id, public_key):
+        details = oci.core.models.CreateInstanceConsoleConnectionDetails(
+            instance_id=instance_id, public_key=public_key)
+        return _d(_wrap(self._compute(profile).create_instance_console_connection,
+                        details).data)
+
+    def list_console_connections(self, profile, compartment_id, instance_id=None):
+        kw = {"instance_id": instance_id} if instance_id else {}
+        return self._all(self._compute(profile).list_instance_console_connections,
+                         compartment_id, **kw)
+
+    def delete_console_connection(self, profile, connection_id):
+        _wrap(self._compute(profile).delete_instance_console_connection, connection_id)
+
+    # ---------- 引导卷备份 / 扩容 ----------
+    def get_boot_volume(self, profile, boot_volume_id):
+        return _d(_wrap(self._block(profile).get_boot_volume, boot_volume_id).data)
+
+    def update_boot_volume_size(self, profile, boot_volume_id, size_gb):
+        details = oci.core.models.UpdateBootVolumeDetails(size_in_gbs=int(size_gb))
+        return _d(_wrap(self._block(profile).update_boot_volume,
+                        boot_volume_id, details).data)
+
+    def create_boot_volume_backup(self, profile, boot_volume_id, display_name, backup_type):
+        details = oci.core.models.CreateBootVolumeBackupDetails(
+            boot_volume_id=boot_volume_id, display_name=display_name,
+            type=(backup_type or "INCREMENTAL").upper())
+        return _d(_wrap(self._block(profile).create_boot_volume_backup, details).data)
+
+    def list_boot_volume_backups(self, profile, compartment_id, boot_volume_id=None):
+        kw = {"boot_volume_id": boot_volume_id} if boot_volume_id else {}
+        return self._all(self._block(profile).list_boot_volume_backups,
+                         compartment_id, **kw)
+
+    def delete_boot_volume_backup(self, profile, backup_id):
+        _wrap(self._block(profile).delete_boot_volume_backup, backup_id)
+
+    def create_boot_volume_from_backup(self, profile, compartment_id, availability_domain,
+                                       backup_id, display_name, size_gb):
+        """从备份还原出一个**新的**引导卷。
+
+        OCI 没有「原地恢复」这回事：还原永远是造一个新卷，
+        要用它得再拿这个卷开一台实例。界面上必须说清楚，
+        别让人以为点一下就回滚了。
+        """
+        details = oci.core.models.CreateBootVolumeDetails(
+            compartment_id=compartment_id,
+            availability_domain=availability_domain,
+            display_name=display_name,
+            source_details=oci.core.models.BootVolumeSourceFromBootVolumeBackupDetails(
+                type="bootVolumeBackup", id=backup_id),
+        )
+        if size_gb:
+            details.size_in_gbs = int(size_gb)
+        return _d(_wrap(self._block(profile).create_boot_volume, details).data)
+
     # ---------- 账单 / 用量 ----------
     def home_region(self, profile, tenancy_id):
         """主区域。账单接口只在主区域的端点上有数据。"""

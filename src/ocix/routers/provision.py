@@ -1,19 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import freetier, security
-from ..common import OCIError
+from ..common import OCIError, account_gate
 from ..db import audit
 from ..oci_helpers import (
     VPU_RANGE,
     add_ipv6_to_instance,
     add_port_rule,
+    boot_volume_backups,
     change_public_ip,
     clear_ingress_rules,
+    create_backup,
+    create_console,
     create_network,
+    delete_backup,
+    delete_console,
     delete_port_rule,
     delete_volume,
     ensure_subnet_ipv6,
     firewall_status,
+    instance_detail,
     launch_instance,
     list_availability_domains,
     list_images,
@@ -21,16 +27,23 @@ from ..oci_helpers import (
     open_all_ports,
     open_all_ports_on_subnet,
     preflight_create,
+    resize_boot_volume,
+    resize_instance_shape,
     resolve_subnet,
+    restore_backup,
     revoke_all_ports,
     storage_overview,
     terminate_instance,
     update_volume_performance,
 )
 from ..schemas import (
+    BackupRequest,
     ClearRulesRequest,
+    ConsoleRequest,
     CreateInstanceRequest,
     CreateNetworkRequest,
+    DeleteBackupRequest,
+    DeleteConsoleRequest,
     DeleteRuleRequest,
     DeleteVolumeRequest,
     EnableIpv6Request,
@@ -38,6 +51,9 @@ from ..schemas import (
     InstanceRefRequest,
     PortRuleRequest,
     PreflightRequest,
+    ResizeBootVolumeRequest,
+    ResizeShapeRequest,
+    RestoreBackupRequest,
     TerminateInstanceRequest,
     VolumePerformanceRequest,
 )
@@ -487,3 +503,189 @@ def make_network(
     audit(user, "create-network", profile=req.profile, target=net.get("vcn_id") or req.name,
           detail=f"subnet={net.get('subnet_id')}", result="ok", ip=ip)
     return {"ok": True, **net}
+
+
+# ---- 实例详情 / 改规格 ----
+
+@router.get("/instances/detail")
+def get_instance_detail(
+    profile: str,
+    instance_id: str,
+    compartment_id: str = None,
+    request: Request = None,
+    user: str = Depends(security.get_current_user),
+):
+    """一台实例的完整信息。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        with account_gate(profile):
+            return instance_detail(profile, instance_id, compartment_id)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.post("/instances/resize")
+def resize_shape(
+    req: ResizeShapeRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """改 Flex 机型的 OCPU / 内存。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        with account_gate(req.profile):
+            res = resize_instance_shape(req.profile, req.instance_id, req.ocpus,
+                                        req.memory_gb, req.compartment_id)
+    except OCIError as e:
+        audit(user, "resize-instance", profile=req.profile, target=req.instance_id,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "resize-instance", profile=req.profile, target=req.instance_id,
+          detail=f"改为 {req.ocpus:g} OCPU / {req.memory_gb:g}GB", result="ok", ip=ip)
+    return res
+
+
+# ---- 串口控制台 ----
+
+@router.post("/console")
+def open_console(
+    req: ConsoleRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """建串口控制台连接（SSH 进不去时的救命通道）。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        with account_gate(req.profile):
+            res = create_console(req.profile, req.instance_id, req.public_key,
+                                 req.compartment_id)
+    except OCIError as e:
+        audit(user, "console-connection", profile=req.profile, target=req.instance_id,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "console-connection", profile=req.profile, target=req.instance_id,
+          detail="创建串口控制台连接" if res.get("created") else "复用已有连接",
+          result="ok", ip=ip)
+    return res
+
+
+@router.post("/console/delete")
+def close_console(
+    req: DeleteConsoleRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        with account_gate(req.profile):
+            res = delete_console(req.profile, req.connection_id)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "console-connection", profile=req.profile, target=req.connection_id,
+          detail="删除串口控制台连接", result="ok", ip=ip)
+    return res
+
+
+# ---- 引导卷备份 / 扩容 ----
+
+@router.get("/backups")
+def list_backups(
+    profile: str,
+    compartment_id: str = None,
+    boot_volume_id: str = None,
+    request: Request = None,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        with account_gate(profile):
+            return boot_volume_backups(profile, compartment_id, boot_volume_id)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.post("/backups")
+def make_backup(
+    req: BackupRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        with account_gate(req.profile):
+            res = create_backup(req.profile, req.boot_volume_id,
+                                req.display_name, req.backup_type)
+    except OCIError as e:
+        audit(user, "boot-volume-backup", profile=req.profile, target=req.boot_volume_id,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "boot-volume-backup", profile=req.profile, target=req.boot_volume_id,
+          detail=f"创建{req.backup_type}备份 {res['display_name']}", result="ok", ip=ip)
+    return res
+
+
+@router.post("/backups/delete")
+def remove_backup(
+    req: DeleteBackupRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        with account_gate(req.profile):
+            res = delete_backup(req.profile, req.backup_id)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "boot-volume-backup", profile=req.profile, target=req.backup_id,
+          detail="删除备份", result="ok", ip=ip)
+    return res
+
+
+@router.post("/backups/restore")
+def restore(
+    req: RestoreBackupRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """从备份还原出一个新引导卷（不是原地恢复）。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        with account_gate(req.profile):
+            res = restore_backup(req.profile, req.backup_id, req.availability_domain,
+                                 req.display_name, req.compartment_id)
+    except OCIError as e:
+        audit(user, "restore-backup", profile=req.profile, target=req.backup_id,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "restore-backup", profile=req.profile, target=req.backup_id,
+          detail=f"还原为引导卷 {res['display_name']}（{res['size_gb']}GB）",
+          result="ok", ip=ip)
+    return res
+
+
+@router.post("/storage/resize")
+def resize_boot(
+    req: ResizeBootVolumeRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """引导卷扩容。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    try:
+        with account_gate(req.profile):
+            res = resize_boot_volume(req.profile, req.boot_volume_id,
+                                     req.size_gb, req.compartment_id)
+    except OCIError as e:
+        audit(user, "resize-boot-volume", profile=req.profile, target=req.boot_volume_id,
+              detail=e.message, result="fail", ip=ip)
+        raise HTTPException(status_code=400, detail=e.message)
+    audit(user, "resize-boot-volume", profile=req.profile, target=req.boot_volume_id,
+          detail=f"扩容到 {req.size_gb}GB", result="ok", ip=ip)
+    return res

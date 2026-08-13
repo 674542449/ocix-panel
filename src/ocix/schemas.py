@@ -131,6 +131,75 @@ class PortRuleRequest(InstanceRefRequest):
         return up
 
 
+class ResizeShapeRequest(InstanceRefRequest):
+    ocpus: float = Field(gt=0, le=64)
+    memory_gb: float = Field(gt=0, le=1024)
+
+
+class ConsoleRequest(InstanceRefRequest):
+    public_key: str
+
+    @field_validator("public_key")
+    @classmethod
+    def _check_key(cls, v: str) -> str:
+        key = (v or "").strip()
+        if not key.startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-", "ssh-dss ")):
+            raise ValueError("串口控制台需要 SSH 公钥，应以 ssh-rsa / ssh-ed25519 开头")
+        if "PRIVATE KEY" in key:
+            raise ValueError("这是私钥，只需要 .pub 里的公钥")
+        return key
+
+
+class DeleteConsoleRequest(BaseModel):
+    profile: str
+    connection_id: str
+
+
+class BackupRequest(BaseModel):
+    profile: str
+    boot_volume_id: str
+    display_name: str = ""
+    backup_type: str = "INCREMENTAL"
+
+    @field_validator("display_name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        return _ascii_only(v, "备份名称")
+
+    @field_validator("backup_type")
+    @classmethod
+    def _check_type(cls, v: str) -> str:
+        up = (v or "INCREMENTAL").strip().upper()
+        if up not in ("FULL", "INCREMENTAL"):
+            raise ValueError("备份类型只能是 FULL 或 INCREMENTAL")
+        return up
+
+
+class DeleteBackupRequest(BaseModel):
+    profile: str
+    backup_id: str
+
+
+class RestoreBackupRequest(BaseModel):
+    profile: str
+    backup_id: str
+    availability_domain: str
+    display_name: str = ""
+    compartment_id: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        return _ascii_only(v, "引导卷名称")
+
+
+class ResizeBootVolumeRequest(BaseModel):
+    profile: str
+    boot_volume_id: str
+    size_gb: int = Field(ge=50, le=200)
+    compartment_id: str | None = None
+
+
 class DeleteRuleRequest(InstanceRefRequest):
     index: int = Field(ge=0)
 

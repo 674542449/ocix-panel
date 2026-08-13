@@ -180,6 +180,50 @@ class Backend(ABC):
     def set_password_expiry(self, profile: str, domain_url: str,
                             policy_id: str, days: int) -> dict: ...
 
+    # ---------- 实例详情 / 改规格 ----------
+    @abstractmethod
+    def get_instance(self, profile: str, instance_id: str) -> dict: ...
+
+    @abstractmethod
+    def update_instance_shape(self, profile: str, instance_id: str,
+                              ocpus: float, memory_gb: float) -> dict: ...
+
+    # ---------- 串口控制台 ----------
+    @abstractmethod
+    def create_console_connection(self, profile: str, instance_id: str,
+                                  public_key: str) -> dict: ...
+
+    @abstractmethod
+    def list_console_connections(self, profile: str, compartment_id: str,
+                                 instance_id: str = None) -> list: ...
+
+    @abstractmethod
+    def delete_console_connection(self, profile: str, connection_id: str) -> None: ...
+
+    # ---------- 引导卷备份 / 扩容 ----------
+    @abstractmethod
+    def get_boot_volume(self, profile: str, boot_volume_id: str) -> dict: ...
+
+    @abstractmethod
+    def update_boot_volume_size(self, profile: str, boot_volume_id: str,
+                                size_gb: int) -> dict: ...
+
+    @abstractmethod
+    def create_boot_volume_backup(self, profile: str, boot_volume_id: str,
+                                  display_name: str, backup_type: str) -> dict: ...
+
+    @abstractmethod
+    def list_boot_volume_backups(self, profile: str, compartment_id: str,
+                                 boot_volume_id: str = None) -> list: ...
+
+    @abstractmethod
+    def delete_boot_volume_backup(self, profile: str, backup_id: str) -> None: ...
+
+    @abstractmethod
+    def create_boot_volume_from_backup(self, profile: str, compartment_id: str,
+                                       availability_domain: str, backup_id: str,
+                                       display_name: str, size_gb: int) -> dict: ...
+
     # ---------- 账单 / 用量 ----------
     @abstractmethod
     def home_region(self, profile: str, tenancy_id: str) -> str: ...

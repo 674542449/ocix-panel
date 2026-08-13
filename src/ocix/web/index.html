@@ -209,6 +209,14 @@
     .dot.attn { background:var(--warn); color:var(--warn); }
     .state-label { font-size:12px; font-variant-numeric:tabular-nums; }
 
+    /* 详情抽屉里的键值表 */
+    .dl { display:grid; grid-template-columns:96px 1fr; gap:8px 14px; font-size:13px; }
+    .dl dt { color:var(--muted); font-size:12px; }
+    .dl dd { margin:0; word-break:break-all; }
+    .drawer-sec { margin-top:var(--sp-5); }
+    .drawer-sec > h4 { margin:0 0 var(--sp-3); font-size:13px; font-weight:600;
+                       display:flex; align-items:center; justify-content:space-between; }
+
     /* 一行状态摘要：状态点 + 一句说明 */
     .kv { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(245,158,11,.55); } 70% { box-shadow:0 0 0 7px rgba(245,158,11,0); } 100% { box-shadow:0 0 0 0 rgba(245,158,11,0); } }
@@ -611,9 +619,10 @@
                 <el-table-column label="创建于" width="100">
                   <template #default="{row}"><span class="mono">{{ fmtDate(row.time_created) }}</span></template>
                 </el-table-column>
-                <el-table-column label="操作" width="248" fixed="right">
+                <el-table-column label="操作" width="316" fixed="right">
                   <template #default="{row}">
                     <div class="row-actions">
+                      <el-button size="small" type="primary" plain @click="openDetail(row)">详情</el-button>
                       <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
                       <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
                       <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
@@ -1215,6 +1224,147 @@
           </div>
         </section>
 
+        <!-- 实例详情抽屉 -->
+        <el-drawer v-model="detailOpen" :title="detail.display_name || '实例详情'"
+                   size="560px" direction="rtl">
+          <div v-if="detailLoading" aria-label="加载中">
+            <div class="skel skel-row" v-for="i in 6" :key="i"></div>
+          </div>
+          <template v-else-if="detail.id">
+            <dl class="dl">
+              <dt>状态</dt>
+              <dd>
+                <span class="state">
+                  <i :class="['dot', stateTone(detail.state)]"></i>
+                  <span class="state-label">{{ stateText(detail.state) }}</span>
+                </span>
+              </dd>
+              <dt>规格</dt>
+              <dd class="mono">{{ detail.shape }}
+                <template v-if="detail.ocpus">· {{ detail.ocpus }} OCPU · {{ detail.memory_gb }} GB</template>
+              </dd>
+              <dt>公网 IP</dt>
+              <dd class="mono">{{ detail.public_ip || '—' }}</dd>
+              <dt>内网 IP</dt>
+              <dd class="mono">{{ detail.private_ip || '—' }}</dd>
+              <dt>IPv6</dt>
+              <dd class="mono">{{ detail.ipv6 || '未分配' }}</dd>
+              <dt>可用域</dt>
+              <dd class="mono">{{ detail.availability_domain || '—' }}</dd>
+              <dt>创建于</dt>
+              <dd class="mono">{{ fmtTime(detail.time_created) }}</dd>
+              <dt>OCID</dt>
+              <dd class="mono" style="font-size:11px;">{{ detail.id }}</dd>
+            </dl>
+
+            <!-- 改规格：只有 Flex 机型能改 -->
+            <div class="drawer-sec" v-if="detail.is_flex">
+              <h4>调整规格</h4>
+              <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+                <div>
+                  <div class="alloc-k" style="margin-bottom:4px;">OCPU</div>
+                  <el-input-number v-model="resizeForm.ocpus" :min="1" :max="4" :step="1"
+                                   style="width:120px;" @change="syncResizeMem" />
+                </div>
+                <div>
+                  <div class="alloc-k" style="margin-bottom:4px;">内存 GB</div>
+                  <el-input-number v-model="resizeForm.memory_gb" :min="1"
+                                   :max="resizeForm.ocpus * 6" :step="1" style="width:120px;" />
+                </div>
+                <el-button type="primary" @click="doResize" :loading="resizing">应用</el-button>
+              </div>
+              <p class="hint">
+                ARM 免费额度合计 4 OCPU / 24GB，每 OCPU 最多 6GB。
+                <strong>应用后 OCI 可能会重启这台实例。</strong>
+              </p>
+            </div>
+
+            <!-- 引导卷 -->
+            <div class="drawer-sec" v-if="detail.boot_volume">
+              <h4>
+                引导卷
+                <span class="who mono">{{ detail.boot_volume.size_gb }} GB</span>
+              </h4>
+              <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+                <div>
+                  <div class="alloc-k" style="margin-bottom:4px;">扩容到 GB</div>
+                  <el-input-number v-model="growForm.size_gb"
+                                   :min="detail.boot_volume.size_gb" :max="200" :step="10"
+                                   style="width:130px;" />
+                </div>
+                <el-button @click="doGrow" :loading="growing">扩容</el-button>
+                <el-button @click="doBackup" :loading="backingUp">立即备份</el-button>
+              </div>
+              <p class="hint">
+                引导卷只能变大不能变小。扩容后还要进系统执行
+                <code class="mono">sudo /usr/libexec/oci-growfs</code> 才会生效。
+              </p>
+            </div>
+
+            <!-- 串口控制台 -->
+            <div class="drawer-sec">
+              <h4>串口控制台</h4>
+              <template v-if="(detail.console || []).length">
+                <p class="hint" style="margin-top:0;">用与公钥配对的私钥执行：</p>
+                <div class="log-box" v-for="c in detail.console" :key="c.id">
+                  <pre class="mono">{{ c.ssh_command }}</pre>
+                </div>
+                <el-button size="small" type="danger" plain style="margin-top:10px;"
+                           @click="dropConsole(detail.console[0].id)">删除连接</el-button>
+              </template>
+              <template v-else>
+                <p class="hint" style="margin-top:0;">
+                  SSH 进不去时（防火墙关错、fstab 写坏、sshd 配置改崩）靠它救命，
+                  走带外链路，不依赖实例的网络。
+                </p>
+                <el-input v-model="consoleKey" type="textarea" :rows="2" class="mono"
+                          placeholder="粘贴 SSH 公钥（ssh-ed25519 AAAA... ）" />
+                <el-button type="primary" size="small" style="margin-top:10px;"
+                           @click="doConsole" :loading="consoling">创建连接</el-button>
+              </template>
+            </div>
+
+            <!-- 备份 -->
+            <div class="drawer-sec">
+              <h4>
+                备份
+                <el-button size="small" text @click="loadBackups(true)"
+                           :loading="backupsLoading">刷新</el-button>
+              </h4>
+              <div class="table-wrap" v-if="(backups.backups || []).length">
+                <el-table :data="backups.backups" size="small" stripe border>
+                  <el-table-column prop="display_name" label="名称" min-width="140"
+                                   show-overflow-tooltip />
+                  <el-table-column label="状态" width="92">
+                    <template #default="{row}">
+                      <span class="state">
+                        <i :class="['dot', row.state === 'AVAILABLE' ? 'ok' : 'warn']"></i>
+                        <span class="state-label">{{ row.state === 'AVAILABLE' ? '可用' : '进行中' }}</span>
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="大小" width="76">
+                    <template #default="{row}"><span class="mono">{{ row.size_gb }}G</span></template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="128">
+                    <template #default="{row}">
+                      <el-button size="small" :disabled="row.state !== 'AVAILABLE'"
+                                 @click="doRestore(row)">还原</el-button>
+                      <el-button size="small" type="danger" text
+                                 @click="dropBackup(row)">删</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+              <p class="hint" v-else-if="!backupsLoading">还没有备份。</p>
+              <p class="hint">
+                还原<strong>不是原地回滚</strong>：OCI 只能用备份造一个新的引导卷，
+                原实例不受影响。新卷会占 200GB 额度。
+              </p>
+            </div>
+          </template>
+        </el-drawer>
+
         <!-- 账单 -->
         <section class="pane" v-show="activeTab === 'billing'">
           <div class="card">
@@ -1678,6 +1828,20 @@ createApp({
     const instSelection = ref([]);
     const instTableRef = ref(null);
     const usage = ref(null);
+    // ---- 实例详情抽屉 ----
+    const detailOpen = ref(false);
+    const detailLoading = ref(false);
+    const detail = ref({});
+    const detailRow = ref(null);
+    const resizeForm = reactive({ ocpus: 1, memory_gb: 6 });
+    const resizing = ref(false);
+    const growForm = reactive({ size_gb: 50 });
+    const growing = ref(false);
+    const consoleKey = ref('');
+    const consoling = ref(false);
+    const backups = ref({});
+    const backupsLoading = ref(false);
+    const backingUp = ref(false);
     // 锁定的账户（服务端持久化）
     const lockedProfile = ref('');
     // 当月流量 / 账单
@@ -2757,6 +2921,181 @@ createApp({
       } finally { billingLoading.value = false; }
     }
 
+    async function openDetail(row) {
+      detailRow.value = row;
+      detailOpen.value = true;
+      detail.value = {};
+      backups.value = {};
+      consoleKey.value = '';
+      detailLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/provision/instances/detail', {
+          params: { profile: row.profile || currentProfile.value,
+                    instance_id: row.id, compartment_id: row.compartment_id },
+        });
+        detail.value = data;
+        resizeForm.ocpus = data.ocpus || 1;
+        resizeForm.memory_gb = data.memory_gb || 6;
+        growForm.size_gb = (data.boot_volume && data.boot_volume.size_gb) || 50;
+        if (data.boot_volume) loadBackups(true);
+      } catch (e) {
+        ElMessage.error(errMsg(e, '详情加载失败'));
+        detailOpen.value = false;
+      } finally { detailLoading.value = false; }
+    }
+
+    // OCPU 改小时内存跟着收，否则会停在一个后端必然拒绝的组合上
+    function syncResizeMem() {
+      const cap = resizeForm.ocpus * 6;
+      if (resizeForm.memory_gb > cap) resizeForm.memory_gb = cap;
+    }
+
+    async function doResize() {
+      const row = detailRow.value;
+      try {
+        await ElMessageBox.confirm(
+          `把「${detail.value.display_name}」改成 ${resizeForm.ocpus} OCPU / ` +
+          `${resizeForm.memory_gb} GB？\nOCI 可能会为此重启这台实例。`,
+          '调整规格',
+          { type: 'warning', confirmButtonText: '应用', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      resizing.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/instances/resize', {
+          profile: row.profile || currentProfile.value, instance_id: row.id,
+          compartment_id: row.compartment_id,
+          ocpus: resizeForm.ocpus, memory_gb: resizeForm.memory_gb,
+        });
+        ElMessage.success(data.note || '规格已调整');
+        await openDetail(row);
+        loadSingle();
+      } catch (e) { ElMessage.error(errMsg(e, '调整规格失败')); }
+      finally { resizing.value = false; }
+    }
+
+    async function doGrow() {
+      const bv = detail.value.boot_volume;
+      if (!bv) return;
+      try {
+        await ElMessageBox.confirm(
+          `把引导卷从 ${bv.size_gb} GB 扩到 ${growForm.size_gb} GB？\n` +
+          `引导卷只能变大不能变小，扩完还要进系统跑 oci-growfs。`,
+          '扩容引导卷',
+          { type: 'warning', confirmButtonText: '扩容', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap' } });
+      } catch { return; }
+      growing.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/storage/resize', {
+          profile: detailRow.value.profile || currentProfile.value,
+          boot_volume_id: bv.id, size_gb: growForm.size_gb,
+          compartment_id: detailRow.value.compartment_id,
+        });
+        ElMessage.success(data.note || '已扩容');
+        await openDetail(detailRow.value);
+        if (storage.value) loadStorage();
+      } catch (e) { ElMessage.error(errMsg(e, '扩容失败')); }
+      finally { growing.value = false; }
+    }
+
+    async function doConsole() {
+      if (!consoleKey.value.trim()) { ElMessage.warning('先粘贴一个 SSH 公钥'); return; }
+      consoling.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/console', {
+          profile: detailRow.value.profile || currentProfile.value,
+          instance_id: detailRow.value.id,
+          compartment_id: detailRow.value.compartment_id,
+          public_key: consoleKey.value,
+        });
+        detail.value = { ...detail.value, console: data.connections };
+        ElMessage.success(data.note || '连接已创建');
+      } catch (e) { ElMessage.error(errMsg(e, '创建串口控制台失败')); }
+      finally { consoling.value = false; }
+    }
+
+    async function dropConsole(id) {
+      try {
+        await ElMessageBox.confirm('删除这个串口控制台连接？', '确认',
+          { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
+      } catch { return; }
+      try {
+        await axios.post('/api/provision/console/delete', {
+          profile: detailRow.value.profile || currentProfile.value, connection_id: id });
+        detail.value = { ...detail.value, console: [] };
+        ElMessage.success('已删除');
+      } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+    }
+
+    async function loadBackups(force) {
+      const bv = detail.value.boot_volume;
+      if (!bv) return;
+      if (backups.value.backups && !force) return;
+      backupsLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/provision/backups', {
+          params: { profile: detailRow.value.profile || currentProfile.value,
+                    compartment_id: detailRow.value.compartment_id,
+                    boot_volume_id: bv.id },
+        });
+        backups.value = data;
+      } catch (e) { ElMessage.error(errMsg(e, '备份列表加载失败')); }
+      finally { backupsLoading.value = false; }
+    }
+
+    async function doBackup() {
+      const bv = detail.value.boot_volume;
+      if (!bv) return;
+      backingUp.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/backups', {
+          profile: detailRow.value.profile || currentProfile.value,
+          boot_volume_id: bv.id, backup_type: 'INCREMENTAL',
+        });
+        ElMessage.success(data.note || '备份已发起');
+        loadBackups(true);
+      } catch (e) { ElMessage.error(errMsg(e, '备份失败')); }
+      finally { backingUp.value = false; }
+    }
+
+    async function dropBackup(row) {
+      try {
+        await ElMessageBox.confirm(`删除备份「${row.display_name}」？这一步不可撤销。`,
+          '确认删除', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
+      } catch { return; }
+      try {
+        await axios.post('/api/provision/backups/delete', {
+          profile: detailRow.value.profile || currentProfile.value, backup_id: row.id });
+        ElMessage.success('已删除');
+        loadBackups(true);
+      } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+    }
+
+    async function doRestore(row) {
+      try {
+        await ElMessageBox.confirm(
+          `用备份「${row.display_name}」还原？\n\n` +
+          `这不是原地回滚：会新建一个 ${row.size_gb} GB 的引导卷，` +
+          `当前这台实例不受影响。新卷会占用 200GB 存储额度，` +
+          `之后需要用它开一台新实例才能真正用上。`,
+          '还原备份',
+          { type: 'warning', confirmButtonText: '还原', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap', maxWidth: '520px' } });
+      } catch { return; }
+      try {
+        const { data } = await axios.post('/api/provision/backups/restore', {
+          profile: detailRow.value.profile || currentProfile.value,
+          backup_id: row.id,
+          availability_domain: detail.value.availability_domain,
+          compartment_id: detailRow.value.compartment_id,
+        });
+        ElMessageBox.alert(data.note, `已还原为 ${data.display_name}`,
+          { customStyle: { whiteSpace: 'pre-wrap' } });
+        if (storage.value) loadStorage();
+      } catch (e) { ElMessage.error(errMsg(e, '还原失败')); }
+    }
+
     async function loadTier(force) {
       if (!currentProfile.value) return;
       if (tier.value.tier && !force) return;
@@ -3006,6 +3345,11 @@ createApp({
       loadConsolePolicy, saveConsolePolicy,
       tier, tierLoading, loadTier, tiers, tierBusy, loadAllTiers,
       lockedProfile, toggleLock,
+      detailOpen, detailLoading, detail, openDetail,
+      resizeForm, resizing, doResize, syncResizeMem,
+      growForm, growing, doGrow,
+      consoleKey, consoling, doConsole, dropConsole,
+      backups, backupsLoading, backingUp, loadBackups, doBackup, dropBackup, doRestore,
       egress, egressLoading, loadEgress, fmtGb, fmtDay,
       cost, invoices, billingLoading, loadBilling, invoiceDot, invoiceText,
       tierDot, tierText, tierTitle, tierDotOf,

@@ -1684,3 +1684,265 @@ def month_cost(profile: str) -> dict:
         "error": None,
         "note": None if total else "本月暂无消费记录（免费额度内不产生费用）。",
     })
+
+
+# ---------------- 实例详情 / 改规格 ----------------
+
+def instance_detail(profile: str, instance_id: str, compartment_id: str = None) -> dict:
+    """一台实例的完整信息：规格、网络、引导卷、串口控制台。
+
+    列表页为了省调用只带最基本的字段，详情页才把这些一次性凑齐。
+    """
+    inst = _b().get_instance(profile, instance_id)
+    cid = compartment_id or _get(inst, "compartment-id", "compartment_id")
+
+    detail = {
+        "id": inst.get("id"),
+        "display_name": _get(inst, "display-name", "display_name"),
+        "state": _get(inst, "lifecycle-state", "lifecycle_state"),
+        "shape": inst.get("shape"),
+        "compartment_id": cid,
+        "availability_domain": _get(inst, "availability-domain", "availability_domain"),
+        "fault_domain": _get(inst, "fault-domain", "fault_domain"),
+        "region": inst.get("region"),
+        "time_created": _get(inst, "time-created", "time_created"),
+    }
+    sc = _get(inst, "shape-config", "shape_config") or {}
+    detail["ocpus"] = _num(sc.get("ocpus"), 0)
+    detail["memory_gb"] = _num(_get(sc, "memory-in-gbs", "memory_in_gbs"), 0)
+    detail["is_flex"] = "flex" in str(inst.get("shape") or "").lower()
+    detail["family"] = freetier.shape_family(inst.get("shape") or "")
+
+    # 网络
+    with_ip = attach_ips(profile, [inst])
+    first = with_ip[0] if with_ip else {}
+    detail["public_ip"] = first.get("public_ip")
+    detail["private_ip"] = first.get("private_ip")
+    detail["ipv6"] = first.get("ipv6")
+
+    # 引导卷
+    detail["boot_volume"] = None
+    try:
+        ad = detail["availability_domain"]
+        for att in _b().list_boot_volume_attachments(profile, cid, ad):
+            if _get(att, "instance-id", "instance_id") != instance_id:
+                continue
+            bv_id = _get(att, "boot-volume-id", "boot_volume_id")
+            bv = _b().get_boot_volume(profile, bv_id)
+            detail["boot_volume"] = {
+                "id": bv_id,
+                "display_name": _get(bv, "display-name", "display_name"),
+                "size_gb": _num(_get(bv, "size-in-gbs", "size_in_gbs"), 0),
+                "vpus": _num(_get(bv, "vpus-per-gb", "vpus_per_gb"), 10),
+                "state": _get(bv, "lifecycle-state", "lifecycle_state"),
+            }
+            break
+    except OCIError as e:
+        detail["boot_volume_error"] = e.message
+
+    # 串口控制台
+    try:
+        detail["console"] = console_connections(profile, cid, instance_id)
+    except OCIError as e:
+        detail["console"] = []
+        detail["console_error"] = e.message
+    return detail
+
+
+def resize_instance_shape(profile: str, instance_id: str, ocpus: float,
+                          memory_gb: float, compartment_id: str = None) -> dict:
+    """改 Flex 机型的 OCPU / 内存，先过免费额度这一关。"""
+    inst = _b().get_instance(profile, instance_id)
+    shape = inst.get("shape") or ""
+    if "flex" not in shape.lower():
+        raise OCIError(f"{shape} 是固定规格，改不了 OCPU / 内存。"
+                       "只有 A1.Flex 这类弹性机型才支持。")
+
+    if freetier.shape_family(shape) == "arm":
+        if not (freetier.ARM_MIN_OCPU <= ocpus <= freetier.ARM_MAX_OCPU):
+            raise OCIError(f"ARM 免费额度只有 {freetier.ARM_MIN_OCPU}-"
+                           f"{freetier.ARM_MAX_OCPU} OCPU")
+        if memory_gb > ocpus * freetier.ARM_GB_PER_OCPU:
+            raise OCIError(f"{ocpus:g} OCPU 最多配 "
+                           f"{ocpus * freetier.ARM_GB_PER_OCPU:g}GB 内存")
+        # 同租户下其它 ARM 实例已经占掉的部分也要算进来，
+        # 否则两台各改到 4 OCPU 都能过，合起来就超了
+        others_ocpu = others_mem = 0.0
+        for other in list_instances(profile, compartment_id, subtree=True):
+            if other.get("id") == instance_id:
+                continue
+            if freetier.shape_family(other.get("shape") or "") != "arm":
+                continue
+            osc = _get(other, "shape-config", "shape_config") or {}
+            others_ocpu += _num(osc.get("ocpus"), 0)
+            others_mem += _num(_get(osc, "memory-in-gbs", "memory_in_gbs"), 0)
+        if others_ocpu + ocpus > freetier.ARM_MAX_OCPU:
+            raise OCIError(f"改完会超出 ARM 免费额度：其它实例已占 {others_ocpu:g} OCPU，"
+                           f"加这台的 {ocpus:g} 就是 {others_ocpu + ocpus:g}，"
+                           f"上限 {freetier.ARM_MAX_OCPU}")
+        limit_mem = freetier.ARM_MAX_OCPU * freetier.ARM_GB_PER_OCPU
+        if others_mem + memory_gb > limit_mem:
+            raise OCIError(f"改完会超出 ARM 内存额度：其它实例已占 {others_mem:g}GB，"
+                           f"加这台的 {memory_gb:g}GB 就是 {others_mem + memory_gb:g}GB，"
+                           f"上限 {limit_mem:g}GB")
+
+    result = _b().update_instance_shape(profile, instance_id, ocpus, memory_gb)
+    invalidate_read_cache(profile)
+    return {"ok": True, "instance": result,
+            "note": "OCI 会在需要时重启这台实例来应用新规格。"}
+
+
+# ---------------- 串口控制台 ----------------
+
+def console_connections(profile: str, compartment_id: str, instance_id: str = None) -> list:
+    rows = _b().list_console_connections(profile, compartment_id, instance_id)
+    out = []
+    for c in rows:
+        state = _get(c, "lifecycle-state", "lifecycle_state")
+        if state in ("DELETED", "DELETING"):
+            continue
+        out.append({
+            "id": c.get("id"),
+            "instance_id": _get(c, "instance-id", "instance_id"),
+            "state": state,
+            "ssh_command": _get(c, "connection-string", "connection_string"),
+            "vnc_command": _get(c, "vnc-connection-string", "vnc_connection_string"),
+            "fingerprint": _get(c, "service-host-key-fingerprint",
+                                "service_host_key_fingerprint"),
+        })
+    return out
+
+
+def create_console(profile: str, instance_id: str, public_key: str,
+                   compartment_id: str = None) -> dict:
+    """建串口控制台连接。
+
+    这是 SSH 进不去时唯一的救命通道（防火墙关错、fstab 写错、sshd 配置改坏），
+    走带外链路，不依赖实例自身的网络。
+    """
+    cid = compartment_id or _get(_b().get_instance(profile, instance_id),
+                                 "compartment-id", "compartment_id")
+    existing = console_connections(profile, cid, instance_id)
+    if existing:
+        return {"ok": True, "created": False, "connections": existing,
+                "note": "这台实例已经有一个串口控制台连接了，直接用下面的命令。"}
+    _b().create_console_connection(profile, instance_id, public_key.strip())
+    invalidate_read_cache(profile)
+    return {"ok": True, "created": True,
+            "connections": console_connections(profile, cid, instance_id),
+            "note": "连接已创建。用与公钥配对的**私钥**执行下面的命令进入串口控制台。"}
+
+
+def delete_console(profile: str, connection_id: str) -> dict:
+    _b().delete_console_connection(profile, connection_id)
+    invalidate_read_cache(profile)
+    return {"ok": True}
+
+
+# ---------------- 引导卷备份 / 扩容 ----------------
+
+def boot_volume_backups(profile: str, compartment_id: str = None,
+                        boot_volume_id: str = None) -> dict:
+    cid = compartment_id or tenancy_of(profile)
+    rows = _b().list_boot_volume_backups(profile, cid, boot_volume_id)
+    backups = []
+    for b in rows:
+        state = _get(b, "lifecycle-state", "lifecycle_state")
+        if state in ("TERMINATED", "TERMINATING"):
+            continue
+        backups.append({
+            "id": b.get("id"),
+            "display_name": _get(b, "display-name", "display_name"),
+            "boot_volume_id": _get(b, "boot-volume-id", "boot_volume_id"),
+            "state": state,
+            "type": b.get("type"),
+            "size_gb": _num(_get(b, "size-in-gbs", "size_in_gbs"), 0),
+            "unique_size_gb": _num(_get(b, "unique-size-in-gbs", "unique_size_in_gbs"), 0),
+            "time_created": _get(b, "time-created", "time_created"),
+        })
+    backups.sort(key=lambda x: str(x["time_created"] or ""), reverse=True)
+    return {"backups": backups, "total": len(backups)}
+
+
+def create_backup(profile: str, boot_volume_id: str, display_name: str = "",
+                  backup_type: str = "INCREMENTAL") -> dict:
+    name = display_name or ("ocix-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M"))
+    data = _b().create_boot_volume_backup(profile, boot_volume_id, name, backup_type)
+    invalidate_read_cache(profile)
+    return {"ok": True, "backup_id": data.get("id"), "display_name": name,
+            "note": "备份在后台进行，完成前状态一直是 CREATING。"}
+
+
+def delete_backup(profile: str, backup_id: str) -> dict:
+    _b().delete_boot_volume_backup(profile, backup_id)
+    invalidate_read_cache(profile)
+    return {"ok": True}
+
+
+def restore_backup(profile: str, backup_id: str, availability_domain: str,
+                   display_name: str = "", compartment_id: str = None) -> dict:
+    """从备份还原出一个新的引导卷。
+
+    **不是原地恢复**：OCI 只能用备份造一个新卷，原来那台机器不受影响。
+    还原完要拿这个卷开一台新实例才能真正用上。
+
+    新卷占 200GB 额度，所以先过闸门——否则还原是成功了，
+    额度却被撑爆，下次反而开不出机器。
+    """
+    cid = compartment_id or tenancy_of(profile)
+    target = None
+    for b in boot_volume_backups(profile, cid)["backups"]:
+        if b["id"] == backup_id:
+            target = b
+            break
+    if target is None:
+        raise OCIError("找不到这个备份，刷新后重试")
+
+    size = int(target["size_gb"] or freetier.MIN_BOOT_GB)
+    used = storage_overview(profile, cid)["summary"]["total_gb"]
+    after = used + size
+    if after > freetier.MAX_BOOT_GB:
+        raise OCIError(
+            f"还原会超出存储额度：当前已用 {used:g}GB，这个备份还原出来 {size}GB，"
+            f"合计 {after:g}GB，上限 {freetier.MAX_BOOT_GB}GB。"
+            "先去「存储」页清掉不用的卷再来。")
+
+    name = display_name or ((target["display_name"] or "restore") + "-restored")
+    data = _b().create_boot_volume_from_backup(
+        profile, cid, availability_domain, backup_id, name, size)
+    invalidate_read_cache(profile)
+    return {"ok": True, "boot_volume_id": data.get("id"), "display_name": name,
+            "size_gb": size,
+            "note": "已还原成一个新的引导卷，原实例没有任何变动。"
+                    "要用它就去「新建实例」，用这个引导卷开机。"}
+
+
+def resize_boot_volume(profile: str, boot_volume_id: str, size_gb: int,
+                       compartment_id: str = None) -> dict:
+    """引导卷扩容。只能变大，且要过 200GB 额度这一关。"""
+    bv = _b().get_boot_volume(profile, boot_volume_id)
+    current = _num(_get(bv, "size-in-gbs", "size_in_gbs"), 0)
+    size_gb = int(size_gb)
+
+    if size_gb < current:
+        raise OCIError(f"引导卷只能扩容不能缩容（当前 {current:g}GB）。"
+                       "要变小只能重建实例。")
+    if size_gb == current:
+        return {"ok": True, "changed": False, "size_gb": current}
+    if size_gb < freetier.MIN_BOOT_GB:
+        raise OCIError(f"引导卷不能小于 {freetier.MIN_BOOT_GB}GB")
+
+    cid = compartment_id or tenancy_of(profile)
+    used = storage_overview(profile, cid)["summary"]["total_gb"]
+    after = used - current + size_gb
+    if after > freetier.MAX_BOOT_GB:
+        raise OCIError(
+            f"扩容会超出存储额度：当前已用 {used:g}GB，这个卷从 {current:g} 改成 "
+            f"{size_gb}GB 之后合计 {after:g}GB，上限 {freetier.MAX_BOOT_GB}GB。")
+
+    _b().update_boot_volume_size(profile, boot_volume_id, size_gb)
+    invalidate_read_cache(profile)
+    return {"ok": True, "changed": True, "size_gb": size_gb, "old_size_gb": current,
+            "note": "云端的卷已经变大了，但系统里还看不到——"
+                    "要进实例执行 sudo /usr/libexec/oci-growfs 把分区撑开"
+                    "（Oracle 的 Ubuntu 镜像自带这个脚本）。"}

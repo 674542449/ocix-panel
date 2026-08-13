@@ -49,6 +49,9 @@ class FakeBackend(Backend):
         self.metrics = []
         self.home_region_name = "us-ashburn-1"
         self.invoices = []
+        self.console = []
+        self.boot_volume_attachments = []
+        self.backups = []
         self.usage_items = []
         # Identity Domain 与控制台密码策略（默认就是 Oracle 那个 120 天）
         self.domains = [{"id": "dom1", "display_name": "Default",
@@ -123,7 +126,7 @@ class FakeBackend(Backend):
 
     def list_boot_volume_attachments(self, profile, compartment_id, availability_domain):
         self._rec("list_boot_volume_attachments")
-        return []
+        return [_to_sdk_shape(a) for a in self.boot_volume_attachments]
 
     def list_volume_attachments(self, profile, compartment_id):
         self._rec("list_volume_attachments")
@@ -256,6 +259,78 @@ class FakeBackend(Backend):
     def list_subscriptions(self, profile, compartment_id):
         self._rec("list_subscriptions")
         return list(self.subscriptions)
+
+    # ---------- 详情 / 改规格 / 控制台 / 备份 ----------
+    def get_instance(self, profile, instance_id):
+        self._rec("get_instance")
+        for i in self.instances:
+            if i.get("id") == instance_id:
+                return _to_sdk_shape(i)
+        return _to_sdk_shape({"id": instance_id, "shape": "VM.Standard.A1.Flex",
+                              "compartment-id": "cid", "availability-domain": "AD-1",
+                              "lifecycle-state": "RUNNING", "display-name": "box",
+                              "shape-config": {"ocpus": 1, "memory-in-gbs": 6}})
+
+    def update_instance_shape(self, profile, instance_id, ocpus, memory_gb):
+        self._rec("update_instance_shape")
+        self.resized = {"instance_id": instance_id, "ocpus": ocpus, "memory_gb": memory_gb}
+        return {"id": instance_id, "shape_config": {"ocpus": ocpus, "memory_in_gbs": memory_gb}}
+
+    def create_console_connection(self, profile, instance_id, public_key):
+        self._rec("create_console_connection")
+        conn = {"id": "conn1", "instance-id": instance_id, "lifecycle-state": "ACTIVE",
+                "connection-string": "ssh -o ProxyCommand=... ocid1.instance..x",
+                "vnc-connection-string": "ssh -L 5900:... ocid1.instance..x",
+                "service-host-key-fingerprint": "aa:bb"}
+        self.console.append(conn)
+        return _to_sdk_shape(conn)
+
+    def list_console_connections(self, profile, compartment_id, instance_id=None):
+        self._rec("list_console_connections")
+        rows = [c for c in self.console
+                if not instance_id or c.get("instance-id") == instance_id]
+        return [_to_sdk_shape(c) for c in rows]
+
+    def delete_console_connection(self, profile, connection_id):
+        self._rec("delete_console_connection")
+        self.console = [c for c in self.console if c.get("id") != connection_id]
+
+    def get_boot_volume(self, profile, boot_volume_id):
+        self._rec("get_boot_volume")
+        for v in self.boot_volumes:
+            if v.get("id") == boot_volume_id:
+                return _to_sdk_shape(v)
+        return _to_sdk_shape({"id": boot_volume_id, "size-in-gbs": 50,
+                              "display-name": "bv", "lifecycle-state": "AVAILABLE"})
+
+    def update_boot_volume_size(self, profile, boot_volume_id, size_gb):
+        self._rec("update_boot_volume_size")
+        self.resized_volume = {"id": boot_volume_id, "size_gb": size_gb}
+        return {"id": boot_volume_id, "size_in_gbs": size_gb}
+
+    def create_boot_volume_backup(self, profile, boot_volume_id, display_name, backup_type):
+        self._rec("create_boot_volume_backup")
+        row = {"id": "bk-new", "boot-volume-id": boot_volume_id,
+               "display-name": display_name, "type": backup_type,
+               "lifecycle-state": "CREATING", "size-in-gbs": 50}
+        self.backups.append(row)
+        return _to_sdk_shape(row)
+
+    def list_boot_volume_backups(self, profile, compartment_id, boot_volume_id=None):
+        self._rec("list_boot_volume_backups")
+        rows = [b for b in self.backups
+                if not boot_volume_id or b.get("boot-volume-id") == boot_volume_id]
+        return [_to_sdk_shape(b) for b in rows]
+
+    def delete_boot_volume_backup(self, profile, backup_id):
+        self._rec("delete_boot_volume_backup")
+        self.backups = [b for b in self.backups if b.get("id") != backup_id]
+
+    def create_boot_volume_from_backup(self, profile, compartment_id, availability_domain,
+                                       backup_id, display_name, size_gb):
+        self._rec("create_boot_volume_from_backup")
+        self.restored = {"backup_id": backup_id, "name": display_name, "size_gb": size_gb}
+        return {"id": "bv-restored", "display_name": display_name}
 
     def home_region(self, profile, tenancy_id):
         self._rec("home_region")
