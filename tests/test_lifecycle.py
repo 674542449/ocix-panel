@@ -270,3 +270,67 @@ def test_detail_has_no_silently_empty_fields(fake):
                   "time_created", "ocpus", "memory_gb", "public_ip", "private_ip"):
         assert d.get(field), f"{field} 是空的"
     assert d["boot_volume"] and d["boot_volume"]["size_gb"] == 50
+
+
+# ── 挑一条可用的串口控制台连接 ──
+
+def _conn(state="ACTIVE", iid="i-arm"):
+    return {"id": "c1", "instance-id": iid, "lifecycle-state": state,
+            "connection-string": "ssh -o ProxyCommand=... x@y",
+            "vnc-connection-string": "ssh -L ... x@y"}
+
+
+def test_pick_console_returns_the_active_one(fake):
+    fake.instances = [_arm()]
+    fake.console = [_conn("ACTIVE")]
+    assert H.pick_console("P", "i-arm", "cid")["state"] == "ACTIVE"
+
+
+def test_pick_console_falls_back_to_the_instance_compartment(fake):
+    """回归：前端某些路径没带 compartment，传空串会一条都查不到，
+    然后报「还没有连接」——可用户明明刚创建成功。"""
+    fake.instances = [_arm()]
+    fake.console = [_conn("ACTIVE")]
+    # 不传 compartment，应当自己去实例上取
+    assert H.pick_console("P", "i-arm")["state"] == "ACTIVE"
+    assert H.pick_console("P", "i-arm", "")["state"] == "ACTIVE"
+    assert H.pick_console("P", "i-arm", None)["state"] == "ACTIVE"
+
+
+def test_creating_connection_says_wait_not_missing(fake):
+    """还在创建 ≠ 不存在。说成「没有连接」会让人反复重建。"""
+    fake.instances = [_arm()]
+    fake.console = [_conn("CREATING")]
+    with pytest.raises(OCIError, match="还在创建中"):
+        H.pick_console("P", "i-arm", "cid")
+
+
+def test_failed_connection_suggests_recreating(fake):
+    fake.instances = [_arm()]
+    fake.console = [_conn("FAILED")]
+    with pytest.raises(OCIError) as exc:
+        H.pick_console("P", "i-arm", "cid")
+    assert "FAILED" in str(exc.value)
+
+
+def test_no_connection_at_all(fake):
+    fake.instances = [_arm()]
+    fake.console = []
+    with pytest.raises(OCIError, match="没有串口控制台连接"):
+        H.pick_console("P", "i-arm", "cid")
+
+
+def test_pick_console_ignores_other_instances(fake):
+    fake.instances = [_arm()]
+    fake.console = [_conn("ACTIVE", iid="i-other")]
+    with pytest.raises(OCIError, match="没有串口控制台连接"):
+        H.pick_console("P", "i-arm", "cid")
+
+
+def test_error_names_the_actual_states(fake):
+    """报错要说出实际看到的状态，否则没法判断下一步做什么。"""
+    fake.instances = [_arm()]
+    fake.console = [_conn("CREATING")]
+    with pytest.raises(OCIError) as exc:
+        H.pick_console("P", "i-arm", "cid")
+    assert "CREATING" in str(exc.value)

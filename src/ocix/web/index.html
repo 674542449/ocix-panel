@@ -1334,13 +1334,27 @@
                         style="margin-bottom:10px;" title="串口控制台状态读取失败"
                         :description="detail.console_error" />
               <template v-if="(detail.console || []).length">
+                <div class="kv" style="margin-bottom:8px;">
+                  <span class="state">
+                    <i :class="['dot', detail.console[0].state === 'ACTIVE' ? 'ok'
+                                : (detail.console[0].state === 'FAILED' ? 'crit' : 'warn')]"></i>
+                    <span class="state-label">{{ detail.console[0].state }}</span>
+                  </span>
+                  <span class="who" v-if="detail.console[0].state === 'CREATING'">
+                    还在创建，通常几秒钟；好了再点「在网页里连接」
+                  </span>
+                </div>
                 <p class="hint" style="margin-top:0;">用与公钥配对的私钥执行：</p>
                 <div class="log-box" v-for="c in detail.console" :key="c.id">
                   <pre class="mono">{{ c.ssh_command }}</pre>
                 </div>
                 <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
                   <el-button size="small" type="primary" @click="openTerm('console')"
-                             :disabled="!termAvailable">在网页里连接</el-button>
+                             :disabled="!termAvailable || detail.console[0].state !== 'ACTIVE'">
+                    在网页里连接
+                  </el-button>
+                  <el-button size="small" text @click="openDetail(detailRow)"
+                             v-if="detail.console[0].state === 'CREATING'">刷新状态</el-button>
                   <el-button size="small" type="danger" plain
                              @click="dropConsole(detail.console[0].id)">删除连接</el-button>
                 </div>

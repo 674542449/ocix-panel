@@ -1816,6 +1816,34 @@ def console_connections(profile: str, compartment_id: str, instance_id: str = No
     return out
 
 
+def pick_console(profile: str, instance_id: str, compartment_id: str = None) -> dict:
+    """挑一条能用来连接的串口控制台连接。
+
+    compartment 必须兜底成实例自己的：调用方传空（前端某些路径没带上）时，
+    拿空字符串去列会一条都查不到，然后报「还没有连接」——
+    而用户明明刚创建成功，只会觉得面板在骗人。
+
+    连接刚建出来时是 CREATING，要过几秒才 ACTIVE。这两种情况得分开说，
+    否则「还在创建」会被误报成「不存在」。
+    """
+    cid = compartment_id or _get(_b().get_instance(profile, instance_id),
+                                 "compartment-id", "compartment_id")
+    conns = console_connections(profile, cid, instance_id)
+    active = [c for c in conns if (c.get("state") or "").upper() == "ACTIVE"]
+    if active:
+        return active[0]
+
+    if not conns:
+        raise OCIError("这台实例没有串口控制台连接，先在详情里创建一个。")
+
+    states = "、".join(sorted({(c.get("state") or "未知") for c in conns}))
+    if any((c.get("state") or "").upper() == "CREATING" for c in conns):
+        raise OCIError(f"串口控制台连接还在创建中（当前状态：{states}），"
+                       "等几秒钟再点一次「在网页里连接」。")
+    raise OCIError(f"串口控制台连接当前不可用（状态：{states}）。"
+                   "如果是 FAILED，删掉重建一个。")
+
+
 def create_console(profile: str, instance_id: str, public_key: str,
                    compartment_id: str = None) -> dict:
     """建串口控制台连接。

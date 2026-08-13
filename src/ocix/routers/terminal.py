@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from .. import security, terminal
 from ..common import OCIError, account_gate
 from ..db import audit
-from ..oci_helpers import console_connections, instance_detail
+from ..oci_helpers import instance_detail, pick_console
 
 router = APIRouter(prefix="/api/terminal", tags=["terminal"])
 
@@ -108,14 +108,10 @@ async def terminal_ws(ws: WebSocket):
                         msg.get("private_key", ""), msg.get("passphrase", ""))
                     if target == "console":
                         with account_gate(profile):
-                            conns = console_connections(
-                                profile, msg.get("compartment_id") or "",
-                                msg.get("instance_id"))
-                        active = [c for c in conns if c["state"] == "ACTIVE"]
-                        if not active:
-                            raise OCIError("这台实例还没有可用的串口控制台连接，先在详情里创建。")
+                            conn = pick_console(profile, msg.get("instance_id"),
+                                                msg.get("compartment_id"))
                         session = await asyncio.to_thread(
-                            terminal.open_console, active[0]["ssh_command"], pkey, cols, rows)
+                            terminal.open_console, conn["ssh_command"], pkey, cols, rows)
                     else:
                         host = msg.get("host") or ""
                         if not host:
