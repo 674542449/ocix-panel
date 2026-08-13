@@ -6,3 +6,5 @@ python-multipart==0.0.12
 pydantic==2.9.2
 # Oracle 官方 Python SDK：面板全部 OCI 操作都走它
 oci>=2.130,<3
+# 网页终端：把浏览器的 WebSocket 桥到 SSH 会话
+paramiko>=3.4,<6

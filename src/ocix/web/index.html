@@ -209,6 +209,14 @@
     .dot.attn { background:var(--warn); color:var(--warn); }
     .state-label { font-size:12px; font-variant-numeric:tabular-nums; }
 
+    /* 网页终端 */
+    .term-dialog .el-dialog__body { padding:0; }
+    .term-wrap { background:#0b1020; padding:10px 12px; height:62vh; min-height:320px; }
+    .term-wrap .xterm { height:100%; }
+    .term-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+                padding:10px 14px; border-bottom:1px solid var(--line); background:var(--panel-2); }
+    .term-bar .who { margin-left:auto; }
+
     /* 详情抽屉里的键值表 */
     .dl { display:grid; grid-template-columns:96px 1fr; gap:8px 14px; font-size:13px; }
     .dl dt { color:var(--muted); font-size:12px; }
@@ -1257,6 +1265,20 @@
               <dd class="mono" style="font-size:11px;">{{ detail.id }}</dd>
             </dl>
 
+            <div class="drawer-sec">
+              <h4>网页终端</h4>
+              <el-button type="primary" size="small" @click="openTerm('direct')"
+                         :disabled="!termAvailable || !detail.public_ip">
+                直连 SSH
+              </el-button>
+              <p class="hint" v-if="!detail.public_ip">
+                这台实例没有公网 IP，直连不了；可以用下面的串口控制台。
+              </p>
+              <p class="hint" v-else>
+                私钥只在这次连接期间存在于内存，关掉终端即销毁，不会写进面板。
+              </p>
+            </div>
+
             <!-- 改规格：只有 Flex 机型能改 -->
             <div class="drawer-sec" v-if="detail.is_flex">
               <h4>调整规格</h4>
@@ -1316,16 +1338,37 @@
                 <div class="log-box" v-for="c in detail.console" :key="c.id">
                   <pre class="mono">{{ c.ssh_command }}</pre>
                 </div>
-                <el-button size="small" type="danger" plain style="margin-top:10px;"
-                           @click="dropConsole(detail.console[0].id)">删除连接</el-button>
+                <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+                  <el-button size="small" type="primary" @click="openTerm('console')"
+                             :disabled="!termAvailable">在网页里连接</el-button>
+                  <el-button size="small" type="danger" plain
+                             @click="dropConsole(detail.console[0].id)">删除连接</el-button>
+                </div>
+                <p class="hint" v-if="!termAvailable">
+                  服务端没有装 paramiko，网页终端不可用；上面的命令仍可在本地执行。
+                </p>
               </template>
               <template v-else>
                 <p class="hint" style="margin-top:0;">
                   SSH 进不去时（防火墙关错、fstab 写坏、sshd 配置改崩）靠它救命，
                   走带外链路，不依赖实例的网络。
                 </p>
-                <el-input v-model="consoleKey" type="textarea" :rows="2" class="mono"
-                          placeholder="粘贴 SSH 公钥（ssh-ed25519 AAAA... ）" />
+                <div class="seg" role="group" aria-label="公钥提供方式" style="margin-bottom:10px;">
+                  <button type="button" :class="{ on: consoleKeyMode === 'file' }"
+                          @click="consoleKeyMode = 'file'">选择公钥文件</button>
+                  <button type="button" :class="{ on: consoleKeyMode === 'text' }"
+                          @click="consoleKeyMode = 'text'">粘贴公钥</button>
+                </div>
+                <el-upload v-if="consoleKeyMode === 'file'" :auto-upload="false" :limit="1"
+                           :on-change="onConsoleKeyFile" :show-file-list="true"
+                           accept=".pub,.txt">
+                  <el-button size="small">选择 .pub 文件</el-button>
+                </el-upload>
+                <el-input v-else v-model="consoleKey" type="textarea" :rows="2" class="mono"
+                          placeholder="ssh-ed25519 AAAA..." />
+                <p class="hint" v-if="consoleKeyMode === 'file' && consoleKey">
+                  已读取：{{ consoleKey.slice(0, 42) }}…
+                </p>
                 <el-button type="primary" size="small" style="margin-top:10px;"
                            @click="doConsole" :loading="consoling">创建连接</el-button>
               </template>
@@ -1371,6 +1414,33 @@
             </div>
           </template>
         </el-drawer>
+
+        <!-- 网页终端 -->
+        <el-dialog v-model="termOpen" :title="termTitle" width="min(1100px, 94vw)"
+                   class="term-dialog" :close-on-click-modal="false"
+                   @closed="closeTerm">
+          <div class="term-bar" v-if="!termConnected">
+            <template v-if="termTarget === 'direct'">
+              <el-input v-model="termUser" size="small" style="width:130px;"
+                        placeholder="用户名" />
+            </template>
+            <el-upload :auto-upload="false" :limit="1" :on-change="onPrivateKeyFile"
+                       :show-file-list="false" accept=".pem,.key,.txt,">
+              <el-button size="small">{{ termKey ? '换一把私钥' : '选择私钥文件' }}</el-button>
+            </el-upload>
+            <span class="who mono" v-if="termKeyName">{{ termKeyName }}</span>
+            <el-input v-model="termPass" size="small" type="password" show-password
+                      style="width:150px;" placeholder="私钥口令（可空）" />
+            <el-button type="primary" size="small" @click="termConnect"
+                       :loading="termConnecting" :disabled="!termKey">连接</el-button>
+          </div>
+          <div class="term-bar" v-else>
+            <span class="state"><i class="dot ok"></i><span class="state-label">已连接</span></span>
+            <span class="who">私钥只在内存里，关掉窗口即销毁</span>
+            <el-button size="small" @click="termOpen = false">断开</el-button>
+          </div>
+          <div class="term-wrap"><div ref="termEl" style="height:100%;"></div></div>
+        </el-dialog>
 
         <!-- 账单 -->
         <section class="pane" v-show="activeTab === 'billing'">
@@ -1845,6 +1915,19 @@ createApp({
     const growForm = reactive({ size_gb: 50 });
     const growing = ref(false);
     const consoleKey = ref('');
+    const consoleKeyMode = ref('file');
+    // ---- 网页终端 ----
+    const termAvailable = ref(false);
+    const termOpen = ref(false);
+    const termTarget = ref('direct');
+    const termUser = ref('ubuntu');
+    const termKey = ref('');
+    const termKeyName = ref('');
+    const termPass = ref('');
+    const termConnecting = ref(false);
+    const termConnected = ref(false);
+    const termEl = ref(null);
+    let termInst = null, termFit = null, termWs = null, termResizeHandler = null;
     const consoling = ref(false);
     const backups = ref({});
     const backupsLoading = ref(false);
@@ -2935,6 +3018,7 @@ createApp({
       backups.value = {};
       consoleKey.value = '';
       detailLoading.value = true;
+      if (!termAvailable.value) loadTermAvailable();
       try {
         const { data } = await axios.get('/api/provision/instances/detail', {
           params: { profile: row.profile || currentProfile.value,
@@ -3101,6 +3185,170 @@ createApp({
           { customStyle: { whiteSpace: 'pre-wrap' } });
         if (storage.value) loadStorage();
       } catch (e) { ElMessage.error(errMsg(e, '还原失败')); }
+    }
+
+    // ---- 网页终端 ----
+    const termTitle = computed(() =>
+      (termTarget.value === 'console' ? '串口控制台 · ' : 'SSH · ') +
+      (detail.value.display_name || ''));
+
+    function readFileAsText(file, onDone) {
+      const reader = new FileReader();
+      reader.onload = () => onDone(String(reader.result || '').trim());
+      reader.onerror = () => ElMessage.error('读取文件失败');
+      reader.readAsText(file.raw || file);
+    }
+
+    function onConsoleKeyFile(file) {
+      readFileAsText(file, (text) => {
+        if (text.includes('PRIVATE KEY')) {
+          ElMessage.error('这是私钥文件。创建串口控制台连接需要的是公钥（.pub）');
+          return;
+        }
+        consoleKey.value = text;
+      });
+    }
+
+    function onPrivateKeyFile(file) {
+      readFileAsText(file, (text) => {
+        if (!text.includes('PRIVATE KEY')) {
+          ElMessage.error('这不像私钥。网页终端要的是私钥文件，不是 .pub');
+          return;
+        }
+        termKey.value = text;
+        termKeyName.value = file.name || '已选择私钥';
+      });
+    }
+
+    // xterm 体积不小，等真的要开终端时再加载
+    let xtermReady = null;
+    function ensureXterm() {
+      if (xtermReady) return xtermReady;
+      xtermReady = (async () => {
+        if (!document.querySelector('link[data-xterm]')) {
+          const css = document.createElement('link');
+          css.rel = 'stylesheet'; css.dataset.xterm = '1';
+          css.href = 'https://unpkg.com/xterm@5.3.0/css/xterm.css';
+          document.head.appendChild(css);
+        }
+        const load = (src) => new Promise((res, rej) => {
+          const el = document.createElement('script');
+          el.src = src; el.onload = res; el.onerror = rej;
+          document.head.appendChild(el);
+        });
+        if (typeof window.Terminal === 'undefined') {
+          await load('https://unpkg.com/xterm@5.3.0/lib/xterm.js');
+        }
+        if (typeof window.FitAddon === 'undefined') {
+          await load('https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js');
+        }
+      })();
+      return xtermReady;
+    }
+
+    async function openTerm(target) {
+      termTarget.value = target;
+      termKey.value = ''; termKeyName.value = ''; termPass.value = '';
+      termConnected.value = false;
+      termOpen.value = true;
+      try { await ensureXterm(); }
+      catch { ElMessage.error('终端组件加载失败，检查服务器能否访问 CDN'); }
+    }
+
+    function closeTerm() {
+      if (termWs) { try { termWs.close(); } catch {} termWs = null; }
+      if (termInst) { try { termInst.dispose(); } catch {} termInst = null; }
+      if (termResizeHandler) {
+        window.removeEventListener('resize', termResizeHandler);
+        termResizeHandler = null;
+      }
+      termFit = null;
+      termConnected.value = false;
+      // 私钥不留在内存里过夜
+      termKey.value = ''; termKeyName.value = ''; termPass.value = '';
+    }
+
+    async function termConnect() {
+      if (!termKey.value) { ElMessage.warning('先选一个私钥文件'); return; }
+      termConnecting.value = true;
+      try {
+        await ensureXterm();
+        const { data } = await axios.post('/api/terminal/ticket');
+        termInst = new window.Terminal({
+          fontSize: 13, cursorBlink: true, convertEol: true,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+          theme: { background: '#0b1020', foreground: '#e2e8f0', cursor: '#38bdf8' },
+        });
+        const FitAddon = window.FitAddon && (window.FitAddon.FitAddon || window.FitAddon);
+        termFit = FitAddon ? new FitAddon() : null;
+        if (termFit) termInst.loadAddon(termFit);
+        termInst.open(termEl.value);
+        if (termFit) termFit.fit();
+
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(
+          `${proto}//${location.host}/api/terminal/ws?ticket=${encodeURIComponent(data.ticket)}`);
+        termWs = ws;
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: 'open',
+            target: termTarget.value,
+            profile: detailRow.value.profile || currentProfile.value,
+            instance_id: detailRow.value.id,
+            compartment_id: detailRow.value.compartment_id,
+            host: detail.value.public_ip || '',
+            username: termUser.value || 'ubuntu',
+            private_key: termKey.value,
+            passphrase: termPass.value,
+            cols: termInst.cols, rows: termInst.rows,
+          }));
+        };
+        ws.onmessage = (ev) => {
+          let m; try { m = JSON.parse(ev.data); } catch { return; }
+          if (m.type === 'data') termInst.write(m.data);
+          else if (m.type === 'ready') {
+            termConnected.value = true;
+            // 连上之后私钥就没用了，从前端内存里也抹掉
+            termKey.value = ''; termPass.value = '';
+            termInst.focus();
+          } else if (m.type === 'error') {
+            termInst.write(`\r\n\x1b[31m${m.message}\x1b[0m\r\n`);
+            ElMessage.error(m.message);
+          } else if (m.type === 'closed') {
+            termInst.write('\r\n\x1b[90m连接已断开\x1b[0m\r\n');
+            termConnected.value = false;
+          }
+        };
+        ws.onclose = (ev) => {
+          termConnected.value = false;
+          if (ev.code === 4401) ElMessage.error('终端票据无效或已过期，请重试');
+        };
+        ws.onerror = () => ElMessage.error('终端连接出错');
+
+        termInst.onData((d) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'data', data: d }));
+          }
+        });
+        termResizeHandler = () => {
+          if (!termFit || !termInst) return;
+          termFit.fit();
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'resize', cols: termInst.cols, rows: termInst.rows }));
+          }
+        };
+        window.addEventListener('resize', termResizeHandler);
+      } catch (e) {
+        ElMessage.error(errMsg(e, '打开终端失败'));
+      } finally { termConnecting.value = false; }
+    }
+
+    async function loadTermAvailable() {
+      try {
+        const { data } = await axios.get('/api/terminal/available');
+        termAvailable.value = !!data.available;
+      } catch { termAvailable.value = false; }
     }
 
     async function loadTier(force) {
@@ -3357,6 +3605,10 @@ createApp({
       growForm, growing, doGrow,
       consoleKey, consoling, doConsole, dropConsole,
       backups, backupsLoading, backingUp, loadBackups, doBackup, dropBackup, doRestore,
+      consoleKeyMode, onConsoleKeyFile,
+      termAvailable, termOpen, termTarget, termUser, termKey, termKeyName, termPass,
+      termConnecting, termConnected, termEl, termTitle,
+      openTerm, closeTerm, termConnect, onPrivateKeyFile,
       egress, egressLoading, loadEgress, fmtGb, fmtDay,
       cost, invoices, billingLoading, loadBilling, invoiceDot, invoiceText,
       tierDot, tierText, tierTitle, tierDotOf,

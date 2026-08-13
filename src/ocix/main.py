@@ -12,7 +12,16 @@ from .backends import get_backend
 from .common import list_profiles_from_config
 from .config import CORS_ORIGINS, DEV_MODE, ENABLE_DOCS, FRONTEND_DIR, OCI_CONFIG_PATH
 from .db import init_db
-from .routers import audit, auth, instances, monitor, profiles, provision, system
+from .routers import (
+    audit,
+    auth,
+    instances,
+    monitor,
+    profiles,
+    provision,
+    system,
+    terminal,
+)
 
 VERSION = __version__
 
@@ -107,6 +116,7 @@ app.include_router(monitor.router)
 app.include_router(provision.router)
 app.include_router(audit.router)
 app.include_router(system.router)
+app.include_router(terminal.router)
 
 
 @app.get("/api/health")
