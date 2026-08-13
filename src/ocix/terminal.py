@@ -89,49 +89,75 @@ def load_private_key(text: str, passphrase: str = ""):
 
 
 # ---- 串口控制台连接串解析 ----
-# OCI 给的是一条完整的 ssh 命令，形如：
-#   ssh -o ProxyCommand="ssh -W %h:%p -p 443 <连接OCID>@instance-console.<区域>.oci.oraclecloud.com"
-#       <实例OCID>@instance-console.<区域>.oci.oraclecloud.com
-# 我们不去 shell 里执行它，而是把里面的跳板信息解析出来，用 paramiko 自己搭这两跳。
-# ProxyCommand 里的跳板：ssh -W %h:%p [-p 443] <连接OCID>@<网关>
-# 中间可能夹着 -o 这类选项，所以用 [^@\s]+@ 之前允许任意非引号内容。
-_PROXY_RE = re.compile(
-    r"ProxyCommand\s*=\s*[\"']?\s*ssh(?P<opts>[^\"']*?)"
-    r"(?P<user>[^@\s\"']+)@(?P<host>[A-Za-z0-9][A-Za-z0-9.\-]*)"
-)
-# 外层目标：<实例OCID>@<网关>，取最后一个匹配（ProxyCommand 在前面）
-_TARGET_RE = re.compile(
-    r"(?P<user>ocid1\.instance\.[^@\s\"']+)@(?P<host>[A-Za-z0-9][A-Za-z0-9.\-]*)"
-)
+#
+# OCI 给的是一条完整的 ssh 命令，大致长这样：
+#   ssh -o ProxyCommand="ssh -W %h:%p -p 443 <连接OCID>@<网关>" <实例OCID>@<网关>
+#
+# 但各区域 / 各版本的具体写法并不统一（引号位置、选项顺序、有没有 -i、
+# 是不是 -o "ProxyCommand=..." 整体加引号…）。早先的实现去匹配命令的形状，
+# 结果真实的串反而对不上，报「格式不认识」。
+#
+# 现在不看命令怎么写，只认里面的 user@host：
+# OCI 的两个 OCID 本身就区分了角色——
+#   ocid1.instanceconsoleconnection...  是跳板要用的用户名
+#   ocid1.instance...                   是内层目标的用户名
+# 这个特征比命令行的写法稳定得多。
+_PAIR_RE = re.compile(r"(?P<user>[A-Za-z0-9][\w.\-]*)@(?P<host>[A-Za-z0-9][A-Za-z0-9.\-]*)")
 _PORT_RE = re.compile(r"-p\s+(\d+)")
+
+# 串口控制台的跳板固定走 443；命令里没写 -p 时用它兜底
+_DEFAULT_PROXY_PORT = 443
 
 
 def parse_console_string(connection_string: str) -> dict:
     """从 OCI 给的 ssh 命令里解析出两跳的信息。
 
-    不去 shell 里执行它——那等于把外部字符串交给 shell。
+    不把这条命令交给 shell 执行——那等于让外部字符串进 shell。
     这里只取出主机、端口、用户名，然后用 paramiko 自己搭。
     """
     s = " ".join((connection_string or "").split())
-    proxy = _PROXY_RE.search(s)
-    targets = list(_TARGET_RE.finditer(s))
-    if not proxy or not targets:
-        raise OCIError("串口控制台连接串的格式不认识，没法自动连接。"
-                       "把上面那条命令复制到本地终端执行同样可用。")
+    pairs = list(_PAIR_RE.finditer(s))
+    if not pairs:
+        raise OCIError(
+            "串口控制台连接串里找不到 user@host，没法自动连接。"
+            f"实际内容：{s[:200] or '(空)'}")
 
-    # ProxyCommand 里的端口（通常 443）；外层没写 -p 就是 22
-    proxy_port = _PORT_RE.search(proxy.group("opts") or "")
-    outer = s[proxy.end():]
-    outer_port = _PORT_RE.search(outer)
+    def _pick(kind):
+        for m in pairs:
+            if kind in m.group("user"):
+                return m
+        return None
 
-    target = targets[-1]
+    jump = _pick("instanceconsoleconnection")
+    target = _pick(".instance.") or _pick("instance")
+    # 别把同一个匹配当成两跳
+    if target is jump:
+        target = None
+
+    # 认不出 OCID 就退回位置：第一个是跳板，最后一个是目标
+    if jump is None and len(pairs) >= 2:
+        jump = pairs[0]
+    if target is None and len(pairs) >= 2:
+        target = pairs[-1]
+    if jump is None or target is None or jump is target:
+        raise OCIError(
+            "串口控制台连接串里只认出一跳，没法自动连接。"
+            f"实际内容：{s[:200]}")
+
+    # 端口：串口控制台里 -p 只属于跳板（固定 443），外层那跳永远是 22。
+    # 不按位置去猜哪个 -p 归谁——顺序颠倒的写法会把它算到外层头上。
+    ports = _PORT_RE.findall(s)
+    proxy_port = int(ports[0]) if ports else _DEFAULT_PROXY_PORT
+    target_port = int(ports[1]) if len(ports) > 1 else 22
+
     return {
-        "proxy_user": proxy.group("user"),
-        "proxy_host": proxy.group("host"),
-        "proxy_port": int(proxy_port.group(1)) if proxy_port else 22,
+        "proxy_user": jump.group("user"),
+        "proxy_host": jump.group("host"),
+        "proxy_port": proxy_port,
         "target_user": target.group("user"),
         "target_host": target.group("host"),
-        "target_port": int(outer_port.group(1)) if outer_port else 22,
+        "target_port": target_port,
+        "raw": s,
     }
 
 

@@ -96,60 +96,81 @@ def test_empty_key_is_rejected():
 
 # ── 串口控制台连接串 ──
 #
-# OCI 各区域 / 各时期给的串写法不完全一样，解析器不能只认一种。
-# 回归：早先的正则里混进过一个退格字符（写正则时反斜杠-b 被 shell 吃掉写成了 0x08），
-# 于是**所有**连接串都解析失败——而且报的是「格式不认识」，很难往这上面想。
+# 真实环境里报过「格式不认识」：早先的实现去匹配 ssh 命令的形状
+# （ProxyCommand=、-W %h:%p 的位置…），而各区域 / 各版本写法并不统一。
+# 现在改成只认 user@host，按 OCID 类型区分两跳——这个特征稳定得多。
 
-BASE = ('ssh -o ProxyCommand="ssh -W %h:%p -p 443 '
-        'ocid1.instanceconsoleconnection.oc1..abc@instance-console.us-ashburn-1.oci.oraclecloud.com" '
-        'ocid1.instance.oc1..xyz@instance-console.us-ashburn-1.oci.oraclecloud.com')
+CC = "ocid1.instanceconsoleconnection.oc1.phx.aaaaabbbb"
+IN = "ocid1.instance.oc1.phx.ccccdddd"
+GW = "instance-console.us-phoenix-1.oci.oraclecloud.com"
 
 VARIANTS = {
-    "双引号": BASE,
-    "单引号": BASE.replace('"', "'"),
-    "夹杂其它 -o 选项": BASE.replace(
-        "ssh -o ProxyCommand",
-        "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ProxyCommand"),
-    "ProxyCommand 里带 -i": BASE.replace("ssh -W %h:%p", "ssh -i /path/key -W %h:%p"),
-    "折行": BASE.replace(" ocid1.instance.oc1..xyz", "\n   ocid1.instance.oc1..xyz"),
-    "老域名（无 .oci）": BASE.replace(".oci.oraclecloud.com", ".oraclecloud.com"),
-    "等号两侧有空格": BASE.replace("ProxyCommand=", "ProxyCommand = "),
+    "文档标准型": f'ssh -o ProxyCommand="ssh -W %h:%p -p 443 {CC}@{GW}" {IN}@{GW}',
+    "单引号": f"ssh -o ProxyCommand='ssh -W %h:%p -p 443 {CC}@{GW}' {IN}@{GW}",
+    "-o 整体加引号": f'ssh -o "ProxyCommand=ssh -W %h:%p -p 443 {CC}@{GW}" {IN}@{GW}',
+    "带 -i 私钥路径": (f'ssh -i ~/.ssh/id_rsa -o ProxyCommand="ssh -i ~/.ssh/id_rsa '
+                  f'-W %h:%p -p 443 {CC}@{GW}" {IN}@{GW}'),
+    "带 UserKnownHostsFile": (f'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
+                              f'-o ProxyCommand="ssh -W %h:%p -p 443 {CC}@{GW}" {IN}@{GW}'),
+    "-J 跳板写法": f'ssh -J {CC}@{GW}:443 {IN}@{GW}',
+    "老域名（无 .oci）": (f'ssh -o ProxyCommand="ssh -W %h:%p -p 443 '
+                     f'{CC}@instance-console.us-phoenix-1.oraclecloud.com" '
+                     f'{IN}@instance-console.us-phoenix-1.oraclecloud.com'),
+    "折行与多空格": f'ssh -o ProxyCommand="ssh   -W %h:%p  -p 443\n    {CC}@{GW}"\n   {IN}@{GW}',
+    "顺序颠倒（目标在前）": f'ssh {IN}@{GW} -o ProxyCommand="ssh -W %h:%p -p 443 {CC}@{GW}"',
+    "没写 -p（默认 443）": f'ssh -o ProxyCommand="ssh -W %h:%p {CC}@{GW}" {IN}@{GW}',
 }
+
+BASE = VARIANTS["文档标准型"]
 
 
 @pytest.mark.parametrize("name", list(VARIANTS))
 def test_parse_console_string_variants(name):
     info = terminal.parse_console_string(VARIANTS[name])
-    assert info["proxy_user"].startswith("ocid1.instanceconsoleconnection"), name
+    assert info["proxy_user"] == CC, name
+    assert info["target_user"] == IN, name
     assert info["proxy_host"].startswith("instance-console"), name
     assert info["proxy_port"] == 443, name
-    assert info["target_user"].startswith("ocid1.instance."), name
     assert info["target_port"] == 22, name
 
 
-def test_target_is_the_instance_not_the_console_connection():
-    """两跳的用户名不能搞反：外层是实例 OCID，跳板是连接 OCID。"""
-    info = terminal.parse_console_string(BASE)
-    assert info["target_user"] != info["proxy_user"]
-    assert ".instance." in info["target_user"]
-    assert ".instanceconsoleconnection." in info["proxy_user"]
+def test_roles_come_from_the_ocid_not_the_position():
+    """靠 OCID 类型认角色，所以目标写在前面也不会搞反。"""
+    info = terminal.parse_console_string(VARIANTS["顺序颠倒（目标在前）"])
+    assert info["proxy_user"] == CC
+    assert info["target_user"] == IN
 
 
-def test_outer_port_is_honoured_when_present():
-    s = BASE.replace('" ocid1.instance', '" -p 2222 ocid1.instance')
-    assert terminal.parse_console_string(s)["target_port"] == 2222
+def test_falls_back_to_position_when_ocids_are_unfamiliar():
+    """认不出 OCID 时退回位置：第一个当跳板，最后一个当目标。"""
+    s = 'ssh -o ProxyCommand="ssh -W %h:%p -p 443 jump@gw.example.com" target@gw.example.com'
+    info = terminal.parse_console_string(s)
+    assert info["proxy_user"] == "jump"
+    assert info["target_user"] == "target"
 
 
 def test_console_regexes_have_no_control_characters():
     """回归：正则里混进 0x08 会让所有连接串都匹配不上。"""
-    for rx in (terminal._PROXY_RE, terminal._TARGET_RE, terminal._PORT_RE):
+    for rx in (terminal._PAIR_RE, terminal._PORT_RE):
         bad = [hex(ord(c)) for c in rx.pattern if ord(c) < 32]
         assert not bad, f"{rx.pattern!r} 里有控制字符 {bad}"
 
 
-def test_unparseable_console_string_is_reported():
-    with pytest.raises(OCIError, match="格式不认识"):
+def test_error_includes_the_actual_string():
+    """解析不了时要把原文带出来，否则没法判断是什么格式。"""
+    with pytest.raises(OCIError) as exc:
+        terminal.parse_console_string("ssh no-at-sign-here")
+    assert "no-at-sign-here" in str(exc.value)
+
+
+def test_single_hop_string_is_rejected():
+    with pytest.raises(OCIError, match="只认出一跳"):
         terminal.parse_console_string("ssh someone@example.com")
+
+
+def test_empty_string_is_rejected():
+    with pytest.raises(OCIError, match="找不到 user@host"):
+        terminal.parse_console_string("")
 
 
 # ── RSA SHA-1 回退 ──
@@ -193,7 +214,7 @@ def test_console_network_error_names_the_gateway(monkeypatch):
     monkeypatch.setattr(terminal, "_auth", boom)
     with pytest.raises(OCIError) as exc:
         terminal.open_console(BASE, object())
-    assert "instance-console.us-ashburn-1" in str(exc.value)
+    assert GW in str(exc.value)
     assert "443" in str(exc.value)
 
 
