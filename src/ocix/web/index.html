@@ -1280,6 +1280,10 @@
             </div>
 
             <!-- 引导卷 -->
+            <el-alert v-if="detail.boot_volume_error" type="warning" show-icon :closable="false"
+                      style="margin-top:14px;" title="引导卷信息读取失败"
+                      :description="detail.boot_volume_error" />
+
             <div class="drawer-sec" v-if="detail.boot_volume">
               <h4>
                 引导卷
@@ -1304,6 +1308,9 @@
             <!-- 串口控制台 -->
             <div class="drawer-sec">
               <h4>串口控制台</h4>
+              <el-alert v-if="detail.console_error" type="warning" show-icon :closable="false"
+                        style="margin-bottom:10px;" title="串口控制台状态读取失败"
+                        :description="detail.console_error" />
               <template v-if="(detail.console || []).length">
                 <p class="hint" style="margin-top:0;">用与公钥配对的私钥执行：</p>
                 <div class="log-box" v-for="c in detail.console" :key="c.id">
@@ -1324,8 +1331,8 @@
               </template>
             </div>
 
-            <!-- 备份 -->
-            <div class="drawer-sec">
+            <!-- 备份：按引导卷来的，找不到卷就没法列 -->
+            <div class="drawer-sec" v-if="detail.boot_volume">
               <h4>
                 备份
                 <el-button size="small" text @click="loadBackups(true)"

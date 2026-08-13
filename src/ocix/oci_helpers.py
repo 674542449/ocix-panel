@@ -1713,12 +1713,15 @@ def instance_detail(profile: str, instance_id: str, compartment_id: str = None) 
     detail["is_flex"] = "flex" in str(inst.get("shape") or "").lower()
     detail["family"] = freetier.shape_family(inst.get("shape") or "")
 
-    # 网络
+    # 网络。
+    # 注意 attach_ips 是把结果写在**下划线开头**的键上（_public_ip …），
+    # 列表接口那边再映射成对外的名字。这里当初直接读 public_ip，
+    # 取不到也不报错，详情页的 IP 就永远是空的。
     with_ip = attach_ips(profile, [inst])
     first = with_ip[0] if with_ip else {}
-    detail["public_ip"] = first.get("public_ip")
-    detail["private_ip"] = first.get("private_ip")
-    detail["ipv6"] = first.get("ipv6")
+    detail["public_ip"] = first.get("_public_ip")
+    detail["private_ip"] = first.get("_private_ip")
+    detail["ipv6"] = first.get("_ipv6")
 
     # 引导卷
     detail["boot_volume"] = None

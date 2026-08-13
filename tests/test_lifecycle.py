@@ -26,6 +26,7 @@ def fake():
 def _arm(iid="i-arm", ocpus=1, mem=6):
     return {"id": iid, "shape": "VM.Standard.A1.Flex", "lifecycle-state": "RUNNING",
             "display-name": iid, "compartment-id": "cid", "availability-domain": "AD-1",
+            "time-created": "2026-08-01T00:00:00+00:00",
             "shape-config": {"ocpus": ocpus, "memory-in-gbs": mem}}
 
 
@@ -220,3 +221,52 @@ def test_instance_detail_survives_boot_volume_failure(fake):
     d = H.instance_detail("P", "i-arm", "cid")
     assert d["boot_volume"] is None
     assert "no permission" in d["boot_volume_error"]
+
+
+# ── 详情页的 IP（回归） ──
+
+def test_instance_detail_shows_ip_addresses(fake):
+    """回归：attach_ips 把结果写在 _public_ip 这种下划线键上，
+    详情页当初直接读 public_ip，取不到也不报错，IP 永远是空的。"""
+    fake.instances = [_arm()]
+    fake.vnic_attachments = [{"instance-id": "i-arm", "vnic-id": "vnic1",
+                              "lifecycle-state": "ATTACHED"}]
+    fake.vnic = {"id": "vnic1", "public-ip": "203.0.113.10",
+                 "private-ip": "10.0.0.5", "ipv6-addresses": ["2001:db8::1"]}
+    d = H.instance_detail("P", "i-arm", "cid")
+    assert d["public_ip"] == "203.0.113.10"
+    assert d["private_ip"] == "10.0.0.5"
+    assert d["ipv6"] == "2001:db8::1"
+
+
+def test_detail_and_list_report_the_same_ip(fake):
+    """详情和列表必须说同一件事，不能一个有一个没有。"""
+    fake.instances = [_arm()]
+    fake.vnic_attachments = [{"instance-id": "i-arm", "vnic-id": "vnic1",
+                              "lifecycle-state": "ATTACHED"}]
+    fake.vnic = {"id": "vnic1", "public-ip": "198.51.100.7", "private-ip": "10.0.0.9"}
+
+    listed = H.attach_ips("P", H.list_instances("P", "cid"))[0]
+    H.invalidate_read_cache()
+    detail = H.instance_detail("P", "i-arm", "cid")
+    assert detail["public_ip"] == listed["_public_ip"] == "198.51.100.7"
+    assert detail["private_ip"] == listed["_private_ip"] == "10.0.0.9"
+
+
+def test_detail_has_no_silently_empty_fields(fake):
+    """详情页这些字段只要后端有数据就必须填上。
+
+    这类 bug 不会报错，只会让界面上出现一个「—」，很容易漏。
+    """
+    fake.instances = [_arm(ocpus=4, mem=24)]
+    fake.vnic_attachments = [{"instance-id": "i-arm", "vnic-id": "vnic1",
+                              "lifecycle-state": "ATTACHED"}]
+    fake.vnic = {"id": "vnic1", "public-ip": "203.0.113.10", "private-ip": "10.0.0.5"}
+    fake.boot_volumes = _vol(50)
+    fake.boot_volume_attachments = [{"instance-id": "i-arm", "boot-volume-id": "v1",
+                                     "lifecycle-state": "ATTACHED"}]
+    d = H.instance_detail("P", "i-arm", "cid")
+    for field in ("id", "display_name", "state", "shape", "availability_domain",
+                  "time_created", "ocpus", "memory_gb", "public_ip", "private_ip"):
+        assert d.get(field), f"{field} 是空的"
+    assert d["boot_volume"] and d["boot_volume"]["size_gb"] == 50
