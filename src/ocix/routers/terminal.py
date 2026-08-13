@@ -111,7 +111,8 @@ async def terminal_ws(ws: WebSocket):
                             conn = pick_console(profile, msg.get("instance_id"),
                                                 msg.get("compartment_id"))
                         session = await asyncio.to_thread(
-                            terminal.open_console, conn["ssh_command"], pkey, cols, rows)
+                            terminal.open_console, conn["ssh_command"], pkey, cols, rows,
+                            20, msg.get("instance_id") or "")
                     else:
                         host = msg.get("host") or ""
                         if not host:

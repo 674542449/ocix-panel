@@ -126,7 +126,7 @@ BASE = VARIANTS["文档标准型"]
 
 @pytest.mark.parametrize("name", list(VARIANTS))
 def test_parse_console_string_variants(name):
-    info = terminal.parse_console_string(VARIANTS[name])
+    info = terminal.parse_console_string(VARIANTS[name], IN)
     assert info["proxy_user"] == CC, name
     assert info["target_user"] == IN, name
     assert info["proxy_host"].startswith("instance-console"), name
@@ -136,7 +136,7 @@ def test_parse_console_string_variants(name):
 
 def test_roles_come_from_the_ocid_not_the_position():
     """靠 OCID 类型认角色，所以目标写在前面也不会搞反。"""
-    info = terminal.parse_console_string(VARIANTS["顺序颠倒（目标在前）"])
+    info = terminal.parse_console_string(VARIANTS["顺序颠倒（目标在前）"], IN)
     assert info["proxy_user"] == CC
     assert info["target_user"] == IN
 
@@ -164,8 +164,41 @@ def test_error_includes_the_actual_string():
 
 
 def test_single_hop_string_is_rejected():
-    with pytest.raises(OCIError, match="只认出一跳"):
+    """只有一跳、又没给实例 OCID 时才该报错。"""
+    with pytest.raises(OCIError, match="只有跳板这一跳"):
         terminal.parse_console_string("ssh someone@example.com")
+
+
+# 用户真实环境（us-sanjose-1）报过「只认出一跳」：连接串里只解析到跳板。
+# 目标那一跳的用户名就是实例 OCID——调用方本来就知道，不该依赖字符串。
+REAL_CC = ("ocid1.instanceconsoleconnection.oc1.us-sanjose-1."
+           "anzwuljr2ub7k6ycbwgutzvzpuwwlxkpbrxqtas2rgyyew6eluzrjocov44a")
+REAL_GW = "instance-console.us-sanjose-1.oci.oraclecloud.com"
+REAL_IN = "ocid1.instance.oc1.us-sanjose-1.anzwuljr2ub7k6ycsomeinstanceocid0001"
+ONLY_JUMP = f"ssh -o ProxyCommand='ssh -W %h:%p -p 443 {REAL_CC}@{REAL_GW}"
+
+
+def test_real_string_with_only_the_jump_hop():
+    """回归：串里只有跳板时，靠传入的实例 OCID 也要能组出两跳。"""
+    info = terminal.parse_console_string(ONLY_JUMP, REAL_IN)
+    assert info["proxy_user"] == REAL_CC
+    assert info["proxy_host"] == REAL_GW
+    assert info["proxy_port"] == 443
+    assert info["target_user"] == REAL_IN
+    assert info["target_host"] == REAL_GW   # 同一个网关
+    assert info["target_port"] == 22
+
+
+def test_jump_ocid_is_not_mistaken_for_the_target():
+    """instanceconsoleconnection 里也含 'instance'，不能把跳板当成目标。"""
+    info = terminal.parse_console_string(ONLY_JUMP, REAL_IN)
+    assert info["proxy_user"] != info["target_user"]
+
+
+def test_instance_id_wins_over_whatever_is_in_the_string():
+    """调用方给了实例 OCID 就以它为准，不受串里内容影响。"""
+    other = f"ssh -o ProxyCommand='ssh -W %h:%p -p 443 {REAL_CC}@{REAL_GW}' stale@{REAL_GW}"
+    assert terminal.parse_console_string(other, REAL_IN)["target_user"] == REAL_IN
 
 
 def test_empty_string_is_rejected():

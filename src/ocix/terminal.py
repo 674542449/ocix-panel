@@ -109,42 +109,46 @@ _PORT_RE = re.compile(r"-p\s+(\d+)")
 _DEFAULT_PROXY_PORT = 443
 
 
-def parse_console_string(connection_string: str) -> dict:
+def parse_console_string(connection_string: str, instance_id: str = "") -> dict:
     """从 OCI 给的 ssh 命令里解析出两跳的信息。
 
     不把这条命令交给 shell 执行——那等于让外部字符串进 shell。
-    这里只取出主机、端口、用户名，然后用 paramiko 自己搭。
+
+    **只从串里解析跳板那一跳**。目标那一跳（实例 OCID @ 同一个网关）是调用方
+    本来就知道的信息，没必要再从字符串里抠：真实环境里遇到过串被截断、
+    或者外层那段写法对不上，导致「只认出一跳」而整个功能不可用。
+    能少依赖一点字符串格式，就少一处会坏的地方。
     """
     s = " ".join((connection_string or "").split())
     pairs = list(_PAIR_RE.finditer(s))
     if not pairs:
         raise OCIError(
             "串口控制台连接串里找不到 user@host，没法自动连接。"
-            f"实际内容：{s[:200] or '(空)'}")
+            f"实际内容：{s[:400] or '(空)'}")
 
-    def _pick(kind):
-        for m in pairs:
-            if kind in m.group("user"):
-                return m
-        return None
+    # 跳板：优先认 console connection 的 OCID，认不出就取第一个
+    jump = next((m for m in pairs
+                 if "instanceconsoleconnection" in m.group("user")), pairs[0])
 
-    jump = _pick("instanceconsoleconnection")
-    target = _pick(".instance.") or _pick("instance")
-    # 别把同一个匹配当成两跳
-    if target is jump:
-        target = None
+    # 目标用户：优先用调用方给的实例 OCID；没有再从串里找一个不同于跳板的
+    target_user = (instance_id or "").strip()
+    target_host = jump.group("host")
+    if not target_user:
+        other = next((m for m in pairs
+                      if m.group("user") != jump.group("user")), None)
+        if other is None:
+            raise OCIError(
+                "连接串里只有跳板这一跳，又没拿到实例 OCID，没法组出目标。"
+                f"实际内容：{s[:400]}")
+        target_user = other.group("user")
+        target_host = other.group("host")
+    else:
+        # 串里若确实带了目标那一跳，用它的主机名（通常和跳板同一个网关）
+        other = next((m for m in pairs if m.group("user") == target_user), None)
+        if other is not None:
+            target_host = other.group("host")
 
-    # 认不出 OCID 就退回位置：第一个是跳板，最后一个是目标
-    if jump is None and len(pairs) >= 2:
-        jump = pairs[0]
-    if target is None and len(pairs) >= 2:
-        target = pairs[-1]
-    if jump is None or target is None or jump is target:
-        raise OCIError(
-            "串口控制台连接串里只认出一跳，没法自动连接。"
-            f"实际内容：{s[:200]}")
-
-    # 端口：串口控制台里 -p 只属于跳板（固定 443），外层那跳永远是 22。
+    # 端口：串口控制台里 -p 只属于跳板（443），外层那跳永远是 22。
     # 不按位置去猜哪个 -p 归谁——顺序颠倒的写法会把它算到外层头上。
     ports = _PORT_RE.findall(s)
     proxy_port = int(ports[0]) if ports else _DEFAULT_PROXY_PORT
@@ -154,8 +158,8 @@ def parse_console_string(connection_string: str) -> dict:
         "proxy_user": jump.group("user"),
         "proxy_host": jump.group("host"),
         "proxy_port": proxy_port,
-        "target_user": target.group("user"),
-        "target_host": target.group("host"),
+        "target_user": target_user,
+        "target_host": target_host,
         "target_port": target_port,
         "raw": s,
     }
@@ -274,12 +278,12 @@ def _console_chain(info: dict, pkey, timeout: int, disabled=None):
         raise
 
 
-def open_console(connection_string: str, pkey,
-                 cols: int = 80, rows: int = 24, timeout: int = 20) -> Session:
+def open_console(connection_string: str, pkey, cols: int = 80, rows: int = 24,
+                 timeout: int = 20, instance_id: str = "") -> Session:
     """走 Oracle 串口控制台跳板。"""
     if paramiko is None:
         raise OCIError(f"服务端缺少 paramiko（{PARAMIKO_ERROR}）")
-    info = parse_console_string(connection_string)
+    info = parse_console_string(connection_string, instance_id)
     try:
         transports = _console_chain(info, pkey, timeout)
     except paramiko.AuthenticationException as first:
