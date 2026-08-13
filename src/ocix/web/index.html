@@ -630,7 +630,8 @@
                 <el-table-column label="操作" width="316" fixed="right">
                   <template #default="{row}">
                     <div class="row-actions">
-                      <el-button size="small" type="primary" plain @click="openDetail(row)">详情</el-button>
+                      <el-button size="small" type="primary" plain @click="openDetail(row)"
+                                 :loading="isBusy('detail:' + row.id)">详情</el-button>
                       <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
                       <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
                       <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
@@ -1166,11 +1167,14 @@
                 <el-table-column label="操作" width="212" fixed="right">
                   <template #default="{row}">
                     <el-button size="small" :type="lockedProfile === row.name ? 'warning' : ''"
+                               :loading="isBusy('lock:' + row.name)"
                                @click="toggleLock(row.name)">
                       {{ lockedProfile === row.name ? '解除锁定' : '锁定' }}
                     </el-button>
-                    <el-button size="small" @click="testProfile(row.name)">校验</el-button>
-                    <el-button size="small" type="danger" @click="delProfile(row.name)">删除</el-button>
+                    <el-button size="small" :loading="isBusy('test:' + row.name)"
+                               @click="testProfile(row.name)">校验</el-button>
+                    <el-button size="small" type="danger" :loading="isBusy('del:' + row.name)"
+                               @click="delProfile(row.name)">删除</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -1353,10 +1357,11 @@
                              :disabled="!termAvailable || detail.console[0].state !== 'ACTIVE'">
                     在网页里连接
                   </el-button>
-                  <el-button size="small" text @click="refreshDetail"
-                             :loading="detailLoading"
+                  <el-button size="small" text @click="refreshConsole"
+                             :loading="isBusy('console-refresh')"
                              v-if="detail.console[0].state === 'CREATING'">刷新状态</el-button>
                   <el-button size="small" type="danger" plain
+                             :loading="isBusy('console-drop')"
                              @click="dropConsole(detail.console[0].id)">删除连接</el-button>
                 </div>
                 <p class="hint" v-if="!termAvailable">
@@ -1414,8 +1419,10 @@
                   <el-table-column label="操作" width="128">
                     <template #default="{row}">
                       <el-button size="small" :disabled="row.state !== 'AVAILABLE'"
+                                 :loading="isBusy('restore:' + row.id)"
                                  @click="doRestore(row)">还原</el-button>
                       <el-button size="small" type="danger" text
+                                 :loading="isBusy('backup-del:' + row.id)"
                                  @click="dropBackup(row)">删</el-button>
                     </template>
                   </el-table-column>
@@ -1920,6 +1927,21 @@ createApp({
     const instSelection = ref([]);
     const instTableRef = ref(null);
     const usage = ref(null);
+    // ---- 动作忙碌标记 ----
+    // 每个会等待的动作按 key 记一下，模板上直接 :loading="isBusy(key)"。
+    // 之前好几个按钮点下去毫无反应，用户只能猜是不是网断了。
+    const busy = ref({});
+    const isBusy = (key) => !!busy.value[key];
+    async function withBusy(key, fn) {
+      busy.value = { ...busy.value, [key]: true };
+      try { return await fn(); }
+      finally {
+        const next = { ...busy.value };
+        delete next[key];
+        busy.value = next;
+      }
+    }
+
     // ---- 实例详情抽屉 ----
     const detailOpen = ref(false);
     const detailLoading = ref(false);
@@ -1943,6 +1965,11 @@ createApp({
     const termConnected = ref(false);
     const termEl = ref(null);
     let termInst = null, termFit = null, termWs = null, termResizeHandler = null;
+    // SSH 握手要十几秒，期间终端一片黑。转个圈让人知道是在连而不是卡死。
+    let termSpinner = null;
+    function stopTermSpinner() {
+      if (termSpinner) { clearInterval(termSpinner); termSpinner = null; }
+    }
     const consoling = ref(false);
     const backups = ref({});
     const backupsLoading = ref(false);
@@ -2984,6 +3011,7 @@ createApp({
 
     async function toggleLock(name) {
       const locking = lockedProfile.value !== name;
+      return withBusy('lock:' + name, async () => {
       try {
         if (locking) {
           await axios.post(`/api/profiles/${encodeURIComponent(name)}/lock`);
@@ -2996,6 +3024,7 @@ createApp({
           ElMessage.success('已解除锁定，顶部又可以切换账户了');
         }
       } catch (e) { ElMessage.error(errMsg(e, locking ? '锁定失败' : '解除锁定失败')); }
+      });
     }
 
     async function loadEgress(force) {
@@ -3031,6 +3060,10 @@ createApp({
         ElMessage.error('缺少实例信息，请从列表重新打开详情');
         return;
       }
+      return withBusy('detail:' + row.id, () => _openDetail(row));
+    }
+
+    async function _openDetail(row) {
       detailRow.value = row;
       detailOpen.value = true;
       detail.value = {};
@@ -3052,6 +3085,26 @@ createApp({
         ElMessage.error(errMsg(e, '详情加载失败'));
         detailOpen.value = false;
       } finally { detailLoading.value = false; }
+    }
+
+    // 只刷新串口控制台这一块。
+    // 之前是整个详情重载：detail 被清空、骨架屏一闪、滚动位置也丢了，
+    // 用户看到的就是「整页刷新」。这里只打一次接口，只改 console 字段。
+    async function refreshConsole() {
+      const row = detailRow.value;
+      if (!row) return;
+      await withBusy('console-refresh', async () => {
+        try {
+          const { data } = await axios.get('/api/provision/console', {
+            params: { profile: row.profile || currentProfile.value,
+                      instance_id: row.id, compartment_id: row.compartment_id },
+          });
+          // 只替换这一块，其余字段原样留着
+          detail.value = { ...detail.value, console: data.connections };
+          const st = (data.connections[0] || {}).state;
+          if (st === 'ACTIVE') ElMessage.success('串口控制台已就绪');
+        } catch (e) { ElMessage.error(errMsg(e, '刷新失败')); }
+      });
     }
 
     // 刷新当前详情。
@@ -3138,12 +3191,14 @@ createApp({
         await ElMessageBox.confirm('删除这个串口控制台连接？', '确认',
           { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
       } catch { return; }
-      try {
-        await axios.post('/api/provision/console/delete', {
-          profile: detailRow.value.profile || currentProfile.value, connection_id: id });
-        detail.value = { ...detail.value, console: [] };
-        ElMessage.success('已删除');
-      } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+      await withBusy('console-drop', async () => {
+        try {
+          await axios.post('/api/provision/console/delete', {
+            profile: detailRow.value.profile || currentProfile.value, connection_id: id });
+          detail.value = { ...detail.value, console: [] };
+          ElMessage.success('已删除');
+        } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+      });
     }
 
     async function loadBackups(force) {
@@ -3182,12 +3237,14 @@ createApp({
         await ElMessageBox.confirm(`删除备份「${row.display_name}」？这一步不可撤销。`,
           '确认删除', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
       } catch { return; }
-      try {
-        await axios.post('/api/provision/backups/delete', {
-          profile: detailRow.value.profile || currentProfile.value, backup_id: row.id });
-        ElMessage.success('已删除');
-        loadBackups(true);
-      } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+      await withBusy('backup-del:' + row.id, async () => {
+        try {
+          await axios.post('/api/provision/backups/delete', {
+            profile: detailRow.value.profile || currentProfile.value, backup_id: row.id });
+          ElMessage.success('已删除');
+          loadBackups(true);
+        } catch (e) { ElMessage.error(errMsg(e, '删除失败')); }
+      });
     }
 
     async function doRestore(row) {
@@ -3201,17 +3258,19 @@ createApp({
           { type: 'warning', confirmButtonText: '还原', cancelButtonText: '取消',
             customStyle: { whiteSpace: 'pre-wrap', maxWidth: '520px' } });
       } catch { return; }
-      try {
-        const { data } = await axios.post('/api/provision/backups/restore', {
-          profile: detailRow.value.profile || currentProfile.value,
-          backup_id: row.id,
-          availability_domain: detail.value.availability_domain,
-          compartment_id: detailRow.value.compartment_id,
-        });
-        ElMessageBox.alert(data.note, `已还原为 ${data.display_name}`,
-          { customStyle: { whiteSpace: 'pre-wrap' } });
-        if (storage.value) loadStorage();
-      } catch (e) { ElMessage.error(errMsg(e, '还原失败')); }
+      await withBusy('restore:' + row.id, async () => {
+        try {
+          const { data } = await axios.post('/api/provision/backups/restore', {
+            profile: detailRow.value.profile || currentProfile.value,
+            backup_id: row.id,
+            availability_domain: detail.value.availability_domain,
+            compartment_id: detailRow.value.compartment_id,
+          });
+          ElMessageBox.alert(data.note, `已还原为 ${data.display_name}`,
+            { customStyle: { whiteSpace: 'pre-wrap' } });
+          if (storage.value) loadStorage();
+        } catch (e) { ElMessage.error(errMsg(e, '还原失败')); }
+      });
     }
 
     // ---- 网页终端 ----
@@ -3283,6 +3342,8 @@ createApp({
     }
 
     function closeTerm() {
+      stopTermSpinner();
+      termConnecting.value = false;
       if (termWs) { try { termWs.close(); } catch {} termWs = null; }
       if (termInst) { try { termInst.dispose(); } catch {} termInst = null; }
       if (termResizeHandler) {
@@ -3312,6 +3373,17 @@ createApp({
         termInst.open(termEl.value);
         if (termFit) termFit.fit();
 
+        // 先在终端里写一行「正在连接」并转圈——不然从点「连接」到握手完成
+        // 是十几秒的黑屏，看着就像网断了
+        const frames = ['|', '/', '-', '\\'];
+        let tick = 0;
+        const what = termTarget.value === 'console' ? '串口控制台' : 'SSH';
+        termInst.write('\x1b[90m正在连接 ' + what + ' … \x1b[0m ');
+        stopTermSpinner();
+        termSpinner = setInterval(() => {
+          termInst.write('\b' + frames[tick++ % frames.length]);
+        }, 120);
+
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(
           `${proto}//${location.host}/api/terminal/ws?ticket=${encodeURIComponent(data.ticket)}`);
@@ -3335,19 +3407,27 @@ createApp({
           let m; try { m = JSON.parse(ev.data); } catch { return; }
           if (m.type === 'data') termInst.write(m.data);
           else if (m.type === 'ready') {
+            stopTermSpinner();
+            termConnecting.value = false;
+            termInst.write('\r\x1b[K');        // 擦掉那行「正在连接…」
             termConnected.value = true;
             // 连上之后私钥就没用了，从前端内存里也抹掉
             termKey.value = ''; termPass.value = '';
             termInst.focus();
           } else if (m.type === 'error') {
-            termInst.write(`\r\n\x1b[31m${m.message}\x1b[0m\r\n`);
+            stopTermSpinner();
+            termConnecting.value = false;
+            termInst.write(`\r\x1b[K\x1b[31m${m.message}\x1b[0m\r\n`);
             ElMessage.error(m.message);
           } else if (m.type === 'closed') {
+            stopTermSpinner();
             termInst.write('\r\n\x1b[90m连接已断开\x1b[0m\r\n');
             termConnected.value = false;
           }
         };
         ws.onclose = (ev) => {
+          stopTermSpinner();
+          termConnecting.value = false;
           termConnected.value = false;
           if (ev.code === 4401) ElMessage.error('终端票据无效或已过期，请重试');
         };
@@ -3367,8 +3447,13 @@ createApp({
         };
         window.addEventListener('resize', termResizeHandler);
       } catch (e) {
+        stopTermSpinner();
+        termConnecting.value = false;
         ElMessage.error(errMsg(e, '打开终端失败'));
-      } finally { termConnecting.value = false; }
+      }
+      // 这里**不**收掉 termConnecting：WebSocket 开了不等于 SSH 已连上，
+      // SSH 握手还要十几秒。真正的结果由 ready / error / close 三处各自收尾，
+      // 否则按钮会在还在连的时候就停止转圈，看着像已经完事了。
     }
 
     async function loadTermAvailable() {
@@ -3626,7 +3711,7 @@ createApp({
       consolePolicy, consoleForm, consoleLoading, consoleSaving, consoleDays,
       loadConsolePolicy, saveConsolePolicy,
       tier, tierLoading, loadTier, tiers, tierBusy, loadAllTiers,
-      lockedProfile, toggleLock,
+      lockedProfile, toggleLock, isBusy, refreshConsole,
       detailOpen, detailLoading, detail, openDetail, refreshDetail,
       resizeForm, resizing, doResize, syncResizeMem,
       growForm, growing, doGrow,

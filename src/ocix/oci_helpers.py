@@ -1816,6 +1816,12 @@ def console_connections(profile: str, compartment_id: str, instance_id: str = No
     return out
 
 
+def instance_compartment(profile: str, instance_id: str) -> str:
+    """实例所在的 compartment。前端某些路径没带上时用它兜底。"""
+    return _get(_b().get_instance(profile, instance_id),
+                "compartment-id", "compartment_id")
+
+
 def pick_console(profile: str, instance_id: str, compartment_id: str = None) -> dict:
     """挑一条能用来连接的串口控制台连接。
 

@@ -10,6 +10,7 @@ from ..oci_helpers import (
     boot_volume_backups,
     change_public_ip,
     clear_ingress_rules,
+    console_connections,
     create_backup,
     create_console,
     create_network,
@@ -19,6 +20,7 @@ from ..oci_helpers import (
     delete_volume,
     ensure_subnet_ipv6,
     firewall_status,
+    instance_compartment,
     instance_detail,
     launch_instance,
     list_availability_domains,
@@ -547,6 +549,28 @@ def resize_shape(
 
 
 # ---- 串口控制台 ----
+
+@router.get("/console")
+def get_console(
+    profile: str,
+    instance_id: str,
+    compartment_id: str = None,
+    request: Request = None,
+    user: str = Depends(security.get_current_user),
+):
+    """只查串口控制台连接。
+
+    详情页刷新整块要 5 次 OCI 调用；只想看连接状态时用这个，1 次就够。
+    """
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        with account_gate(profile):
+            # compartment 兜底成实例自己的，跟创建那条路径保持一致
+            cid = compartment_id or instance_compartment(profile, instance_id)
+            return {"connections": console_connections(profile, cid, instance_id)}
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
 
 @router.post("/console")
 def open_console(

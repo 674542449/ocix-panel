@@ -334,3 +334,28 @@ def test_error_names_the_actual_states(fake):
     with pytest.raises(OCIError) as exc:
         H.pick_console("P", "i-arm", "cid")
     assert "CREATING" in str(exc.value)
+
+
+def test_console_list_endpoint_is_cheap(app_client, live_backend):
+    """详情页刷新整块要 5 次 OCI 调用；只看连接状态时应当只花 1 次。"""
+    live_backend.instances = [_arm()]
+    live_backend.console = [_conn("CREATING")]
+    r = app_client.get("/api/provision/console",
+                       params={"profile": "EXISTING", "instance_id": "i-arm",
+                               "compartment_id": "cid"})
+    assert r.status_code == 200, r.text
+    assert r.json()["connections"][0]["state"] == "CREATING"
+    assert live_backend.count("list_console_connections") == 1
+    # 不该顺带去查引导卷、网卡这些详情页才需要的东西
+    assert live_backend.count("list_boot_volume_attachments") == 0
+    assert live_backend.count("list_vnic_attachments") == 0
+
+
+def test_console_list_falls_back_to_instance_compartment(app_client, live_backend):
+    """不传 compartment 时自己去实例上取，跟创建那条路径保持一致。"""
+    live_backend.instances = [_arm()]
+    live_backend.console = [_conn("ACTIVE")]
+    r = app_client.get("/api/provision/console",
+                       params={"profile": "EXISTING", "instance_id": "i-arm"})
+    assert r.status_code == 200, r.text
+    assert r.json()["connections"][0]["state"] == "ACTIVE"
