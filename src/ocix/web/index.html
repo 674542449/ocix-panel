@@ -1353,7 +1353,8 @@
                              :disabled="!termAvailable || detail.console[0].state !== 'ACTIVE'">
                     在网页里连接
                   </el-button>
-                  <el-button size="small" text @click="openDetail(detailRow)"
+                  <el-button size="small" text @click="refreshDetail"
+                             :loading="detailLoading"
                              v-if="detail.console[0].state === 'CREATING'">刷新状态</el-button>
                   <el-button size="small" type="danger" plain
                              @click="dropConsole(detail.console[0].id)">删除连接</el-button>
@@ -3026,6 +3027,10 @@ createApp({
     }
 
     async function openDetail(row) {
+      if (!row || !row.id) {          // 防御：没有行就什么都不做
+        ElMessage.error('缺少实例信息，请从列表重新打开详情');
+        return;
+      }
       detailRow.value = row;
       detailOpen.value = true;
       detail.value = {};
@@ -3047,6 +3052,14 @@ createApp({
         ElMessage.error(errMsg(e, '详情加载失败'));
         detailOpen.value = false;
       } finally { detailLoading.value = false; }
+    }
+
+    // 刷新当前详情。
+    // 之前模板里直接写的 openDetail(detailRow)——可 detailRow 根本没导出，
+    // 传进去是 undefined，openDetail 读 row.id 抛错走进 catch，
+    // 而 catch 里会把抽屉关掉，看起来就是「点一下闪退回列表」。
+    function refreshDetail() {
+      if (detailRow.value) openDetail(detailRow.value);
     }
 
     // OCPU 改小时内存跟着收，否则会停在一个后端必然拒绝的组合上
@@ -3614,7 +3627,7 @@ createApp({
       loadConsolePolicy, saveConsolePolicy,
       tier, tierLoading, loadTier, tiers, tierBusy, loadAllTiers,
       lockedProfile, toggleLock,
-      detailOpen, detailLoading, detail, openDetail,
+      detailOpen, detailLoading, detail, openDetail, refreshDetail,
       resizeForm, resizing, doResize, syncResizeMem,
       growForm, growing, doGrow,
       consoleKey, consoling, doConsole, dropConsole,
