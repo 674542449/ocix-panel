@@ -24,5 +24,6 @@ dist/
 # 编辑器 / 系统
 .vscode/
 .idea/
+.claude/
 .DS_Store
 Thumbs.db
