@@ -395,3 +395,63 @@ def test_resize_does_not_raise_after_close(ssh_server):
                                 ssh_server["key"])
     sess.close()
     sess.resize(120, 40)   # 不抛异常即通过
+
+
+# ── direct-tcpip 目标的候选顺序 ──
+#
+# 真实环境报过 ChannelException(2, 'Connect failed')：跳板登录成功了，
+# 但网关拒绝把隧道开到「网关主机:22」。Oracle 自己的 VNC 命令写的是
+# -L 5900:<实例OCID>:5900，即把 OCID 当目标主机，串口控制台多半同理。
+
+def test_tunnel_tries_the_instance_ocid_first():
+    info = terminal.parse_console_string(BASE, IN)
+    targets = terminal._tunnel_targets(info)
+    assert targets[0] == (IN, 22), "应当先试实例 OCID 当目标主机"
+    assert (info["target_host"], 22) in targets, "字面展开的目标也要作为备选"
+
+
+def test_tunnel_targets_are_deduplicated():
+    info = dict(target_user="x", target_host="x", target_port=22)
+    assert terminal._tunnel_targets(info) == [("x", 22)]
+
+
+def test_console_falls_back_to_the_next_tunnel_target(monkeypatch):
+    """第一个目标被拒时要接着试下一个，而不是直接放弃。"""
+    tried = []
+
+    class Jump:
+        def open_channel(self, kind, dest, src):
+            tried.append(dest)
+            if dest[0] == IN:          # 第一个候选：拒绝
+                raise paramiko.ChannelException(2, "Connect failed")
+            return "tunnel"            # 第二个候选：放行
+
+        def close(self):
+            pass
+
+    def fake_auth(sock, username, pkey, timeout, disabled=None):
+        return Jump() if isinstance(sock, tuple) else _FakeTransport()
+
+    monkeypatch.setattr(terminal, "_auth", fake_auth)
+    monkeypatch.setattr(terminal, "_shell", lambda t, c, r: "chan")
+    sess = terminal.open_console(BASE, object(), instance_id=IN)
+    assert sess.channel == "chan"
+    assert len(tried) == 2, f"应当试了两个目标，实际 {tried}"
+
+
+def test_console_reports_every_tunnel_target_it_tried(monkeypatch):
+    """全都被拒时，报错要列出试过哪些，否则无从下手。"""
+    class Jump:
+        def open_channel(self, kind, dest, src):
+            raise paramiko.ChannelException(2, "Connect failed")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(terminal, "_auth",
+                        lambda sock, u, k, t, disabled=None: Jump())
+    with pytest.raises(OCIError) as exc:
+        terminal.open_console(BASE, object(), instance_id=IN)
+    msg = str(exc.value)
+    assert "跳板登录成功" in msg, "要说清楚是卡在开隧道而不是登录"
+    assert IN in msg and GW in msg, "试过的目标都要列出来"

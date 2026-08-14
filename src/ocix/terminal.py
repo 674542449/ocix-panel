@@ -257,6 +257,30 @@ def open_direct(host: str, port: int, username: str, pkey,
     return Session(_shell(transport, cols, rows), [transport])
 
 
+def _tunnel_targets(info: dict) -> list:
+    """direct-tcpip 要连到哪儿，按可能性从高到低排。
+
+    实测 (网关主机, 22) 会被网关以 CONNECT_FAILED 拒掉——它确实去连了，
+    但连不上。Oracle 自己的 VNC 命令里写的是 ``-L 5900:<实例OCID>:5900``，
+    也就是把**实例 OCID 当作隧道的目标主机**；串口控制台多半同理。
+
+    没法在真实租户上逐一验证，所以挨个试，并把试过的都记下来放进报错。
+    """
+    targets = []
+    if info.get("target_user"):
+        # Oracle 的写法：拿 OCID 当主机名
+        targets.append((info["target_user"], 22))
+    # %h:%p 字面展开的结果
+    targets.append((info["target_host"], info.get("target_port") or 22))
+    # 去重但保持顺序
+    seen, out = set(), []
+    for t in targets:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
 def _console_chain(info: dict, pkey, timeout: int, disabled=None):
     """跳板 → direct-tcpip → 内层 SSH，等价于 ssh 的 ProxyCommand -W。"""
     transports = []
@@ -264,8 +288,18 @@ def _console_chain(info: dict, pkey, timeout: int, disabled=None):
         jump = _auth((info["proxy_host"], info["proxy_port"]),
                      info["proxy_user"], pkey, timeout, disabled)
         transports.append(jump)
-        tunnel = jump.open_channel(
-            "direct-tcpip", (info["target_host"], info["target_port"]), ("127.0.0.1", 0))
+
+        tunnel, tried = None, []
+        for host, port in _tunnel_targets(info):
+            try:
+                tunnel = jump.open_channel("direct-tcpip", (host, port), ("127.0.0.1", 0))
+                break
+            except Exception as e:  # noqa: BLE001 - 换下一个候选再试
+                tried.append(f"{host}:{port} -> {_describe(e)}")
+        if tunnel is None:
+            raise OCIError(
+                "跳板登录成功了，但开隧道被拒绝。试过这些目标：" + "；".join(tried))
+
         inner = _auth(tunnel, info["target_user"], pkey, timeout, disabled)
         transports.append(inner)
         return transports
@@ -296,9 +330,12 @@ def open_console(connection_string: str, pkey, cols: int = 80, rows: int = 24,
                 "串口控制台认证失败。这把私钥必须与**创建这条连接时填的公钥**是一对"
                 "（不是实例登录用的那把，除非你用的是同一把）。"
                 f"原始信息：{_describe(first)}") from None
+    except OCIError:
+        # 已经是给人看的话了（比如开隧道被拒），原样往上抛
+        raise
     except Exception as e:  # noqa: BLE001
         raise OCIError(
             f"连接串口控制台失败：{_describe(e)}。"
             f"（跳板 {info['proxy_host']}:{info['proxy_port']}，"
-            "面板所在服务器需要能出站访问这个地址）") from None
+            "如果是超时或拒绝连接，说明面板所在服务器出不去这个地址）") from None
     return Session(_shell(transports[-1], cols, rows), transports)
