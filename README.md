@@ -399,8 +399,12 @@ OCI 可能会为此重启实例。
 会漏进反代日志和浏览器历史。所以先用已鉴权的接口换一张**一次性票据**
 （30 秒过期、用一次作废），WebSocket 只带票据。
 
-> 终端依赖 `paramiko`。没装的话面板照常跑，只是终端按钮是灰的——
-> `/api/terminal/available` 会说明原因。
+> 终端依赖 `paramiko`，且**必须是 5.0 以下**。
+> paramiko 5 移除了 `ssh-rsa`（SHA-1）主机密钥算法，而 Oracle 串口控制台的
+> 网关只提供这一种，握手会直接失败：`Incompatible ssh peer (no acceptable host key)`。
+> 实测 5.0 必失败、4.0 正常，`requirements.txt` 已钉死 `<5`。
+> 没装或版本不对时面板照常跑，只是终端不可用——`/api/terminal/available`
+> 会报告 paramiko 版本与 `ssh_rsa_host_key` 是否满足。
 
 ## 账单与流量
 

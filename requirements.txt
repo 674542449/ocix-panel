@@ -6,5 +6,9 @@ python-multipart==0.0.12
 pydantic==2.9.2
 # Oracle 官方 Python SDK：面板全部 OCI 操作都走它
 oci>=2.130,<3
-# 网页终端：把浏览器的 WebSocket 桥到 SSH 会话
-paramiko>=3.4,<6
+# 网页终端：把浏览器的 WebSocket 桥到 SSH 会话。
+# **不能升到 5.x**：paramiko 5 彻底移除了 ssh-rsa（SHA-1）主机密钥算法，
+# 而 Oracle 串口控制台的网关只提供这一种，握手会直接失败：
+#   Incompatible ssh peer (no acceptable host key)
+# 已实测：5.0 必失败，4.0 正常。
+paramiko>=3.4,<5

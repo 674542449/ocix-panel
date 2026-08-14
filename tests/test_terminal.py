@@ -455,3 +455,37 @@ def test_console_reports_every_tunnel_target_it_tried(monkeypatch):
     msg = str(exc.value)
     assert "跳板登录成功" in msg, "要说清楚是卡在开隧道而不是登录"
     assert IN in msg and GW in msg, "试过的目标都要列出来"
+
+
+# ── 主机密钥算法：paramiko 版本红线 ──
+#
+# 真实环境报过 IncompatiblePeer: no acceptable host key。
+# 根因：paramiko 5 移除了 ssh-rsa（SHA-1）主机密钥算法，
+# 而 Oracle 串口控制台的网关只提供这一种。
+# 本地用「只认 ssh-rsa 的服务端」实测过：5.0 必失败，4.0 正常连上。
+
+def test_paramiko_supports_ssh_rsa_host_key():
+    """依赖版本红线：一旦装成 5.x，串口控制台会整个失效。"""
+    assert terminal.supports_ssh_rsa_host_key(), (
+        f"当前 paramiko {paramiko.__version__} 不支持 ssh-rsa 主机密钥；"
+        "requirements 要求 <5，见 terminal.supports_ssh_rsa_host_key 的说明")
+
+
+def test_requirements_pins_paramiko_below_5():
+    """把红线钉进依赖声明，别让人无意中升上去。"""
+    from pathlib import Path
+    req = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text(encoding="utf-8")
+    line = next(x for x in req.splitlines() if x.strip().startswith("paramiko"))
+    assert "<5" in line, f"paramiko 必须钉在 5 以下，当前：{line}"
+
+
+def test_hint_is_silent_when_the_version_is_fine():
+    """版本没问题时不该在报错里塞无关的提示。"""
+    assert terminal._host_key_hint() == ""
+
+
+def test_hint_explains_how_to_fix_on_bad_version(monkeypatch):
+    monkeypatch.setattr(terminal, "supports_ssh_rsa_host_key", lambda: False)
+    hint = terminal._host_key_hint()
+    assert "ssh-rsa" in hint
+    assert "paramiko<5" in hint.replace("'", "").replace(" ", "")

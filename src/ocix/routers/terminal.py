@@ -30,7 +30,13 @@ def issue_ticket(request: Request, user: str = Depends(security.get_current_user
 @router.get("/available")
 def available(user: str = Depends(security.get_current_user)):
     """服务端有没有装 paramiko——没装就别在界面上给按钮。"""
-    return {"available": terminal.paramiko is not None, "error": terminal.PARAMIKO_ERROR}
+    return {
+        "available": terminal.paramiko is not None,
+        "error": terminal.PARAMIKO_ERROR,
+        # 串口控制台要求 paramiko 支持 ssh-rsa 主机密钥（5.x 已移除）
+        "ssh_rsa_host_key": terminal.supports_ssh_rsa_host_key(),
+        "paramiko_version": getattr(terminal.paramiko, "__version__", None),
+    }
 
 
 async def _send(ws: WebSocket, payload: dict):

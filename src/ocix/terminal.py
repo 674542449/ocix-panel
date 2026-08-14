@@ -174,6 +174,28 @@ def parse_console_string(connection_string: str, instance_id: str = "") -> dict:
 _SHA1_FALLBACK = {"pubkeys": ["rsa-sha2-512", "rsa-sha2-256"]}
 
 
+def supports_ssh_rsa_host_key() -> bool:
+    """当前 paramiko 认不认 ssh-rsa 这种主机密钥算法。
+
+    paramiko 5 把它整个移除了（SHA-1 已不安全），可 Oracle 串口控制台的
+    网关只提供这一种，握手会直接失败：
+        Incompatible ssh peer (no acceptable host key)
+    实测 5.0 必挂、4.0 正常，所以 requirements 把 paramiko 钉在 <5。
+    这里再兜一道，万一环境里装成了 5.x，至少能说清原因。
+    """
+    if paramiko is None:
+        return False
+    return "ssh-rsa" in getattr(paramiko.Transport, "_preferred_keys", ())
+
+
+def _host_key_hint() -> str:
+    if supports_ssh_rsa_host_key():
+        return ""
+    ver = getattr(paramiko, "__version__", "?")
+    return (f"（当前 paramiko {ver} 不支持 ssh-rsa 主机密钥，而 Oracle 网关只提供这一种。"
+            "把依赖降到 5.0 以下即可：pip install 'paramiko<5'，或重新执行 update.sh）")
+
+
 class Session:
     """一条已经打开的 SSH 会话，只暴露收发和改窗口大小。"""
 
@@ -335,7 +357,7 @@ def open_console(connection_string: str, pkey, cols: int = 80, rows: int = 24,
         raise
     except Exception as e:  # noqa: BLE001
         raise OCIError(
-            f"连接串口控制台失败：{_describe(e)}。"
+            f"连接串口控制台失败：{_describe(e)}。{_host_key_hint()}"
             f"（跳板 {info['proxy_host']}:{info['proxy_port']}，"
             "如果是超时或拒绝连接，说明面板所在服务器出不去这个地址）") from None
     return Session(_shell(transports[-1], cols, rows), transports)
