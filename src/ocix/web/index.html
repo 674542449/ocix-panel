@@ -3356,6 +3356,22 @@ createApp({
       termKey.value = ''; termKeyName.value = ''; termPass.value = '';
     }
 
+    // 串口控制台 ≠ SSH。它是一条虚拟串口线，接到实例的 ttyS0 上，
+    // 你面对的是内核和 getty，跟密钥认证毫无关系——私钥只用来打通
+    // 到 Oracle 网关的那条隧道。这段提示直接写进终端，因为人是在
+    // 看到 login: 的那一刻才会困惑，那时已经离开面板界面了。
+    function consoleTips() {
+      const d = '\x1b[90m', y = '\x1b[33m', c = '\x1b[36m', r = '\x1b[0m';
+      return '\r\n' +
+        y + '这是串口控制台（虚拟串口），不是 SSH。' + r + '\r\n' +
+        d + '下面的 ' + r + c + 'login:' + r + d + ' 只认系统用户名 + ' + r +
+        y + '密码' + r + d + '，私钥到这一层就用不上了。' + r + '\r\n' +
+        d + 'Oracle 的 Ubuntu 镜像默认没给 ubuntu 设密码，所以这里输什么都进不去；' + r + '\r\n' +
+        d + '趁 SSH 还能进的时候先 ' + r + c + 'sudo passwd ubuntu' + r + d +
+        '，这条救命通道才真的能救命。' + r + '\r\n' +
+        d + '（黑屏没提示符？敲一下回车。要用密钥登录系统请走「直连 SSH」）' + r + '\r\n\r\n';
+    }
+
     async function termConnect() {
       if (!termKey.value) { ElMessage.warning('先选一个私钥文件'); return; }
       termConnecting.value = true;
@@ -3411,6 +3427,9 @@ createApp({
             termConnecting.value = false;
             termInst.write('\r\x1b[K');        // 擦掉那行「正在连接…」
             termConnected.value = true;
+            // 串口控制台连上之后是实例自己的 login: 提示符，密钥在这一层没用了。
+            // 不说明的话，人会拿着刚上传的私钥对着提示符发愣。
+            if (termTarget.value === 'console') termInst.write(consoleTips());
             // 连上之后私钥就没用了，从前端内存里也抹掉
             termKey.value = ''; termPass.value = '';
             termInst.focus();
