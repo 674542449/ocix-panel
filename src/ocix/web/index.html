@@ -178,25 +178,53 @@
     .login-wrap { display:grid; place-items:center; min-height:100vh; padding:var(--sp-4); }
     .login-shell { width:100%; max-width:860px; display:grid; grid-template-columns:1.05fr 1fr;
                    background:var(--surface); border:1px solid var(--line); border-radius:14px;
-                   overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.5); }
+                   overflow:hidden;
+                   /* 顶边内高光：云控制台那种「玻璃面板」的边，一条线就够了 */
+                   box-shadow:0 24px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); }
 
     /* 左栏：把这个面板管的东西直接摆出来 */
-    .login-aside { padding:var(--sp-6) var(--sp-5); background:
-                   linear-gradient(160deg, #1f272b 0%, #191d21 60%, #14171a 100%);
-                   border-right:1px solid var(--line); display:flex; flex-direction:column; gap:var(--sp-5); }
+    /* 左栏的氛围：主色径向辉光 + 极淡点阵。两层都压得很低，
+       是背景不是图案——盖过内容就本末倒置了。 */
+    .login-aside { position:relative; padding:var(--sp-6) var(--sp-5);
+                   background:
+                     radial-gradient(120% 85% at 12% -10%, rgba(95,168,181,.16), transparent 62%),
+                     linear-gradient(160deg, #1f272b 0%, #191d21 60%, #14171a 100%);
+                   border-right:1px solid var(--line); display:flex; flex-direction:column;
+                   gap:var(--sp-5); overflow:hidden; }
+    .login-aside::before { content:""; position:absolute; inset:0; pointer-events:none;
+                   background-image:radial-gradient(circle at 1px 1px, rgba(255,255,255,.05) 1px, transparent 0);
+                   background-size:22px 22px;
+                   /* 网格往下淡出，免得和底部文字抢 */
+                   -webkit-mask-image:linear-gradient(180deg, #000 0%, transparent 78%);
+                   mask-image:linear-gradient(180deg, #000 0%, transparent 78%); }
+    .login-aside > * { position:relative; }
     .login-brand { display:flex; align-items:center; gap:11px; }
-    .login-brand .name { font-family:var(--mono); font-size:19px; font-weight:600;
-                         letter-spacing:.2em; color:var(--text); }
+    .login-brand .name { font-family:var(--mono); font-size:23px; font-weight:600;
+                         letter-spacing:.22em; color:var(--text); line-height:1.1; }
+    /* 等宽小字 eyebrow：控制台的语汇，也把「这是谁家的云」说清楚 */
+    .login-eyebrow { font-family:var(--mono); font-size:10px; letter-spacing:.28em;
+                     text-transform:uppercase; color:var(--accent); opacity:.85;
+                     margin:0 0 5px; }
     .login-brand .name b { color:var(--accent); font-weight:600; }
     .login-tag { font-size:12px; color:var(--text-3); margin:-2px 0 0; }
 
     /* 额度图：两小一大，就是满配 Always Free 的样子 */
     .alloc { display:grid; grid-template-columns:1fr 1.25fr; gap:10px; }
     .alloc-col { display:grid; gap:10px; }
-    .alloc-box { border:1px solid var(--line); border-radius:9px; padding:12px 13px;
-                 background:#1a1e22; min-height:62px; display:flex; flex-direction:column;
-                 justify-content:center; gap:3px;
+    .alloc-box { position:relative; border:1px solid var(--line); border-radius:9px;
+                 padding:12px 13px 12px 24px; background:#1a1e22; min-height:62px;
+                 display:flex; flex-direction:column; justify-content:center; gap:3px;
                  animation:alloc-in .5s cubic-bezier(.2,.7,.3,1) both; }
+    /* 机位指示灯。刻意不复用 .dot.ok——这三块是 Always Free 额度的示意图，
+       不是你真实的机器状态，不能让它暗示「你有东西在跑」。 */
+    .led { position:absolute; left:10px; top:50%; margin-top:-3px;
+           width:6px; height:6px; border-radius:50%; background:var(--ok);
+           animation:breathe 3.2s ease-in-out infinite; }
+    /* 限定在左列里数：ARM 那块也是 .alloc 的第二个子元素，
+       不加 .alloc-col 的话它会被这条选中（而且特异性还压过下面那条），
+       结果两颗灯同相位。 */
+    .alloc-col .alloc-box:nth-child(2) .led { animation-delay:-1.3s; }
+    .alloc-arm .led { animation-delay:-2.4s; }
     .alloc-box:nth-child(1) { animation-delay:.05s; }
     .alloc-box:nth-child(2) { animation-delay:.14s; }
     .alloc-arm { grid-row:span 2; border-color:var(--accent-dim); background:
@@ -208,7 +236,10 @@
                text-transform:uppercase; color:var(--text-3); }
     .alloc-v { font-size:13px; color:var(--text); font-variant-numeric:tabular-nums; }
     .alloc-arm .alloc-v { color:var(--accent); }
-    .alloc-foot { font-size:11.5px; color:var(--text-2); display:flex; align-items:center; gap:7px; }
+    .alloc-foot { font-size:11.5px; color:var(--text-2); display:flex; align-items:flex-start;
+                  gap:7px; line-height:1.6; }
+    .alloc-foot code { background:rgba(95,168,181,.12); color:var(--accent);
+                       padding:1px 5px; border-radius:4px; font-size:11px; }
 
     .login-form { padding:var(--sp-6) var(--sp-5); display:flex; flex-direction:column;
                   justify-content:center; }
@@ -222,7 +253,7 @@
       .alloc { grid-template-columns:1fr 1fr 1.2fr; }
       .alloc-col { grid-column:span 2; grid-template-columns:1fr 1fr; grid-auto-flow:column; }
       .alloc-arm { grid-row:auto; }
-      .alloc-box { min-height:0; padding:10px 11px; }
+      .alloc-box { min-height:0; padding:10px 11px 10px 22px; }
       .login-form { padding:var(--sp-5) var(--sp-4); }
     }
 
@@ -244,7 +275,21 @@
     .state { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
     .dot { width:8px; height:8px; border-radius:50%; flex:none; position:relative;
            background:var(--idle); }
-    .dot.ok { background:var(--ok); box-shadow:0 0 0 3px rgba(111,174,135,.14); }
+    /* 运行中 = 呼吸灯。
+       和「过渡中」的脉冲刻意做成两种动法，否则「正在开机」和「已经在跑」
+       就分不出来了——那正是这个面板一直在守的一条线：
+         呼吸  3.2s  光晕原地涨落，点始终不灭   ease-in-out  稳定的心跳
+         脉冲  1.6s  环向外扩散后消失           ease-out     正在发生
+       周期差一倍、几何不同、缓动不同，扫一眼就分得清。 */
+    .dot.ok { background:var(--ok); animation:breathe 3.2s ease-in-out infinite; }
+    @keyframes breathe {
+      0%, 100% { box-shadow:0 0 0 1.5px rgba(111,174,135,.10), 0 0 4px 0 rgba(111,174,135,.18); }
+      50%      { box-shadow:0 0 0 4px   rgba(111,174,135,.22), 0 0 9px 2px rgba(111,174,135,.42); }
+    }
+    /* 一排机器同时同步呼吸像圣诞灯，真机架不会同步。用负延迟错开三档，
+       负值让动画立刻从周期中段开始，不会有一段死等。 */
+    .el-table tbody tr:nth-child(3n+2) .dot.ok { animation-delay:-1.1s; }
+    .el-table tbody tr:nth-child(3n+3) .dot.ok { animation-delay:-2.2s; }
     .dot.crit { background:transparent; box-shadow:inset 0 0 0 1.5px var(--crit); }
     .dot.warn { background:var(--warn); animation:pulse 1.6s ease-out infinite; }
     /* attn 标的是「账户已升级为付费」这类**另一种性质**的提醒，
@@ -279,7 +324,8 @@
     /* 自动刷新指示灯 */
     .live { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
     .live .dot { width:6px; height:6px; }
-    .live .dot.ok { box-shadow:none; }
+    /* 倒计时旁边那颗不呼吸：数字每秒在跳，再叠一个律动是两个节奏打架 */
+    .live .dot.ok { box-shadow:none; animation:none; }
 
     /* 统计条 */
     .stats { display:flex; gap:var(--sp-5); flex-wrap:wrap; }
@@ -494,6 +540,8 @@
       /* 不能动的时候，过渡态用双环表示，别退化成和 attn 一个样 */
       .dot.warn { box-shadow:0 0 0 1px var(--bg), 0 0 0 2px var(--warn),
                              0 0 0 3px var(--bg), 0 0 0 4px rgba(201,174,94,.5); }
+      /* 呼吸灯退化成静态光晕：仍然比其它状态亮一圈，不是一颗死灯 */
+      .dot.ok, .led { box-shadow:0 0 0 3px rgba(111,174,135,.16), 0 0 6px 1px rgba(111,174,135,.28); }
     }
   </style>
 </head>
@@ -506,8 +554,9 @@
     <div class="login-shell">
       <aside class="login-aside">
         <div>
+          <p class="login-eyebrow">Oracle Cloud Infrastructure</p>
           <div class="login-brand">
-            <svg class="mark" width="30" height="30" viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="mark" width="34" height="34" viewBox="0 0 24 24" aria-hidden="true">
               <rect class="cell-sm" x="3.5" y="3.5" width="7" height="7" rx="1.6" />
               <rect class="cell-sm" x="3.5" y="13.5" width="7" height="7" rx="1.6" />
               <rect class="cell-lg" x="13.5" y="3.5" width="7" height="17" rx="1.6" />
@@ -521,22 +570,26 @@
         <div class="alloc" aria-label="Always Free 额度">
           <div class="alloc-col">
             <div class="alloc-box">
+              <i class="led" aria-hidden="true"></i>
               <span class="alloc-k">AMD Micro</span>
               <span class="alloc-v">1 OCPU · 1 GB</span>
             </div>
             <div class="alloc-box">
+              <i class="led" aria-hidden="true"></i>
               <span class="alloc-k">AMD Micro</span>
               <span class="alloc-v">1 OCPU · 1 GB</span>
             </div>
           </div>
           <div class="alloc-box alloc-arm">
+            <i class="led" aria-hidden="true"></i>
             <span class="alloc-k">ARM Ampere A1</span>
             <span class="alloc-v">4 OCPU · 24 GB</span>
           </div>
         </div>
 
         <div class="alloc-foot">
-          <i class="dot idle"></i>合计 200 GB 存储额度，建机前逐项核算，超出即拦下
+          <span>合计 200 GB 存储额度，建机前逐项核算，超出即拦下；
+                三台机器共用 <code class="mono">10.0.0.0/24</code>，首次开机时自动创建</span>
         </div>
       </aside>
 

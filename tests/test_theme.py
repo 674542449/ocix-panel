@@ -130,6 +130,75 @@ def test_status_dots_carry_shape_as_well_as_color():
     )
 
 
+def test_breathing_and_pulsing_are_different_motions():
+    """「运行中」呼吸、「过渡中」脉冲，两种动法必须真的不一样。
+
+    这是整个状态体系的一条线：如果两者动得像，「正在开机」和「已经在跑」
+    就分不出来了——而这恰恰是最需要分清的一对。
+    区别在三处：周期、几何、缓动。
+    """
+    css = INDEX.read_text(encoding="utf-8")
+
+    def block(name: str) -> str:
+        """取出一整组关键帧。内层每一帧也有大括号，所以要数配对，
+        非贪婪匹配到第一个 } 只会拿到第一帧。"""
+        i = css.index(f"@keyframes {name} {{")
+        depth, j = 0, css.index("{", i)
+        for k in range(j, len(css)):
+            if css[k] == "{":
+                depth += 1
+            elif css[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    return css[j + 1 : k]
+        raise AssertionError(f"@keyframes {name} 的大括号没闭合")
+
+    breathe, pulse = block("breathe"), block("pulse")
+
+    # 呼吸首尾同值 -> 无缝循环；脉冲末帧透明 -> 扩散后消失
+    assert "0%, 100%" in breathe, "呼吸的首尾要同值，否则每圈会跳一下"
+    assert re.search(r"100%[^}]*,\s*0\)", pulse), "脉冲末帧应当淡出到透明"
+    # 呼吸的光晕原地涨落（扩散半径变化），脉冲是环向外推
+    assert "9px" in breathe and "4px" in breathe, "呼吸应当是光晕大小在变"
+
+    ok = re.search(r"\.dot\.ok \{[^}]*animation:(\w+) ([\d.]+)s ([\w-]+)", css)
+    warn = re.search(r"\.dot\.warn \{[^}]*animation:(\w+) ([\d.]+)s ([\w-]+)", css)
+    assert ok and warn, "两个状态点都要声明动画"
+    assert ok.group(1) == "breathe" and warn.group(1) == "pulse"
+    # 周期至少差一倍，节奏才明显不同
+    assert float(ok.group(2)) >= float(warn.group(2)) * 1.8, (
+        f"呼吸 {ok.group(2)}s 和脉冲 {warn.group(2)}s 太接近，节奏区分不出来"
+    )
+    assert ok.group(3) != warn.group(3), "缓动也应当不同（平稳 vs 冲出去）"
+
+
+def test_breathing_has_a_static_fallback():
+    """关掉动效时呼吸灯要退化成静态光晕，不能变成一颗死灯。"""
+    css = INDEX.read_text(encoding="utf-8")
+    reduced = css[css.index("prefers-reduced-motion") :]
+    assert re.search(r"\.dot\.ok, \.led \{[^}]*box-shadow", reduced), (
+        "prefers-reduced-motion 下要给 .dot.ok / .led 一个静态光晕"
+    )
+
+
+def test_login_leds_are_out_of_phase():
+    """登录页三颗灯要错开相位。
+
+    同步呼吸像圣诞灯，真机架上的指示灯不会同步。
+    这里踩过一个坑：ARM 那块也是 .alloc 的第二个子元素，
+    `.alloc-box:nth-child(2)` 会连它一起选中，而且特异性还压过
+    `.alloc-arm .led`，结果两颗灯同相位。所以必须限定在 .alloc-col 里数。
+    """
+    css = INDEX.read_text(encoding="utf-8")
+    assert ".alloc-col .alloc-box:nth-child(2) .led" in css, (
+        "第二颗灯的选择器必须限定在 .alloc-col 内，否则会误伤 ARM 那块"
+    )
+    delays = re.findall(r"\.led \{ animation-delay:(-[\d.]+)s", css)
+    assert len(set(delays)) == len(delays) and len(delays) >= 2, (
+        f"各颗灯的相位要互不相同，现在是 {delays}"
+    )
+
+
 def test_chart_series_differ_by_dash_not_only_color():
     """监控图两条曲线必须虚实不同，不能只靠颜色分。"""
     js = INDEX.read_text(encoding="utf-8")
