@@ -158,8 +158,20 @@ def test_breathing_and_pulsing_are_different_motions():
     # 呼吸首尾同值 -> 无缝循环；脉冲末帧透明 -> 扩散后消失
     assert "0%, 100%" in breathe, "呼吸的首尾要同值，否则每圈会跳一下"
     assert re.search(r"100%[^}]*,\s*0\)", pulse), "脉冲末帧应当淡出到透明"
-    # 呼吸的光晕原地涨落（扩散半径变化），脉冲是环向外推
-    assert "9px" in breathe and "4px" in breathe, "呼吸应当是光晕大小在变"
+    # 幅度得够大才看得见。之前只让光晕在 .10~.22 之间涨落，用户的原话是
+    # 「几乎看不到在呼吸」——所以这里卡的是变化量，不是「有没有动画」。
+    scales = [float(x) for x in re.findall(r"scale\(([\d.]+)\)", breathe)]
+    assert len(scales) >= 2, "呼吸要带灯芯缩放，只改光晕看不出来"
+    assert max(scales) / min(scales) >= 1.35, (
+        f"灯芯缩放比只有 {max(scales) / min(scales):.2f}，太小了看不见"
+    )
+    # 扩散值写成裸 0 还是 0px 都算数：`0 0 4px 0 rgba(...)` 和
+    # `0 0 16px 3px rgba(...)` 两种写法都要认出来
+    blurs = [int(x) for x in re.findall(r"0 0 (\d+)px \d+(?:px)? rgba", breathe)]
+    assert len(blurs) >= 2 and max(blurs) >= min(blurs) * 3, (
+        f"光晕模糊半径 {blurs}，涨落幅度不够"
+    )
+    assert breathe.count("background:") >= 2, "灯芯亮度也要跟着变"
 
     ok = re.search(r"\.dot\.ok \{[^}]*animation:(\w+) ([\d.]+)s ([\w-]+)", css)
     warn = re.search(r"\.dot\.warn \{[^}]*animation:(\w+) ([\d.]+)s ([\w-]+)", css)

@@ -36,11 +36,14 @@ const canvas = { clientWidth: 1440, clientHeight: 900, width: 0, height: 0,
 
 let rafCbs = [];
 global.window = {
-  devicePixelRatio: 2,
+  devicePixelRatio: 2, innerWidth: 1600, innerHeight: 900,
   matchMedia: () => ({ matches: false }),
   addEventListener(){}, removeEventListener(){},
 };
 global.document = { hidden: false };
+const roCallbacks = [];
+global.ResizeObserver = class { constructor(cb){ roCallbacks.push(cb); } observe(){} disconnect(){} };
+global.window.ResizeObserver = global.ResizeObserver;
 global.performance = { now: () => Date.now() };
 global.requestAnimationFrame = (cb) => { rafCbs.push(cb); return rafCbs.length; };
 global.cancelAnimationFrame = () => { rafCbs = []; };
@@ -78,6 +81,24 @@ check('链路两端不同', flows.every(f => { const [a, b] = f.split(' -> '); r
 
 OcixScene.stop();
 check('stop() 之后 rAF 队列清空', rafCbs.length === 0);
+
+// 回归：元素还没走过布局时 clientWidth 是 0。拿 0 去设 canvas.width，
+// 画布变成 0x0，之后画什么都不出现，而且一声不吭——控制台干干净净，
+// 页面看起来就是「背景完全没动」。实测踩到过。
+{
+  const late = { clientWidth: 0, clientHeight: 0, width: 0, height: 0,
+                 getContext: () => ctx2d };
+  rafCbs = [];
+  OcixScene.start(late, () => {});
+  check('布局未就绪时画布不会变成 0x0', late.width > 0 && late.height > 0,
+        late.width + 'x' + late.height + '（退回窗口尺寸）');
+  // 元素随后拿到真实尺寸，ResizeObserver 应当把画布补上
+  late.clientWidth = 800; late.clientHeight = 600;
+  roCallbacks.forEach(cb => cb());
+  check('拿到真实尺寸后画布跟着更新', late.width === 800 * 2 && late.height === 600 * 2,
+        late.width + 'x' + late.height);
+  OcixScene.stop();
+}
 
 // 静态路径（关掉动效）
 calls.arc = 0; calls.bad = [];

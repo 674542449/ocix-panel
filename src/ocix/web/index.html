@@ -287,8 +287,14 @@
        周期差一倍、几何不同、缓动不同，扫一眼就分得清。 */
     .dot.ok { background:var(--ok); animation:breathe 3.2s ease-in-out infinite; }
     @keyframes breathe {
-      0%, 100% { box-shadow:0 0 0 1.5px rgba(111,174,135,.10), 0 0 4px 0 rgba(111,174,135,.18); }
-      50%      { box-shadow:0 0 0 4px   rgba(111,174,135,.22), 0 0 9px 2px rgba(111,174,135,.42); }
+      /* 三样一起动才看得出来：灯芯大小、灯芯亮度、外面的光晕。
+         原来只让光晕在 .10~.22 之间涨落，幅度太小，等于没动。
+         点本身在 .78~1.2 之间缩放（8px 的灯就是 6.2px ↔ 9.6px），
+         配上亮度和光晕，是一眼能看见的一呼一吸。 */
+      0%, 100% { transform:scale(.78); background:#5c9773;
+                 box-shadow:0 0 0 0 rgba(111,174,135,.5), 0 0 4px 0 rgba(111,174,135,.35); }
+      50%      { transform:scale(1.2); background:#8fd0a6;
+                 box-shadow:0 0 0 5px rgba(111,174,135,.18), 0 0 16px 3px rgba(111,174,135,.9); }
     }
     /* 一排机器同时同步呼吸像圣诞灯，真机架不会同步。用负延迟错开三档，
        负值让动画立刻从周期中段开始，不会有一段死等。 */
@@ -548,7 +554,7 @@
       .dot.warn { box-shadow:0 0 0 1px var(--bg), 0 0 0 2px var(--warn),
                              0 0 0 3px var(--bg), 0 0 0 4px rgba(201,174,94,.5); }
       /* 呼吸灯退化成静态光晕：仍然比其它状态亮一圈，不是一颗死灯 */
-      .dot.ok, .led { box-shadow:0 0 0 3px rgba(111,174,135,.16), 0 0 6px 1px rgba(111,174,135,.28); }
+      .dot.ok, .led { box-shadow:0 0 0 3px rgba(111,174,135,.2), 0 0 8px 2px rgba(111,174,135,.5); }
     }
   </style>
 </head>
@@ -2068,7 +2074,7 @@ const OcixScene = (() => {
   };
 
   let canvas, ctx, raf = 0, w = 0, h = 0, dpr = 1;
-  let dots = [], nodes = [], flights = [], spin = 0, last = 0;
+  let dots = [], nodes = [], flights = [], spin = 0, last = 0, ro = null;
   let onFlow = null, still = false;
 
   function layout() {
@@ -2101,13 +2107,14 @@ const OcixScene = (() => {
     }
     nodes = REGIONS.map(([name, lat, lon]) => ({ name, v: toVec(lat, lon) }));
     flights = [];
-    for (let i = 0; i < (w < 700 ? 4 : 7); i++) flights.push(newFlight(Math.random()));
+    for (let i = 0; i < (w < 700 ? 7 : 13); i++) flights.push(newFlight(Math.random()));
   }
 
   function newFlight(t0) {
     let i = (Math.random() * nodes.length) | 0, j = (Math.random() * nodes.length) | 0;
     while (j === i) j = (Math.random() * nodes.length) | 0;
-    return { i, j, t: t0 || 0, speed: 0.10 + Math.random() * 0.13, announced: false };
+    // 原来一趟要飞 4~10 秒，太拖。现在 2~4 秒穿一次，才像在传数据。
+    return { i, j, t: t0 || 0, speed: 0.24 + Math.random() * 0.26, announced: false };
   }
 
   function draw(dt) {
@@ -2126,7 +2133,7 @@ const OcixScene = (() => {
     for (let k = 0; k < dots.length; k++) {
       const pt = project(rotY(dots[k], spin), L);
       const front = pt.z > 0;
-      const a = front ? 0.16 + pt.z * 0.42 : 0.05 + (1 + pt.z) * 0.06;
+      const a = front ? 0.24 + pt.z * 0.55 : 0.07 + (1 + pt.z) * 0.08;
       ctx.fillStyle = 'rgba(154,164,173,' + a.toFixed(3) + ')';
       const r = (front ? 1.15 : 0.8) * pt.s * 0.62;
       ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2); ctx.fill();
@@ -2147,23 +2154,23 @@ const OcixScene = (() => {
         if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
         else ctx.lineTo(pt.x, pt.y);
       }
-      ctx.strokeStyle = 'rgba(95,168,181,0.16)';
+      ctx.strokeStyle = 'rgba(95,168,181,0.26)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
       // 包头 + 拖尾。拖尾就是把前面几个时刻的位置画成渐隐的点
-      for (let q = 0; q < 7; q++) {
-        const t = f.t - q * 0.022;
+      for (let q = 0; q < 12; q++) {
+        const t = f.t - q * 0.019;
         if (t < 0 || t > 1) continue;
         const m = slerp(A, B, t), lf = lift(t);
         const pt = project([m[0] * lf, m[1] * lf, m[2] * lf], L);
         if (m[2] < -0.1) continue;
-        const fade = (1 - q / 7);
+        const fade = (1 - q / 12);
         ctx.fillStyle = q === 0
-          ? 'rgba(226,240,243,' + (0.95 * fade).toFixed(3) + ')'
-          : 'rgba(95,168,181,' + (0.55 * fade * fade).toFixed(3) + ')';
+          ? 'rgba(232,246,248,' + (1 * fade).toFixed(3) + ')'
+          : 'rgba(120,196,209,' + (0.7 * fade * fade).toFixed(3) + ')';
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, (q === 0 ? 2.1 : 1.5) * pt.s * 0.75, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, (q === 0 ? 2.9 : 1.8) * pt.s * 0.75, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -2173,12 +2180,18 @@ const OcixScene = (() => {
       const v = rotY(nd.v, spin);
       if (v[2] <= 0.02) continue;
       const pt = project(v, L);
-      const a = 0.30 + v[2] * 0.55;
-      ctx.fillStyle = 'rgba(95,168,181,' + a.toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, 1.9 * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(95,168,181,' + (a * 0.32).toFixed(3) + ')';
+      const fl = nd.flash || 0;
+      const a = Math.min(1, 0.34 + v[2] * 0.55 + fl * 0.5);
+      ctx.fillStyle = fl > 0.02
+        ? 'rgba(' + (95 + 130 * fl).toFixed(0) + ',' + (168 + 70 * fl).toFixed(0) + ',' +
+          (181 + 60 * fl).toFixed(0) + ',' + a.toFixed(3) + ')'
+        : 'rgba(95,168,181,' + a.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, (1.9 + fl * 1.6) * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
+      // 抵达时向外扩一圈，扩完就没——和状态点的脉冲同一个语汇
+      ctx.strokeStyle = 'rgba(95,168,181,' + (a * (0.32 + fl * 0.5)).toFixed(3) + ')';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, 5.2 * pt.s * 0.8, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, (5.2 + fl * 9) * pt.s * 0.8, 0, Math.PI * 2); ctx.stroke();
     }
   }
 
@@ -2187,12 +2200,16 @@ const OcixScene = (() => {
     if (document.hidden) { last = now; return; }
     const dt = Math.min(0.05, (now - last) / 1000 || 0);
     last = now;
-    spin += dt * 0.075;
+    // 0.075 rad/s 是 84 秒转一圈——盯着看也觉得没动。
+    // 0.26 rad/s 约 24 秒一圈，明显在转，又不到晃眼的地步。
+    spin += dt * 0.26;
+    for (const nd of nodes) if (nd.flash) nd.flash = Math.max(0, nd.flash - dt * 1.6);
     for (const f of flights) {
       f.t += dt * f.speed;
       if (f.t >= 1) {
         // 跑完一趟：把这条链路写到底部，然后换一对区域重开
         if (onFlow) onFlow(nodes[f.i].name, nodes[f.j].name);
+        nodes[f.j].flash = 1;          // 抵达：目标区域闪一下，眼睛能跟上「到了」
         Object.assign(f, newFlight(0));
       }
     }
@@ -2202,7 +2219,19 @@ const OcixScene = (() => {
   function resize() {
     if (!canvas) return;
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    w = canvas.clientWidth; h = canvas.clientHeight;
+    // clientWidth 在元素刚插入、还没走过一次布局时可能是 0。
+    // 拿 0 去设 canvas.width，画布就是 0×0——后面画什么都不出现，
+    // 而且一声不吭：控制台没有报错，页面看起来就是「背景完全没动」。
+    // 所以逐级兜底，并且下面还挂了 ResizeObserver，等它真拿到尺寸再补一次。
+    const nw = canvas.clientWidth
+      || (canvas.parentElement && canvas.parentElement.clientWidth)
+      || window.innerWidth || 0;
+    const nh = canvas.clientHeight
+      || (canvas.parentElement && canvas.parentElement.clientHeight)
+      || window.innerHeight || 0;
+    if (!nw || !nh) return;                 // 还是量不到就等下一次，别把画布清成 0
+    if (nw === w && nh === h && canvas.width) return;   // 尺寸没变就别重置粒子
+    w = nw; h = nh;
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     seed();
@@ -2216,6 +2245,11 @@ const OcixScene = (() => {
       still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       resize();
       window.addEventListener('resize', resize);
+      // 元素拿到真实尺寸的那一刻再补一次——上面那次可能赶在布局之前
+      if (window.ResizeObserver) {
+        ro = new ResizeObserver(resize);
+        ro.observe(canvas);
+      }
       // 关掉动效的人只给一帧静止的星球，不起循环
       if (still) { draw(0); return; }
       last = performance.now();
@@ -2225,7 +2259,9 @@ const OcixScene = (() => {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       window.removeEventListener('resize', resize);
+      if (ro) { ro.disconnect(); ro = null; }
       canvas = null; ctx = null; dots = []; nodes = []; flights = [];
+      w = 0; h = 0;
     },
   };
 })();
