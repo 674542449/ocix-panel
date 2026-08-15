@@ -182,21 +182,72 @@ def test_breathing_has_a_static_fallback():
 
 
 def test_login_leds_are_out_of_phase():
-    """登录页三颗灯要错开相位。
+    """登录页状态条上三颗灯要错开相位。
 
     同步呼吸像圣诞灯，真机架上的指示灯不会同步。
-    这里踩过一个坑：ARM 那块也是 .alloc 的第二个子元素，
-    `.alloc-box:nth-child(2)` 会连它一起选中，而且特异性还压过
-    `.alloc-arm .led`，结果两颗灯同相位。所以必须限定在 .alloc-col 里数。
     """
     css = INDEX.read_text(encoding="utf-8")
-    assert ".alloc-col .alloc-box:nth-child(2) .led" in css, (
-        "第二颗灯的选择器必须限定在 .alloc-col 内，否则会误伤 ARM 那块"
+    assert ".chip:nth-child(2) .led" in css and ".chip-arm .led" in css, (
+        "三颗机位灯各自要有相位"
     )
     delays = re.findall(r"\.led \{ animation-delay:(-[\d.]+)s", css)
     assert len(set(delays)) == len(delays) and len(delays) >= 2, (
         f"各颗灯的相位要互不相同，现在是 {delays}"
     )
+
+
+def test_reduced_motion_zeroes_animation_delay():
+    """关掉动效时延迟也要清零，不只是时长。
+
+    只压 duration 的话，带 animation-delay + fill:both 的元素会在延迟那段时间里
+    停在 from 那一帧——入场的表单和状态条标签会位移 14px 且透明地闪一下。
+    """
+    css = INDEX.read_text(encoding="utf-8")
+    reduced = css[css.index("prefers-reduced-motion") :]
+    star = re.search(r"\*, \*::before, \*::after \{([^}]*)\}", reduced)
+    assert star, "reduced-motion 里要有兜底的通配规则"
+    assert "animation-delay:0s" in star.group(1), (
+        "通配兜底里必须把 animation-delay 也清零"
+    )
+
+
+def test_login_scene_uses_no_third_party_3d_library():
+    """星球场景必须是手写 canvas，不许拖进 3D 库。
+
+    面板是单文件、无构建、CDN 挂了要能退化到最低限度可用。
+    为一个登录页背景引入几百 KB 的依赖，和这套约束是冲突的。
+    """
+    html = INDEX.read_text(encoding="utf-8")
+    for lib in ("three.min.js", "three.module", "babylon", "p5.js", "pixi"):
+        assert lib not in html.lower(), f"登录页不该引入 {lib}"
+    assert "getContext('2d')" in html, "场景应当走 2D canvas"
+
+
+def test_login_scene_regions_are_real_oci_regions():
+    """场景里的坐标点必须是 Oracle 真实存在的区域，不能编。
+
+    这些名字会显示在状态条上（「刚跑完的链路」），编的名字就是假信息。
+    """
+    html = INDEX.read_text(encoding="utf-8")
+    block = html[html.index("const REGIONS = ["):]
+    block = block[: block.index("];")]
+    names = re.findall(r"\['([a-z0-9-]+)',", block)
+    assert len(names) >= 10, f"区域太少：{names}"
+    pattern = re.compile(r"^(us|eu|uk|ap|sa|me|ca|il|af)-[a-z]+-\d$")
+    bad = [n for n in names if not pattern.match(n)]
+    assert not bad, f"这些不像 OCI 区域名：{bad}"
+    # 用户自己的机器在 us-sanjose-1，这个区域应当在列表里
+    assert "us-sanjose-1" in names
+
+
+def test_login_scene_stops_when_logged_in():
+    """登录成功后场景要停掉，别在后台白烧 CPU。"""
+    html = INDEX.read_text(encoding="utf-8")
+    assert re.search(r"if \(token\.value\) \{ OcixScene\.stop\(\); return; \}", html), (
+        "token 有值时必须 stop()"
+    )
+    assert "onUnmounted(() => OcixScene.stop())" in html, "组件卸载时也要 stop()"
+    assert "document.hidden" in html, "标签页不可见时应当跳过绘制"
 
 
 def test_chart_series_differ_by_dash_not_only_color():

@@ -166,7 +166,6 @@
     .hint { font-size:12px; color:var(--text-2); line-height:1.7; margin:var(--sp-3) 0 0; }
     .table-wrap { overflow-x:auto; }
 
-    /* 登录 */
     /* ── 标识 ──
        Always Free 的额度就是「2 台微型 + 1 台 ARM」，标识直接画这三块。
        通用的云朵/盾牌图标放在任何云面板上都成立，说明不了这个面板管的是什么。 */
@@ -174,87 +173,92 @@
     .mark .cell-sm { fill:var(--text-3); }
     .mark .cell-lg { fill:var(--accent); }
 
-    /* ── 登录 ── */
-    .login-wrap { display:grid; place-items:center; min-height:100vh; padding:var(--sp-4); }
-    .login-shell { width:100%; max-width:860px; display:grid; grid-template-columns:1.05fr 1fr;
-                   background:var(--surface); border:1px solid var(--line); border-radius:14px;
-                   overflow:hidden;
-                   /* 顶边内高光：云控制台那种「玻璃面板」的边，一条线就够了 */
-                   box-shadow:0 24px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); }
+    /* ── 登录页 ──
+       结构：整屏是一幕场景（粒子星球在画布上转），表单是浮在上面的一块玻璃，
+       品牌和状态条贴在四角，像控制台的 HUD。
+       不再是原来那种「居中一张两栏卡片」。 */
+    .login-scene { position:fixed; inset:0; overflow:hidden; background:var(--bg);
+                   display:grid; grid-template-rows:auto 1fr auto; }
+    .login-canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    /* 压在画布上的一层渐变：把粒子往表单那侧压暗，字才立得住。
+       左浓右淡——星球在右边，表单在左边。 */
+    .login-veil { position:absolute; inset:0; pointer-events:none;
+                  background:
+                    radial-gradient(70% 60% at 22% 50%, rgba(20,23,26,.92), rgba(20,23,26,.55) 55%, transparent 78%),
+                    linear-gradient(180deg, rgba(20,23,26,.75), transparent 22%, transparent 74%, rgba(20,23,26,.85)); }
 
-    /* 左栏：把这个面板管的东西直接摆出来 */
-    /* 左栏的氛围：主色径向辉光 + 极淡点阵。两层都压得很低，
-       是背景不是图案——盖过内容就本末倒置了。 */
-    .login-aside { position:relative; padding:var(--sp-6) var(--sp-5);
-                   background:
-                     radial-gradient(120% 85% at 12% -10%, rgba(95,168,181,.16), transparent 62%),
-                     linear-gradient(160deg, #1f272b 0%, #191d21 60%, #14171a 100%);
-                   border-right:1px solid var(--line); display:flex; flex-direction:column;
-                   gap:var(--sp-5); overflow:hidden; }
-    .login-aside::before { content:""; position:absolute; inset:0; pointer-events:none;
-                   background-image:radial-gradient(circle at 1px 1px, rgba(255,255,255,.05) 1px, transparent 0);
-                   background-size:22px 22px;
-                   /* 网格往下淡出，免得和底部文字抢 */
-                   -webkit-mask-image:linear-gradient(180deg, #000 0%, transparent 78%);
-                   mask-image:linear-gradient(180deg, #000 0%, transparent 78%); }
-    .login-aside > * { position:relative; }
-    .login-brand { display:flex; align-items:center; gap:11px; }
-    .login-brand .name { font-family:var(--mono); font-size:23px; font-weight:600;
-                         letter-spacing:.22em; color:var(--text); line-height:1.1; }
-    /* 等宽小字 eyebrow：控制台的语汇，也把「这是谁家的云」说清楚 */
-    .login-eyebrow { font-family:var(--mono); font-size:10px; letter-spacing:.28em;
-                     text-transform:uppercase; color:var(--accent); opacity:.85;
-                     margin:0 0 5px; }
-    .login-brand .name b { color:var(--accent); font-weight:600; }
-    .login-tag { font-size:12px; color:var(--text-3); margin:-2px 0 0; }
+    .login-hud { position:relative; padding:var(--sp-5) var(--sp-6); }
+    .login-hud-top { display:flex; align-items:center; gap:12px; }
+    .login-wordmark { font-family:var(--mono); font-size:22px; font-weight:600;
+                      letter-spacing:.22em; color:var(--text); line-height:1.15; }
+    .login-wordmark b { color:var(--accent); font-weight:600; }
+    .login-eyebrow { font-family:var(--mono); font-size:9.5px; letter-spacing:.3em;
+                     text-transform:uppercase; color:var(--accent); opacity:.9; margin:0 0 3px; }
 
-    /* 额度图：两小一大，就是满配 Always Free 的样子 */
-    .alloc { display:grid; grid-template-columns:1fr 1.25fr; gap:10px; }
-    .alloc-col { display:grid; gap:10px; }
-    .alloc-box { position:relative; border:1px solid var(--line); border-radius:9px;
-                 padding:12px 13px 12px 24px; background:#1a1e22; min-height:62px;
-                 display:flex; flex-direction:column; justify-content:center; gap:3px;
-                 animation:alloc-in .5s cubic-bezier(.2,.7,.3,1) both; }
-    /* 机位指示灯。刻意不复用 .dot.ok——这三块是 Always Free 额度的示意图，
-       不是你真实的机器状态，不能让它暗示「你有东西在跑」。 */
-    .led { position:absolute; left:10px; top:50%; margin-top:-3px;
-           width:6px; height:6px; border-radius:50%; background:var(--ok);
-           animation:breathe 3.2s ease-in-out infinite; }
-    /* 限定在左列里数：ARM 那块也是 .alloc 的第二个子元素，
-       不加 .alloc-col 的话它会被这条选中（而且特异性还压过下面那条），
-       结果两颗灯同相位。 */
-    .alloc-col .alloc-box:nth-child(2) .led { animation-delay:-1.3s; }
-    .alloc-arm .led { animation-delay:-2.4s; }
-    .alloc-box:nth-child(1) { animation-delay:.05s; }
-    .alloc-box:nth-child(2) { animation-delay:.14s; }
-    .alloc-arm { grid-row:span 2; border-color:var(--accent-dim); background:
-                 linear-gradient(180deg, rgba(95,168,181,.12), rgba(95,168,181,.03));
-                 animation-delay:.23s; }
-    @keyframes alloc-in { from { opacity:0; transform:translateY(6px) scale(.985); }
+    .login-stage { position:relative; display:flex; align-items:center;
+                   padding:0 var(--sp-6); min-height:0; }
+    /* 表单：半透明 + 背景模糊。底色压到 .92，就算背后正好飘过一颗亮粒子，
+       文字对比度也不会跟着抖。 */
+    .login-panel { width:100%; max-width:392px; padding:var(--sp-6) var(--sp-5);
+                   background:rgba(23,27,31,.92); border:1px solid var(--line-2);
+                   border-radius:14px;
+                   box-shadow:0 30px 70px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.07);
+                   -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+                   animation:panel-in .55s cubic-bezier(.2,.7,.3,1) both; }
+    @keyframes panel-in { from { opacity:0; transform:translateY(14px); }
                           to   { opacity:1; transform:none; } }
-    .alloc-k { font-family:var(--mono); font-size:10px; letter-spacing:.12em;
-               text-transform:uppercase; color:var(--text-3); }
-    .alloc-v { font-size:13px; color:var(--text); font-variant-numeric:tabular-nums; }
-    .alloc-arm .alloc-v { color:var(--accent); }
-    .alloc-foot { font-size:11.5px; color:var(--text-2); display:flex; align-items:flex-start;
-                  gap:7px; line-height:1.6; }
-    .alloc-foot code { background:rgba(95,168,181,.12); color:var(--accent);
-                       padding:1px 5px; border-radius:4px; font-size:11px; }
-
-    .login-form { padding:var(--sp-6) var(--sp-5); display:flex; flex-direction:column;
-                  justify-content:center; }
-    .login-form h2 { margin:0 0 var(--sp-1); font-size:16px; font-weight:600; color:var(--text); }
+    .login-panel h2 { margin:0 0 var(--sp-1); font-size:17px; font-weight:600; color:var(--text); }
     .login-sub { color:var(--text-2); font-size:12.5px; margin:0 0 var(--sp-5); }
 
-    @media (max-width: 760px) {
-      .login-shell { grid-template-columns:1fr; max-width:420px; }
-      .login-aside { border-right:0; border-bottom:1px solid var(--line);
-                     padding:var(--sp-5) var(--sp-4); gap:var(--sp-4); }
-      .alloc { grid-template-columns:1fr 1fr 1.2fr; }
-      .alloc-col { grid-column:span 2; grid-template-columns:1fr 1fr; grid-auto-flow:column; }
-      .alloc-arm { grid-row:auto; }
-      .alloc-box { min-height:0; padding:10px 11px 10px 22px; }
-      .login-form { padding:var(--sp-5) var(--sp-4); }
+    /* ── 底部状态条：把额度摆成三块机位，各带一颗呼吸灯 ── */
+    .login-hud-bottom { display:flex; align-items:center; justify-content:space-between;
+                        gap:var(--sp-4); flex-wrap:wrap;
+                        border-top:1px solid rgba(255,255,255,.06); }
+    .hud-chips { display:flex; gap:var(--sp-2); flex-wrap:wrap; }
+    .chip { display:inline-flex; align-items:center; gap:8px; padding:7px 12px 7px 10px;
+            border:1px solid var(--line); border-radius:8px; background:rgba(23,27,31,.72);
+            font-size:11.5px; color:var(--text-2); white-space:nowrap;
+            animation:panel-in .5s cubic-bezier(.2,.7,.3,1) both; }
+    .chip:nth-child(2) { animation-delay:.07s; }
+    .chip:nth-child(3) { animation-delay:.14s; }
+    .chip b { color:var(--text); font-weight:600; }
+    .chip-spec { color:var(--text-3); }
+    .chip-arm { border-color:var(--accent-dim); }
+    /* 机位指示灯。刻意不复用 .dot.ok——这三块是 Always Free 额度的示意，
+       不是你真实的机器状态，不能让它暗示「你有东西在跑」。 */
+    .led { flex:none; width:6px; height:6px; border-radius:50%; background:var(--ok);
+           animation:breathe 3.2s ease-in-out infinite; }
+    .chip:nth-child(2) .led { animation-delay:-1.3s; }
+    .chip-arm .led { animation-delay:-2.4s; }
+    .hud-meta { font-size:11px; color:var(--text-3); letter-spacing:.06em;
+                display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .hud-meta code { background:rgba(95,168,181,.12); color:var(--accent);
+                     padding:1px 5px; border-radius:4px; font-size:10.5px; }
+    /* 星球上刚跑完一趟的那条链路。内容由场景回填，是真实的 OCI 区域名。 */
+    .hud-flow { color:var(--accent); opacity:.9; }
+    .hud-flow .arrow { color:var(--text-3); margin:0 5px; }
+
+    @media (max-width: 900px) {
+      /* 窄屏：星球退到上方，表单居中压在它下面 */
+      .login-hud { padding:var(--sp-4); }
+      .login-stage { padding:0 var(--sp-4); justify-content:center; align-items:flex-end;
+                     padding-bottom:var(--sp-4); }
+      .login-panel { max-width:420px; }
+      .login-veil { background:
+                      radial-gradient(80% 46% at 50% 74%, rgba(20,23,26,.94), rgba(20,23,26,.6) 58%, transparent 82%),
+                      linear-gradient(180deg, rgba(20,23,26,.6), transparent 18%, transparent 62%, rgba(20,23,26,.9)); }
+      .login-hud-bottom { justify-content:center; }
+      .hud-meta { display:none; }
+    }
+    @media (max-width: 560px) {
+      /* 手机上留住机位标签，只收掉规格数字。
+         整条都藏起来的话，登录页就完全不说这个面板是管什么的了。 */
+      .chip-spec { display:none; }
+      .chip { padding:6px 10px; font-size:11px; gap:6px; }
+      .hud-chips { gap:6px; }
+      .login-hud { padding:var(--sp-3); }
+      /* 主操作在手机上要够得着：44×44 是触摸目标的下限 */
+      .login-panel .el-button--large { min-height:44px; }
     }
 
     /* ── 侧栏页脚：版本号与服务状态 ── */
@@ -262,11 +266,11 @@
                  display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
     .rail-foot .ver { font-family:var(--mono); font-size:11px; color:var(--text-3); }
     .rail-foot .svc { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--text-2); }
-    .login-card { width:100%; max-width:380px; background:var(--surface); border:1px solid var(--line);
-                  padding:var(--sp-6); border-radius:12px; }
-    .login-card h1 { margin:0 0 var(--sp-1); font-size:20px; letter-spacing:.4px; }
-    .login-card h1 span { color:var(--accent); }
-    .login-sub { color:var(--text-2); font-size:12.5px; margin:0 0 var(--sp-5); }
+
+    /* 「改规格」表单里的小标签也用这一对 */
+    .alloc-k { font-family:var(--mono); font-size:10px; letter-spacing:.12em;
+               text-transform:uppercase; color:var(--text-3); }
+    .alloc-v { font-size:13px; color:var(--text); font-variant-numeric:tabular-nums; }
 
     /* ── 状态点 ──
        颜色回来了，但形态区分保留着：实心 / 空心 / 脉动 / 方块。
@@ -535,8 +539,11 @@
     @media (prefers-reduced-motion: reduce) {
       .netbar > i, .skel, .spin { animation:none !important; }
       .netbar > i { transform:scaleX(1); opacity:.9; }
+      /* 延迟也要清零。只压 duration 的话，带 animation-delay + fill:both 的元素
+         （入场的表单、状态条上的机位标签）会在延迟这段时间里停在 from 那一帧
+         ——也就是位移 14px 且透明。压成 .001ms 之后这段闪动依然存在。 */
       *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important;
-                               transition-duration:.001ms !important; }
+                               animation-delay:0s !important; transition-duration:.001ms !important; }
       /* 不能动的时候，过渡态用双环表示，别退化成和 attn 一个样 */
       .dot.warn { box-shadow:0 0 0 1px var(--bg), 0 0 0 2px var(--warn),
                              0 0 0 3px var(--bg), 0 0 0 4px rgba(201,174,94,.5); }
@@ -550,50 +557,26 @@
 
 <script type="text/html" id="app-tpl">
   <!-- ── 登录 ── -->
-  <div class="login-wrap" v-if="!token">
-    <div class="login-shell">
-      <aside class="login-aside">
-        <div>
-          <p class="login-eyebrow">Oracle Cloud Infrastructure</p>
-          <div class="login-brand">
-            <svg class="mark" width="34" height="34" viewBox="0 0 24 24" aria-hidden="true">
-              <rect class="cell-sm" x="3.5" y="3.5" width="7" height="7" rx="1.6" />
-              <rect class="cell-sm" x="3.5" y="13.5" width="7" height="7" rx="1.6" />
-              <rect class="cell-lg" x="13.5" y="3.5" width="7" height="17" rx="1.6" />
-            </svg>
-            <span class="name">OCI<b>X</b></span>
-          </div>
-          <p class="login-tag">Oracle Cloud Always Free 开机面板</p>
-        </div>
+  <div class="login-scene" v-if="!token">
+    <!-- 场景：真实的 Oracle 区域节点，以及区域之间流动的数据包。
+         纯装饰，读屏器跳过。 -->
+    <canvas class="login-canvas" ref="loginCanvas" aria-hidden="true"></canvas>
+    <div class="login-veil" aria-hidden="true"></div>
 
-        <!-- 这三块就是标识的放大版：满配 Always Free 长这样 -->
-        <div class="alloc" aria-label="Always Free 额度">
-          <div class="alloc-col">
-            <div class="alloc-box">
-              <i class="led" aria-hidden="true"></i>
-              <span class="alloc-k">AMD Micro</span>
-              <span class="alloc-v">1 OCPU · 1 GB</span>
-            </div>
-            <div class="alloc-box">
-              <i class="led" aria-hidden="true"></i>
-              <span class="alloc-k">AMD Micro</span>
-              <span class="alloc-v">1 OCPU · 1 GB</span>
-            </div>
-          </div>
-          <div class="alloc-box alloc-arm">
-            <i class="led" aria-hidden="true"></i>
-            <span class="alloc-k">ARM Ampere A1</span>
-            <span class="alloc-v">4 OCPU · 24 GB</span>
-          </div>
-        </div>
+    <header class="login-hud login-hud-top">
+      <svg class="mark" width="30" height="30" viewBox="0 0 24 24" aria-hidden="true">
+        <rect class="cell-sm" x="3.5" y="3.5" width="7" height="7" rx="1.6" />
+        <rect class="cell-sm" x="3.5" y="13.5" width="7" height="7" rx="1.6" />
+        <rect class="cell-lg" x="13.5" y="3.5" width="7" height="17" rx="1.6" />
+      </svg>
+      <div>
+        <p class="login-eyebrow">Oracle Cloud Infrastructure</p>
+        <div class="login-wordmark">OCI<b>X</b></div>
+      </div>
+    </header>
 
-        <div class="alloc-foot">
-          <span>合计 200 GB 存储额度，建机前逐项核算，超出即拦下；
-                三台机器共用 <code class="mono">10.0.0.0/24</code>，首次开机时自动创建</span>
-        </div>
-      </aside>
-
-      <div class="login-form">
+    <main class="login-stage">
+      <section class="login-panel">
         <h2>登录</h2>
         <p class="login-sub">面板只操作你自己的 OCI 租户。</p>
         <el-alert v-if="loginErr" :title="loginErr" type="error" show-icon :closable="false"
@@ -611,8 +594,21 @@
                      :loading="loading">登录</el-button>
         </el-form>
         <p class="hint">首次登录后请立刻改密。</p>
+      </section>
+    </main>
+
+    <footer class="login-hud login-hud-bottom">
+      <div class="hud-chips" aria-label="Always Free 额度">
+        <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
+        <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
+        <span class="chip chip-arm"><i class="led" aria-hidden="true"></i><b>ARM Ampere A1</b><span class="chip-spec">4 OCPU · 24 GB</span></span>
       </div>
-    </div>
+      <div class="hud-meta mono">
+        <span>200 GB 存储额度</span>
+        <span>共用子网 <code>10.0.0.0/24</code></span>
+        <span class="hud-flow" ref="loginFlow" aria-hidden="true"></span>
+      </div>
+    </footer>
   </div>
 
   <!-- ── 主面板 ── -->
@@ -2034,6 +2030,206 @@ function randomName() {
   }
 }
 
+/* ── 登录页的星球场景 ──
+   手写 canvas，不引第三方 3D 库。面板是单文件、无构建、CDN 挂了要能退化到
+   最低限度可用，为一个登录页背景再拖进来几百 KB 的 3D 引擎不划算——
+   这里要的东西（球面点阵 + 大圆弧 + 沿弧飞的光点）自己算不到两百行。
+
+   画的是真东西：下面每一个坐标都是 Oracle 真实存在的区域，
+   飞来飞去的光点是区域之间的链路，跑完一趟会把链路名写到底部状态条上。 */
+const OcixScene = (() => {
+  // [区域名, 纬度, 经度] —— 都是 OCI 实际开放的商业区域
+  const REGIONS = [
+    ['us-ashburn-1',    39.04,  -77.49], ['us-phoenix-1',    33.45, -112.07],
+    ['us-sanjose-1',    37.34, -121.89], ['ca-toronto-1',    43.65,  -79.38],
+    ['sa-saopaulo-1',  -23.55,  -46.63], ['uk-london-1',     51.51,   -0.13],
+    ['eu-frankfurt-1',  50.11,    8.68], ['eu-zurich-1',     47.38,    8.54],
+    ['me-dubai-1',      25.20,   55.27], ['ap-mumbai-1',     19.08,   72.88],
+    ['ap-singapore-1',   1.35,  103.82], ['ap-tokyo-1',      35.68,  139.69],
+    ['ap-osaka-1',      34.69,  135.50], ['ap-sydney-1',    -33.87,  151.21],
+  ];
+
+  const toVec = (lat, lon) => {
+    const p = lat * Math.PI / 180, l = lon * Math.PI / 180, c = Math.cos(p);
+    return [c * Math.sin(l), Math.sin(p), c * Math.cos(l)];
+  };
+  const rotY = (v, a) => {
+    const s = Math.sin(a), c = Math.cos(a);
+    return [v[0] * c + v[2] * s, v[1], v[2] * c - v[0] * s];
+  };
+  // 球面线性插值：两点之间沿大圆走，这才是链路在球面上的真实走法
+  const slerp = (a, b, t) => {
+    let d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    d = Math.max(-1, Math.min(1, d));
+    const w = Math.acos(d);
+    if (w < 1e-6) return a.slice();
+    const sw = Math.sin(w), k0 = Math.sin((1 - t) * w) / sw, k1 = Math.sin(t * w) / sw;
+    return [a[0] * k0 + b[0] * k1, a[1] * k0 + b[1] * k1, a[2] * k0 + b[2] * k1];
+  };
+
+  let canvas, ctx, raf = 0, w = 0, h = 0, dpr = 1;
+  let dots = [], nodes = [], flights = [], spin = 0, last = 0;
+  let onFlow = null, still = false;
+
+  function layout() {
+    const wide = w > 900;
+    return {
+      cx: wide ? w * 0.68 : w * 0.5,
+      cy: wide ? h * 0.5 : h * 0.32,
+      R: wide ? Math.min(w * 0.26, h * 0.42) : Math.min(w * 0.42, h * 0.26),
+    };
+  }
+
+  // 透视投影：相机在 +Z，越靠近越大越亮。depth 用来做前后遮挡的近似。
+  function project(v, L) {
+    const D = 3.2;                       // 相机距离，单位是球半径
+    const persp = D / (D - v[2]);
+    return { x: L.cx + v[0] * L.R * persp, y: L.cy - v[1] * L.R * persp,
+             z: v[2], s: persp };
+  }
+
+  function seed() {
+    // 斐波那契球：点在球面上分布得最匀，不会像经纬网格那样在两极堆成一团
+    const n = w < 700 ? 260 : 620;
+    const ga = Math.PI * (3 - Math.sqrt(5));
+    dots = [];
+    for (let i = 0; i < n; i++) {
+      const y = 1 - (i / (n - 1)) * 2;
+      const r = Math.sqrt(Math.max(0, 1 - y * y));
+      const th = ga * i;
+      dots.push([Math.cos(th) * r, y, Math.sin(th) * r]);
+    }
+    nodes = REGIONS.map(([name, lat, lon]) => ({ name, v: toVec(lat, lon) }));
+    flights = [];
+    for (let i = 0; i < (w < 700 ? 4 : 7); i++) flights.push(newFlight(Math.random()));
+  }
+
+  function newFlight(t0) {
+    let i = (Math.random() * nodes.length) | 0, j = (Math.random() * nodes.length) | 0;
+    while (j === i) j = (Math.random() * nodes.length) | 0;
+    return { i, j, t: t0 || 0, speed: 0.10 + Math.random() * 0.13, announced: false };
+  }
+
+  function draw(dt) {
+    const L = layout();
+    ctx.clearRect(0, 0, w, h);
+
+    // 球体本身：一层极淡的辉光，让球有体积感而不是一堆浮点
+    const g = ctx.createRadialGradient(L.cx, L.cy, L.R * 0.1, L.cx, L.cy, L.R * 1.25);
+    g.addColorStop(0, 'rgba(95,168,181,0.10)');
+    g.addColorStop(0.55, 'rgba(95,168,181,0.04)');
+    g.addColorStop(1, 'rgba(95,168,181,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(L.cx, L.cy, L.R * 1.25, 0, Math.PI * 2); ctx.fill();
+
+    // 点阵。背面的点压暗但不删——留着才有「透过球看到另一面」的感觉
+    for (let k = 0; k < dots.length; k++) {
+      const pt = project(rotY(dots[k], spin), L);
+      const front = pt.z > 0;
+      const a = front ? 0.16 + pt.z * 0.42 : 0.05 + (1 + pt.z) * 0.06;
+      ctx.fillStyle = 'rgba(154,164,173,' + a.toFixed(3) + ')';
+      const r = (front ? 1.15 : 0.8) * pt.s * 0.62;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 链路与数据包
+    for (const f of flights) {
+      const A = rotY(nodes[f.i].v, spin), B = rotY(nodes[f.j].v, spin);
+      const STEPS = 34;
+      // 弧线抬离球面，中间最高——两点越远抬得越高，跟真实的大圆航线一个道理
+      const lift = (t) => 1 + 0.30 * Math.sin(Math.PI * t);
+      ctx.beginPath();
+      let started = false;
+      for (let k = 0; k <= STEPS; k++) {
+        const t = k / STEPS, m = slerp(A, B, t), lf = lift(t);
+        const pt = project([m[0] * lf, m[1] * lf, m[2] * lf], L);
+        if (m[2] < -0.15) { started = false; continue; }   // 绕到球背面就断开
+        if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
+        else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.strokeStyle = 'rgba(95,168,181,0.16)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // 包头 + 拖尾。拖尾就是把前面几个时刻的位置画成渐隐的点
+      for (let q = 0; q < 7; q++) {
+        const t = f.t - q * 0.022;
+        if (t < 0 || t > 1) continue;
+        const m = slerp(A, B, t), lf = lift(t);
+        const pt = project([m[0] * lf, m[1] * lf, m[2] * lf], L);
+        if (m[2] < -0.1) continue;
+        const fade = (1 - q / 7);
+        ctx.fillStyle = q === 0
+          ? 'rgba(226,240,243,' + (0.95 * fade).toFixed(3) + ')'
+          : 'rgba(95,168,181,' + (0.55 * fade * fade).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, (q === 0 ? 2.1 : 1.5) * pt.s * 0.75, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 区域节点：正面的画成小圈，背面的不画
+    for (const nd of nodes) {
+      const v = rotY(nd.v, spin);
+      if (v[2] <= 0.02) continue;
+      const pt = project(v, L);
+      const a = 0.30 + v[2] * 0.55;
+      ctx.fillStyle = 'rgba(95,168,181,' + a.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 1.9 * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(95,168,181,' + (a * 0.32).toFixed(3) + ')';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 5.2 * pt.s * 0.8, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  function step(now) {
+    raf = requestAnimationFrame(step);
+    if (document.hidden) { last = now; return; }
+    const dt = Math.min(0.05, (now - last) / 1000 || 0);
+    last = now;
+    spin += dt * 0.075;
+    for (const f of flights) {
+      f.t += dt * f.speed;
+      if (f.t >= 1) {
+        // 跑完一趟：把这条链路写到底部，然后换一对区域重开
+        if (onFlow) onFlow(nodes[f.i].name, nodes[f.j].name);
+        Object.assign(f, newFlight(0));
+      }
+    }
+    draw(dt);
+  }
+
+  function resize() {
+    if (!canvas) return;
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = canvas.clientWidth; h = canvas.clientHeight;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    seed();
+    if (still) draw(0);
+  }
+
+  return {
+    start(el, flowCb) {
+      if (!el || raf) return;
+      canvas = el; ctx = canvas.getContext('2d'); onFlow = flowCb || null;
+      still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      resize();
+      window.addEventListener('resize', resize);
+      // 关掉动效的人只给一帧静止的星球，不起循环
+      if (still) { draw(0); return; }
+      last = performance.now();
+      raf = requestAnimationFrame(step);
+    },
+    stop() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      window.removeEventListener('resize', resize);
+      canvas = null; ctx = null; dots = []; nodes = []; flights = [];
+    },
+  };
+})();
+
 createApp({
   template: document.getElementById('app-tpl').innerHTML,
   setup() {
@@ -2060,6 +2256,32 @@ createApp({
     const subtree = ref(false);
     const activeTab = ref('instances');
     const lastUpdated = ref('');
+
+    // ---- 登录页的星球场景 ----
+    // 画布只在没登录时存在，所以跟着 token 起停：登录成功后立刻停掉
+    // requestAnimationFrame，别让它在后台白烧 CPU。
+    const loginCanvas = ref(null);
+    const loginFlow = ref(null);
+    // 用 DOM 建节点，不拼 HTML 字符串。区域名虽然来自本文件里写死的常量表，
+    // 但前端只允许存在一处 HTML 注入点（读自身模板那句），别为这点方便破例。
+    function showFlow(from, to) {
+      const el = loginFlow.value;
+      if (!el) return;
+      const span = (text, cls) => {
+        const s = document.createElement('span');
+        if (cls) s.className = cls;
+        s.textContent = text;
+        return s;
+      };
+      el.replaceChildren(span(from), span('→', 'arrow'), span(to));
+    }
+    function syncScene() {
+      if (token.value) { OcixScene.stop(); return; }
+      nextTick(() => OcixScene.start(loginCanvas.value, showFlow));
+    }
+    watch(token, syncScene);
+    onMounted(syncScene);
+    onUnmounted(() => OcixScene.stop());
 
     // ---- 数据 ----
     const instances = ref([]);
@@ -3861,6 +4083,7 @@ createApp({
     ];
 
     return {
+      loginCanvas, loginFlow,
       CW, CH, HOUR_RANGES, areaSeries, NAV, go, orphanBadge,
       pubKeyName, ipv6Busy,
       rollName, onPubKeyFile, addIpv6,
