@@ -65,20 +65,44 @@ class TTLCache:
 # 否则页面会慢得离谱。
 _account_gate = threading.Lock()
 _gate_owner: list = [None]
+# 当前账户有几个线程还在闸门里。必须计数：
+# 早先只记 owner、谁先出来谁就把 owner 清掉并放锁，于是出现过这种交叉——
+#   请求1(A) 拿锁，owner=A
+#   请求2(A) 看见 owner==A 直接放行（这是有意的，同账户允许并发）
+#   请求1 先跑完 -> owner=None、放锁
+#   请求3(B) 拿到锁进来，而请求2(A) 还在里面
+# 结果 A 和 B 同时在打 OCI，README 承诺的「同一时刻只有一个账户」就不成立了。
+# 改成引用计数之后，锁要等最后一个同账户线程离开才放。
+_gate_depth: list = [0]
+_gate_meta = threading.Lock()
 
 
 @contextmanager
 def account_gate(profile: str):
-    """跨账户串行；同一账户重入直接放行，避免自己把自己锁死。"""
-    if _gate_owner[0] == profile:
+    """跨账户串行；同一账户可以并发（页面一次要查好几样，串起来会慢得离谱）。"""
+    with _gate_meta:
+        passthrough = _gate_owner[0] == profile
+        if passthrough:
+            _gate_depth[0] += 1
+
+    if not passthrough:
+        # 注意：阻塞等锁的时候不能捏着 _gate_meta，否则谁都别想进出
+        _account_gate.acquire()
+        with _gate_meta:
+            _gate_owner[0] = profile
+            _gate_depth[0] = 1
+
+    try:
         yield
-        return
-    with _account_gate:
-        _gate_owner[0] = profile
-        try:
-            yield
-        finally:
-            _gate_owner[0] = None
+    finally:
+        with _gate_meta:
+            _gate_depth[0] -= 1
+            last_one_out = _gate_depth[0] == 0
+            if last_one_out:
+                _gate_owner[0] = None
+        # Lock 允许由别的线程释放（RLock 不行），所以「最后离开的人关灯」成立
+        if last_one_out:
+            _account_gate.release()
 
 
 def gather(fn: Callable, items: Iterable) -> list[tuple[object, object, Exception]]:

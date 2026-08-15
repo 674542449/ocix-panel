@@ -365,6 +365,10 @@
     .bar.over > i { background:repeating-linear-gradient(-45deg,
                     var(--crit) 0 3px, #8f5560 3px 6px); }
 
+    /* 建实例的当前步骤 */
+    .create-step { display:flex; align-items:center; gap:8px; margin:10px 0 0;
+                   font-size:12px; color:var(--text-2); }
+
     /* 监控图 */
     .chart { position:relative; width:100%; }
     .chart svg { display:block; width:100%; height:auto; }
@@ -883,7 +887,7 @@
                   </el-form-item>
                 </el-form>
                 <p class="hint">
-                  选 <code>~/.ssh/id_ed25519.pub</code> 这类 .pub 文件，不是私钥。创创建完成后成后用
+                  选 <code>~/.ssh/id_ed25519.pub</code> 这类 .pub 文件，不是私钥。创建完成后用
                   <code class="mono">ssh ubuntu@公网IP</code> 登录。
                 </p>
               </div>
@@ -921,6 +925,12 @@
                            :disabled="!canCreate" :loading="creating" @click="createInstance">
                   {{ preflight && !preflight.allow ? '超出免费额度，无法创建' : '创建实例' }}
                 </el-button>
+                <!-- 建实例正常也要一分多钟（建网络、等网卡）。
+                     把后端当前那一步显示出来，否则用户只看到一个转圈，
+                     很容易以为卡死了就去刷新或者重试。 -->
+                <p class="create-step" v-if="creating && createStep">
+                  <i class="dot warn"></i><span>{{ createStep }}</span>
+                </p>
                 <p class="hint">
                   创建前后端会**再核算一次**额度，超额一律拒绝——即使你绕过界面直接调接口也拦得住。
                   ARM 遇到「Out of host capacity」是 Oracle 侧没库存，面板只报错，不会自动循环重试。
@@ -2757,6 +2767,28 @@ createApp({
       runPreflight();
     }
 
+    // 建实例的进度。后端每完成一步记一条，这里显示最新那条——
+    // 整条链路一分多钟，界面不说话用户会以为卡死了。
+    const createStep = ref('');
+
+    async function pollJob(jobId, everyMs = 1500) {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      for (;;) {
+        const { data } = await axios.get('/api/provision/jobs/' + jobId);
+        const steps = data.steps || [];
+        if (steps.length) {
+          createStep.value = steps[steps.length - 1].text + '（已用 ' + data.elapsed + 's）';
+        }
+        if (data.state === 'ok') return data.result;
+        if (data.state === 'failed') {
+          const err = new Error((data.error && data.error.message) || '创建失败');
+          err.jobError = data.error;
+          throw err;
+        }
+        await sleep(everyMs);
+      }
+    }
+
     async function createInstance() {
       const p = preflight.value;
       const spec = isArm.value
@@ -2766,7 +2798,7 @@ createApp({
         await ElMessageBox.confirm(
           `创建「${createForm.display_name}」？\n规格 ${spec}，引导卷 ${createForm.boot_gb}GB。\n` +
           `创建后存储将占用 ${p.checks.find(c => c.key === 'storage_gb').after}/200 GB。` +
-          (createForm.assign_ipv6 ? '\n创创建完成后成后会自动分配 IPv6 地址。' : '') +
+          (createForm.assign_ipv6 ? '\n创建完成后会自动分配 IPv6 地址。' : '') +
           (createForm.open_all_ports
             ? '\n\n⚠ 会放行子网的全部入站端口，同子网下所有实例都会被放开。'
             : ''),
@@ -2777,7 +2809,10 @@ createApp({
 
       creating.value = true;
       try {
-        const { data } = await axios.post('/api/provision/instances', {
+        // 后端立刻返回任务号，活儿在它那边的后台线程里跑。
+        // 之前是同步等的：整条链路一分多钟起步，挂在 Cloudflare 后面
+        // 100 秒就被判超时，返回一个「源站」错误页——而实例其实已经建出来了。
+        const { data: sub } = await axios.post('/api/provision/instances', {
           profile: currentProfile.value,
           compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
           display_name: createForm.display_name,
@@ -2791,6 +2826,7 @@ createApp({
           assign_ipv6: createForm.assign_ipv6,
           open_all_ports: createForm.open_all_ports,
         });
+        const data = await pollJob(sub.job_id);
         ElMessage.success(`${data.display_name} 已创建，正在初始化`);
         const lines = [];
         if (data.network_created) lines.push('已自动创建 VCN + 网关 + 公共子网');
@@ -2803,7 +2839,7 @@ createApp({
             `${data.display_name} 已创建，但有几项需手动处理`,
             { type: 'warning', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '620px' } });
         } else {
-          ElMessageBox.alert(lines.join('\n'), `${data.display_name} 创创建完成后成`,
+          ElMessageBox.alert(lines.join('\n'), `${data.display_name} 创建完成`,
             { type: 'success', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '560px' } });
         }
         createForm.display_name = randomName();
@@ -2811,15 +2847,17 @@ createApp({
         await loadSingle();
         doPreflight();
       } catch (e) {
-        const d = e.response && e.response.data && e.response.data.detail;
+        // 额度被拦下时给的是结构化原因，逐条列出来比一句「创建失败」有用。
+        // 现在这个原因是从任务结果里回来的，不再是 HTTP 的 detail。
+        const d = (e && e.jobError) || (e.response && e.response.data && e.response.data.detail);
         if (d && typeof d === 'object' && d.blockers) {
           ElMessageBox.alert(d.blockers.join('\n'), '超出免费额度，已阻止创建',
             { type: 'error', customStyle: { whiteSpace: 'pre-wrap' } });
         } else {
-          ElMessageBox.alert(errMsg(e, '创建失败'), '创建失败',
+          ElMessageBox.alert((d && d.message) || errMsg(e, '创建失败'), '创建失败',
             { type: 'error', customStyle: { whiteSpace: 'pre-wrap', maxWidth: '560px' } });
         }
-      } finally { creating.value = false; }
+      } finally { creating.value = false; createStep.value = ''; }
     }
 
     async function terminate(row) {
@@ -4120,6 +4158,7 @@ createApp({
 
     return {
       loginCanvas, loginFlow,
+      createStep, pollJob,
       CW, CH, HOUR_RANGES, areaSeries, NAV, go, orphanBadge,
       pubKeyName, ipv6Busy,
       rollName, onPubKeyFile, addIpv6,

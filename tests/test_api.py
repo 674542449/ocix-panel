@@ -4,6 +4,8 @@
 任何外呼都会以「OCI 配置有问题」失败，正好用来验证错误处理。
 """
 
+import time
+
 import pytest
 
 GOOD_CONFIG = ("[NEW]\nuser=ocid1.user.oc1..ccc\nfingerprint=cc:dd\n"
@@ -148,31 +150,49 @@ def stub_usage(monkeypatch):
     return _apply
 
 
+def _create(client, payload=None, **kw):
+    """下单建实例并等任务跑完，返回任务快照。
+
+    创建改成后台任务之后接口只回一个任务号（202）——同步等会被
+    Cloudflare 100 秒判超时，返回「源站」错误页，而实例其实已经建出来了。
+    这里把「提交 + 轮询」收成一步，好让下面的用例继续只关心业务行为。
+    """
+    r = client.post("/api/provision/instances", json=payload or _create_payload(**kw))
+    assert r.status_code == 202, r.text
+    job_id = r.json()["job_id"]
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        snap = client.get(f"/api/provision/jobs/{job_id}").json()
+        if snap["state"] != "running":
+            return snap
+        time.sleep(0.03)
+    raise AssertionError("建实例的任务没跑完")
+
+
 def test_over_quota_creation_is_blocked_server_side(app_client, stub_usage):
     """界面按钮置灰只是提示，真闸门必须在服务端。"""
     from ocix import freetier as ft
     stub_usage(ft.summarize([{"shape": ft.AMD_FREE_SHAPE, "lifecycle-state": "RUNNING"}] * 2,
                             [], [{"size-in-gbs": 50, "lifecycle-state": "AVAILABLE"}] * 2))
-    r = app_client.post("/api/provision/instances", json=_create_payload())
-    assert r.status_code == 400
-    assert "blockers" in r.json()["detail"]
+    snap = _create(app_client)
+    assert snap["state"] == "failed"
+    assert "blockers" in snap["error"]
 
 
 def test_oversized_boot_volume_is_blocked(app_client, stub_usage):
     from ocix import freetier as ft
     stub_usage(ft.summarize([], [], []))
-    r = app_client.post("/api/provision/instances", json=_create_payload(boot_gb=300))
-    assert r.status_code == 400
-    assert any("存储" in b or "引导卷" in b for b in r.json()["detail"]["blockers"])
+    snap = _create(app_client, boot_gb=300)
+    assert snap["state"] == "failed"
+    assert any("存储" in b or "引导卷" in b for b in snap["error"]["blockers"])
 
 
 def test_paid_shape_is_blocked(app_client, stub_usage):
     from ocix import freetier as ft
     stub_usage(ft.summarize([], [], []))
-    r = app_client.post("/api/provision/instances",
-                        json=_create_payload(shape="VM.Standard.E4.Flex", ocpus=2, memory_gb=16))
-    assert r.status_code == 400
-    assert any("Always Free" in b for b in r.json()["detail"]["blockers"])
+    snap = _create(app_client, shape="VM.Standard.E4.Flex", ocpus=2, memory_gb=16)
+    assert snap["state"] == "failed"
+    assert any("Always Free" in b for b in snap["error"]["blockers"])
 
 
 @pytest.mark.parametrize("key", [
@@ -212,8 +232,8 @@ def test_subnet_is_resolved_when_client_omits_it(app_client, stub_launch, monkey
 
     payload = _create_payload()
     payload.pop("subnet_id")
-    r = app_client.post("/api/provision/instances", json=payload)
-    assert r.status_code == 200, r.text
+    snap = _create(app_client, payload)
+    assert snap["state"] == "ok", snap
     assert stub_launch["subnet_id"] == "ocid1.subnet.oc1..auto"
 
 
@@ -225,9 +245,9 @@ def test_first_instance_creates_the_network(app_client, stub_launch, monkeypatch
 
     payload = _create_payload()
     payload.pop("subnet_id")
-    r = app_client.post("/api/provision/instances", json=payload)
-    assert r.status_code == 200
-    assert r.json()["network_created"] is True
+    snap = _create(app_client, payload)
+    assert snap["state"] == "ok", snap
+    assert snap["result"]["network_created"] is True
 
 
 def test_network_failure_creates_nothing(app_client, stub_launch, monkeypatch):
@@ -238,9 +258,9 @@ def test_network_failure_creates_nothing(app_client, stub_launch, monkeypatch):
         raise OCIError("配额不足，无法创建 VCN")
 
     monkeypatch.setattr(provision, "resolve_subnet", boom)
-    r = app_client.post("/api/provision/instances", json=_create_payload())
-    assert r.status_code == 400
-    assert "未创建任何实例" in r.json()["detail"]
+    snap = _create(app_client)
+    assert snap["state"] == "failed"
+    assert "未创建任何实例" in snap["error"]["message"]
     assert not stub_launch
 
 
@@ -254,9 +274,14 @@ def test_checking_ipv6_enables_the_subnet_automatically(app_client, stub_launch,
                         lambda p, c, **kw: {"id": "ocid1.subnet.oc1..auto", "created": False})
     monkeypatch.setattr(provision, "ensure_subnet_ipv6",
                         lambda p, s, c: calls.append(s) or {"enabled": True, "warnings": []})
+    # 也要接管补挂 IPv6：不然会真的走 wait_for_primary_vnic 那个 90 秒重试循环
+    # （后端连不上，它就一直 5 秒一轮地重试到超时）。这条用例只想验证
+    # 「勾了 IPv6 会自动开通子网」，不该顺带跑满 90 秒。
+    monkeypatch.setattr(provision, "add_ipv6_to_instance",
+                        lambda p, i, c, **kw: {"ipv6": "2603::1", "warnings": []})
 
-    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
-    assert r.status_code == 200
+    snap = _create(app_client, assign_ipv6=True)
+    assert snap["state"] == "ok", snap
     assert calls == ["ocid1.subnet.oc1..auto"]
     assert stub_launch["assign_ipv6"] is True
 
@@ -269,7 +294,7 @@ def test_ipv6_is_not_touched_when_unchecked(app_client, stub_launch, monkeypatch
     monkeypatch.setattr(provision, "ensure_subnet_ipv6",
                         lambda p, s, c: calls.append(s) or {"enabled": True})
 
-    app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=False))
+    _create(app_client, assign_ipv6=False)          # 必须等任务跑完再断言
     assert calls == []
 
 
@@ -284,9 +309,9 @@ def test_ipv6_failure_aborts_before_creating_the_instance(app_client, stub_launc
                         lambda p, c, **kw: {"id": "s", "created": False})
     monkeypatch.setattr(provision, "ensure_subnet_ipv6", boom)
 
-    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
-    assert r.status_code == 400
-    assert "未创建实例" in r.json()["detail"]
+    snap = _create(app_client, assign_ipv6=True)
+    assert snap["state"] == "failed"
+    assert "未创建实例" in snap["error"]["message"]
     assert not stub_launch
 
 
@@ -305,10 +330,10 @@ def test_ports_are_opened_after_create(app_client, stub_launch, monkeypatch):
 
     monkeypatch.setattr(provision, "open_all_ports_on_subnet", fake_open)
 
-    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
-    assert r.status_code == 200
+    snap = _create(app_client, assign_ipv6=True)
+    assert snap["state"] == "ok", snap
     assert opened == [("ocid1.subnet.oc1..s", True)]
-    assert r.json()["ports_opened"] is True
+    assert snap["result"]["ports_opened"] is True
 
 
 def test_ports_are_left_alone_when_unchecked(app_client, stub_launch, monkeypatch):
@@ -319,7 +344,7 @@ def test_ports_are_left_alone_when_unchecked(app_client, stub_launch, monkeypatc
     monkeypatch.setattr(provision, "open_all_ports_on_subnet",
                         lambda p, s, include_ipv6=True: opened.append(s))
 
-    app_client.post("/api/provision/instances", json=_create_payload(open_all_ports=False))
+    _create(app_client, open_all_ports=False)       # 同上，要等任务跑完
     assert opened == []
 
 
@@ -336,8 +361,8 @@ def test_ipv6_is_attached_after_launch_not_during(app_client, stub_launch, monke
                         lambda p, i, c, **kw: calls.append(kw.get("wait_seconds")) or
                         {"ipv6": "2603::abcd", "warnings": []})
 
-    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
-    assert r.json()["ipv6"] == "2603::abcd"
+    snap = _create(app_client, assign_ipv6=True)
+    assert snap["result"]["ipv6"] == "2603::abcd"
     assert calls and calls[0] > 0, "必须带等待时间，否则网卡还没挂好"
 
 
@@ -358,8 +383,8 @@ def test_ipv6_from_launch_skips_the_extra_call(app_client, stub_launch, monkeypa
                                          "lifecycle_state": "PROVISIONING",
                                          "ipv6_addresses": ["2603:c020::99"]})
 
-    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
-    assert r.json()["ipv6"] == "2603:c020::99"
+    snap = _create(app_client, assign_ipv6=True)
+    assert snap["result"]["ipv6"] == "2603:c020::99"
     assert extra == [], "launch 已经给了地址，不该再调补挂"
 
 
@@ -377,9 +402,9 @@ def test_post_launch_failures_do_not_fail_the_request(app_client, stub_launch, m
     monkeypatch.setattr(provision, "open_all_ports_on_subnet", boom)
     monkeypatch.setattr(provision, "add_ipv6_to_instance", boom)
 
-    r = app_client.post("/api/provision/instances", json=_create_payload(assign_ipv6=True))
-    assert r.status_code == 200
-    body = r.json()
+    snap = _create(app_client, assign_ipv6=True)
+    assert snap["state"] == "ok", snap
+    body = snap["result"]
     assert body["instance_id"]
     assert len(body["warnings"]) == 2
     assert any("端口" in w for w in body["warnings"])

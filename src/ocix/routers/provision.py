@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from .. import freetier, security
+from .. import freetier, jobs, security
 from ..common import OCIError, account_gate
 from ..db import audit
+from ..jobs import JobError
 from ..oci_helpers import (
     VPU_RANGE,
     add_ipv6_to_instance,
@@ -112,53 +113,51 @@ def preflight(
         raise HTTPException(status_code=400, detail=e.message)
 
 
-@router.post("/instances")
-def create_instance(
-    req: CreateInstanceRequest,
-    request: Request,
-    user: str = Depends(security.get_current_user),
-):
-    """创建实例。额度预检不通过一律拒绝——这道闸门在服务端，绕不过去。"""
-    security.check_rate(request, security.API_RATE_LIMIT)
-    ip = security.client_ip(request)
-    params = req.model_dump()
+def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: str) -> dict:
+    """真正干活的那段，跑在后台线程里。
 
+    每一步都往 job 里记一条，前端轮询时能看到「在干什么」——
+    这条链路正常也要一分多钟，干等一个转圈用户会以为卡死了。
+    """
+    job.step("核算免费额度")
     try:
         check = preflight_create(req.profile, params, req.compartment_id)
     except OCIError as e:
-        raise HTTPException(status_code=400, detail=f"额度预检失败，未创建任何资源: {e.message}")
+        raise JobError({"message": f"额度预检失败，未创建任何资源: {e.message}"}) from None
 
     if not check["allow"]:
         audit(user, "create-instance", profile=req.profile, target=req.display_name,
               detail="额度预检拒绝: " + "; ".join(check["blockers"]), result="fail", ip=ip)
-        raise HTTPException(status_code=400, detail={
+        raise JobError({
             "message": "超出 Always Free 额度，已阻止创建",
             "blockers": check["blockers"],
             "checks": check["checks"],
         })
 
     # 子网：用户不用选，这里自动定位；账户第一次开机时顺手把网络建出来
+    job.step("准备网络（首次开机会自动建 VCN、网关和子网）")
     network_created = False
     try:
         subnet = resolve_subnet(req.profile, req.compartment_id)
         params["subnet_id"] = subnet["id"]
         network_created = subnet.get("created", False)
     except OCIError as e:
-        raise HTTPException(status_code=400, detail=f"没能准备好网络，未创建任何实例: {e.message}")
+        raise JobError({"message": f"没能准备好网络，未创建任何实例: {e.message}"}) from None
 
     # 勾了 IPv6 就在这里把子网的 IPv6 一并开通，用户不用再点一次
     ipv6_warnings = []
     if req.assign_ipv6:
+        job.step("开通子网 IPv6")
         try:
             net = ensure_subnet_ipv6(req.profile, params["subnet_id"], req.compartment_id)
             ipv6_warnings = net.get("warnings", [])
         except OCIError as e:
             audit(user, "create-instance", profile=req.profile, target=req.display_name,
                   detail=f"IPv6 开通失败: {e.message}", result="fail", ip=ip)
-            raise HTTPException(
-                status_code=400,
-                detail=f"子网 IPv6 开通失败，未创建实例: {e.message}")
+            raise JobError({
+                "message": f"子网 IPv6 开通失败，未创建实例: {e.message}"}) from None
 
+    job.step(f"向 OCI 下单：{req.shape}")
     try:
         data = launch_instance(req.profile, params)
     except OCIError as e:
@@ -167,7 +166,7 @@ def create_instance(
             msg = _CAPACITY_HINT
         audit(user, "create-instance", profile=req.profile, target=req.display_name,
               detail=f"{req.shape} -> {msg}", result="fail", ip=ip)
-        raise HTTPException(status_code=400, detail=msg)
+        raise JobError({"message": msg}) from None
 
     instance_id = data.get("id")
     audit(user, "create-instance", profile=req.profile,
@@ -175,11 +174,13 @@ def create_instance(
           detail=f"{req.shape} {check['plan']['ocpus']}C/{check['plan']['memory_gb']}G "
                  f"boot={check['plan']['boot_gb']}G",
           result="ok", ip=ip)
+    job.step("实例已下单，正在初始化")
 
-    # ---- 收尾步骤：实例已经建出来了，这里失败只警告，不能把整个请求判成失败 ----
+    # ---- 收尾步骤：实例已经建出来了，这里失败只警告，不能把整个任务判成失败 ----
     warnings = list(ipv6_warnings)
 
     if req.open_all_ports:
+        job.step("放行子网入站端口")
         try:
             res = open_all_ports_on_subnet(req.profile, params["subnet_id"],
                                            include_ipv6=req.assign_ipv6)
@@ -198,6 +199,7 @@ def create_instance(
         ipv6_addr = assigned[0] if assigned else None
 
         if ipv6_addr is None:
+            job.step("等网卡挂好，再分配 IPv6")
             try:
                 res = add_ipv6_to_instance(req.profile, instance_id, req.compartment_id,
                                            wait_seconds=90)
@@ -212,6 +214,7 @@ def create_instance(
             audit(user, "add-ipv6", profile=req.profile, target=instance_id,
                   detail=ipv6_addr, result="ok", ip=ip)
 
+    job.step("完成")
     return {
         "ok": True,
         "instance_id": instance_id,
@@ -223,6 +226,44 @@ def create_instance(
         "ports_opened": req.open_all_ports,
         "warnings": warnings,
     }
+
+
+@router.post("/instances", status_code=202)
+def create_instance(
+    req: CreateInstanceRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """下单建实例。**立刻返回任务号，活儿在后台干。**
+
+    这条链路正常就要一分多钟（建网络三次等待、网卡挂载再等 90 秒），
+    而面板挂在 Cloudflare 后面时对方 100 秒不回就给访客一个 524
+    「源站超时」页——请求其实还在跑、实例照样建出来，用户却看到报错，
+    然后重试，于是又建一台。所以这里不能同步等。
+
+    额度预检也挪进任务里跑：它本身要打好几次 OCI，同步做同样会拖时间。
+    闸门一点没松，只是判定结果通过轮询回给前端。
+    """
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    params = req.model_dump()
+
+    # 同一个账户 + 同一个实例名，正在跑就不再起第二个。
+    # 用户手快点两下、或者被 524 吓到去重试，都不该变成两台机器。
+    key = ("create-instance", req.profile, req.display_name)
+    job, fresh = jobs.submit(
+        "create-instance", req.profile, key,
+        lambda j: _run_create(j, req, params, user, ip))
+    return {"job_id": job.id, "state": job.state, "started": fresh}
+
+
+@router.get("/jobs/{job_id}")
+def get_job(job_id: str, user: str = Depends(security.get_current_user)):
+    """查任务进度。前端轮询这个。"""
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    return job.snapshot()
 
 
 @router.post("/instances/add-ipv6")
