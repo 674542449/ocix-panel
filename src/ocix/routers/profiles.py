@@ -69,8 +69,18 @@ def _key_path(name: str) -> Path:
     return KEYS_DIR / f"{name}.pem"
 
 
+def _strip_bom_bytes(data: bytes) -> bytes:
+    """去掉 UTF-8 BOM。
+
+    记事本「另存为 UTF-8」会在文件开头加 EF BB BF，而 BOM 不是空白字符，
+    strip() 去不掉——于是一个完全正常的私钥会被判成「不是有效的 PEM」。
+    """
+    return data[3:] if data.startswith(b"\xef\xbb\xbf") else data
+
+
 def _write_key(name: str, content: bytes) -> Path:
-    if not content.strip().startswith(b"-----BEGIN"):
+    content = _strip_bom_bytes(content).lstrip()
+    if not content.startswith(b"-----BEGIN"):
         raise HTTPException(status_code=400, detail="不是有效的 PEM 私钥（应以 -----BEGIN 开头）")
     path = _key_path(name)
     path.write_bytes(content)
@@ -79,6 +89,86 @@ def _write_key(name: str, content: bytes) -> Path:
     except Exception:
         pass
     return path
+
+
+# OCI 配置里这些键名规范上是小写。有人手改过配置、或从别的工具拷出来，
+# 可能是大写或混合大小写——按原样存进去 SDK 就找不到字段了。
+_OCI_KEYS = ("user", "fingerprint", "tenancy", "region", "key_file",
+             "pass_phrase", "security_token_file")
+
+# 全角符号：中文输入法没切回来时会打出这些，configparser 直接报
+# 「Source contains parsing errors」，看不出是哪儿的问题
+_FULLWIDTH = {"＝": "=", "：": ":", "［": "[", "］": "]", "　": " "}
+
+
+def _parse_config_text(text: str) -> configparser.ConfigParser:
+    """把用户粘的那坨文本解析成配置。
+
+    configparser 对粘贴内容的容错比人想象的差很多，下面每一条都是实测出来的：
+
+      * **BOM**：记事本或网页复制会带 EF BB BF，于是第一行不是 `[DEFAULT]`
+        而是 `\ufeff[DEFAULT]`，直接报「File contains no section headers」
+      * **没写段名**：只粘了几行 `key=value` 也会报同样的错。
+        这种粘法很常见（从控制台只抄了中间几行），补一个 [DEFAULT] 就好
+      * **重复键**：粘重了会抛 DuplicateOptionError。strict=False 之后后者覆盖前者
+      * **行尾注释**：默认不识别行内注释，`region=us-phoenix-1  # 东京` 会把
+        整串连注释一起当成 region 的值。这个最阴——解析不报错，
+        等到真去调 OCI 才失败，报错还看不出根因
+      * **全角等号**：先换成半角再解析
+
+    有一处刻意开了口子：**私钥口令不吃行内注释**。开了 inline_comment_prefixes
+    之后，`pass_phrase=abc #d` 会被截成 `abc`——口令被悄悄改短，
+    然后私钥解不开，报错还指向别处。所以口令那一项按原文取回来。
+    （`abc#d` 这种中间没空格的本来就不算注释，configparser 要求注释符前有空白。）
+    """
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    for bad, good in _FULLWIDTH.items():
+        text = text.replace(bad, good)
+
+    def _new(strip_comments: bool):
+        cp = configparser.ConfigParser(
+            strict=False,                          # 重复键：后者覆盖前者
+            inline_comment_prefixes=("#", ";") if strip_comments else None,
+        )
+        cp.optionxform = str                       # 大小写留给下面统一处理
+        return cp
+
+    def _read(body: str):
+        src = _new(True)
+        src.read_string(body)
+        # 口令按原文再读一遍，盖回去
+        raw = _new(False)
+        try:
+            raw.read_string(body)
+        except Exception:      # noqa: BLE001 - 原文读不了就算了，主解析已经成功
+            return src
+        for sect in [None, *src.sections()]:
+            items = raw.defaults() if sect is None else dict(raw.items(sect))
+            for key, val in items.items():
+                if key.strip().lower() != "pass_phrase":
+                    continue
+                if sect is None:
+                    src.set("DEFAULT", key, val)
+                elif src.has_section(sect):
+                    src.set(sect, key, val)
+        return src
+
+    try:
+        return _read(text)
+    except configparser.MissingSectionHeaderError:
+        # 没写段名，当作 [DEFAULT] 再来一遍
+        try:
+            return _read("[DEFAULT]\n" + text)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"配置文本解析失败: {e}") from None
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"配置文本解析失败: {e}。"
+                   "常见原因：等号写成了全角＝、或者行首多了别的字符") from None
 
 
 @router.get("")
@@ -130,14 +220,7 @@ async def import_profile(
     if not config_text.strip():
         raise HTTPException(status_code=400, detail="config_text 不能为空")
 
-    # 解析粘贴内容
-    src = configparser.ConfigParser()
-    src.optionxform = str
-    try:
-        src.read_string(config_text)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"配置文本解析失败: {e}")
-
+    src = _parse_config_text(config_text)
     sections = src.sections()
     if sections:
         section = sections[0]
@@ -148,7 +231,17 @@ async def import_profile(
         opts = {k: v for k, v in src.defaults().items()}
         name = _check_name(profile_name or "DEFAULT")
 
-    opts = {k.strip(): (v or "").strip().strip('"').strip("'") for k, v in opts.items() if k.strip()}
+    # 键名里的已知 OCI 字段统一转小写：SDK 只认小写，
+    # 而粘过来的可能是 USER= / Region= 这种
+    cleaned = {}
+    for k, v in opts.items():
+        k = k.strip()
+        if not k:
+            continue
+        if k.lower() in _OCI_KEYS:
+            k = k.lower()
+        cleaned[k] = (v or "").strip().strip('"').strip("'")
+    opts = cleaned
     if not opts:
         raise HTTPException(status_code=400, detail="未能从配置中解析出任何字段")
 

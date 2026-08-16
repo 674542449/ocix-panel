@@ -121,6 +121,111 @@ def test_failed_overwrite_preserves_the_working_profile(app_client, workdir):
     assert "ocid1.user.oc1..zzz" not in body
 
 
+# ── 粘贴内容的容错 ──
+#
+# 用户报「导入有时候不成功」。查下来不是某一个 bug，是 configparser 对
+# 粘贴文本的容错比人想象的差很多。下面每一条都实测复现过，
+# 修之前全红，而且多数报错完全看不出根因。
+
+def _post(app_client, text, **extra):
+    """导入到「缺私钥」那一步就够了——只验解析，不碰 OCI。"""
+    return app_client.post("/api/profiles/import",
+                           data={"config_text": text, **extra})
+
+
+def _parsed_ok(r):
+    """解析成功的标志：走到了「没有 key_file」这一步，说明字段都齐了。"""
+    return r.status_code == 400 and "key_file" in r.text
+
+
+def test_bom_does_not_break_the_paste(app_client):
+    """记事本 / 网页复制会带 UTF-8 BOM。
+
+    BOM 不是空白字符，于是第一行不是 `[DEFAULT]` 而是 `\ufeff[DEFAULT]`，
+    configparser 直接报「File contains no section headers」——
+    一份完全正确的配置被判成格式错误。
+    """
+    assert _parsed_ok(_post(app_client, "\ufeff" + GOOD_CONFIG))
+
+
+def test_paste_without_a_section_header_works(app_client):
+    """只抄了中间几行 key=value（没带段名）也应当能导入。
+
+    这种粘法很常见。代码注释里本来就写着「支持压根没写段名」，
+    但实际上会抛 MissingSectionHeaderError——注释与行为对不上。
+    """
+    body = "\n".join(ln for ln in GOOD_CONFIG.splitlines() if not ln.startswith("["))
+    r = _post(app_client, body, profile_name="NOHEAD")
+    assert _parsed_ok(r), r.text
+
+
+def test_inline_comment_is_not_swallowed_into_the_value():
+    """行尾注释不能混进值里。
+
+    这条最阴：解析不报错，字段也齐，只是 `region` 的值悄悄变成
+    `us-phoenix-1  # 东京也行`，要等到真去调 OCI 才失败，报错还完全
+    看不出是注释导致的。
+
+    所以直接查解析结果，而不是查接口状态码——走接口的话必填字段齐全，
+    照样会走到「缺私钥」那一步，看起来一切正常，测不出这个 bug。
+    """
+    from ocix.routers.profiles import _parse_config_text
+
+    text = GOOD_CONFIG.replace("region=us-phoenix-1", "region=us-phoenix-1  # 东京也行")
+    cp = _parse_config_text(text)
+    region = dict(cp.items(cp.sections()[0]))["region"].strip()
+    assert region == "us-phoenix-1", f"值里混进了注释：{region!r}"
+
+
+def test_duplicate_key_takes_the_last_one(app_client):
+    """粘重了不该直接报错，后写的覆盖先写的。"""
+    r = _post(app_client, GOOD_CONFIG + "region=eu-frankfurt-1\n", profile_name="DUP")
+    assert _parsed_ok(r), r.text
+
+
+def test_uppercase_keys_are_normalised(app_client):
+    """OCI SDK 只认小写键名；粘过来的可能是 USER= / Region=。"""
+    r = _post(app_client, GOOD_CONFIG.replace("user=", "USER="), profile_name="UP")
+    assert _parsed_ok(r), r.text
+
+
+def test_fullwidth_equals_is_tolerated(app_client):
+    """中文输入法没切回来会打出全角＝，原来报的是
+    「Source contains parsing errors」，看不出问题在哪一行。"""
+    r = _post(app_client, GOOD_CONFIG.replace("region=", "region＝"), profile_name="FW")
+    assert _parsed_ok(r), r.text
+
+
+def test_private_key_with_bom_is_accepted(app_client):
+    """私钥文件被记事本另存为 UTF-8 会带 BOM。
+
+    原来的检查是 content.strip().startswith(b"-----BEGIN")，
+    而 strip() 去不掉 BOM，于是一个正常的私钥被判成「不是有效的 PEM」。
+    """
+    r = _post(app_client, GOOD_CONFIG, profile_name="BOMKEY",
+              key_text="\ufeff" + FAKE_KEY)
+    # 私钥这关要过（走到 OCI 校验才失败并回滚），不能卡在 PEM 格式判断上
+    assert r.status_code == 400
+    assert "不是有效的 PEM" not in r.text, r.text
+    assert "已回滚" in r.text, r.text
+
+
+
+def test_inline_comments_do_not_truncate_the_passphrase():
+    """开了行内注释之后，私钥口令要豁免。
+
+    `pass_phrase=abc #d` 会被截成 `abc`——口令被悄悄改短，然后私钥解不开，
+    报错还指向别处。修行内注释这个 bug 时顺手引入的，写下来别再犯。
+    """
+    from ocix.routers.profiles import _parse_config_text
+
+    base = "[P]\nuser=u\nfingerprint=f\ntenancy=t\nregion=r\n"
+    got = dict(_parse_config_text(base + "pass_phrase=a #b\n").items("P"))
+    assert got["pass_phrase"].strip() == "a #b"
+    # 但普通字段的行内注释还是要去掉
+    got2 = dict(_parse_config_text(base.replace("region=r", "region=r  # 注释")).items("P"))
+    assert got2["region"].strip() == "r"
+
 # ── 免费额度硬闸门 ──
 
 def _create_payload(**over):
