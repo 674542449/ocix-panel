@@ -19,7 +19,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.6"]
+# pyyaml 只给测试用：验证下发给 cloud-init 的配置是合法 YAML，
+# 且密码里的引号 / # / 空格不会把结构带歪。面板本身不解析 YAML。
+dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.6", "pyyaml>=6.0"]
 
 [project.urls]
 Homepage = "https://github.com/674542449/ocix-panel"

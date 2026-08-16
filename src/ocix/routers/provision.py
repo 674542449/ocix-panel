@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import freetier, jobs, security
+from ..cloudinit import ROOT_PW_TAG, root_password_cloud_config
 from ..common import OCIError, account_gate
 from ..db import audit
 from ..jobs import JobError
@@ -157,6 +158,16 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
             raise JobError({
                 "message": f"子网 IPv6 开通失败，未创建实例: {e.message}"}) from None
 
+    # 选了 root + 密码：下发 cloud-init 打开密码登录，并把密码写进实例标签。
+    # 标签是给人看的（控制台 / 面板 / 换台电脑都能看到），
+    # 代价写在 cloudinit 模块开头——这条是拿安全换方便。
+    if req.root_password:
+        job.step("准备 root 密码登录")
+        params["user_data"] = root_password_cloud_config(req.root_password)
+        tags = dict(params.get("freeform_tags") or {})
+        tags[ROOT_PW_TAG] = req.root_password
+        params["freeform_tags"] = tags
+
     job.step(f"向 OCI 下单：{req.shape}")
     try:
         data = launch_instance(req.profile, params)
@@ -224,6 +235,7 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         "network_created": network_created,
         "ipv6": ipv6_addr,
         "ports_opened": req.open_all_ports,
+        "root_password": req.root_password or None,
         "warnings": warnings,
     }
 

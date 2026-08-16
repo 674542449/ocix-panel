@@ -388,6 +388,14 @@
     .bay.free .bay-name { color:var(--text-3); font-size:13.5px; font-weight:500; }
     .bay.free .bay-tag { opacity:.75; }
 
+    /* 机位卡片上的 root 密码。默认打码——这块屏幕可能正在被人看着，
+       或者你在录屏。点一下才显示。 */
+    .bay-pw { display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+              padding:7px 9px; border-radius:7px; font-size:11.5px;
+              background:rgba(217,119,87,.09); border:1px solid rgba(217,119,87,.28); }
+    .bay-pw .k { color:var(--text-3); }
+    .bay-pw .v { color:var(--text); letter-spacing:.02em; }
+
     .view-toggle { margin-left:auto; }
 
     /* 网页终端 */
@@ -879,6 +887,16 @@
                     <span v-if="b.inst.private_ip">内网 {{ b.inst.private_ip }}</span>
                     <span v-if="b.inst.ipv6">IPv6 已挂</span>
                   </div>
+                  <!-- 建的时候选了 root + 密码，密码存在实例标签里，这里直接摆出来。
+                       换台电脑、换个浏览器进来也看得到——这正是把它存在标签上的原因。 -->
+                  <div class="bay-pw" v-if="b.inst.root_password">
+                    <span class="k">root 密码</span>
+                    <span class="mono v">{{ pwShown[b.inst.id] ? b.inst.root_password : '••••••••••' }}</span>
+                    <button class="mini-btn" @click="pwShown = { ...pwShown, [b.inst.id]: !pwShown[b.inst.id] }">
+                      {{ pwShown[b.inst.id] ? '隐藏' : '显示' }}
+                    </button>
+                    <button class="mini-btn" @click="copy(b.inst.root_password)">复制</button>
+                  </div>
                   <div class="bay-acts">
                     <el-button size="small" type="primary" plain @click="openDetail(b.inst)"
                                :loading="isBusy('detail:' + b.inst.id)">详情</el-button>
@@ -1050,6 +1068,32 @@
                     </div>
                   </el-form-item>
 
+                  <el-form-item label="登录方式">
+                    <div style="width:100%;">
+                      <el-checkbox v-model="createForm.use_password"
+                                   label="用 root + 密码登录（密码会存在实例标签上）" />
+                      <div v-if="createForm.use_password" style="margin-top:8px;">
+                        <div style="display:flex; gap:8px; align-items:center;">
+                          <el-input v-model="createForm.root_password" class="mono"
+                                    placeholder="至少 12 位" show-password style="flex:1;" />
+                          <el-button size="small" @click="rollRootPassword">随机生成</el-button>
+                          <el-button size="small" :disabled="!createForm.root_password"
+                                     @click="copy(createForm.root_password)">复制</el-button>
+                        </div>
+                        <p class="hint" style="margin-top:6px;">
+                          <b style="color:var(--warn);">这是拿安全换方便，先看清楚：</b><br />
+                          · 密码<b>明文</b>存在实例的自由标签里——凡是能读这个租户的人都看得见
+                          （OCI 控制台、任何调 API 的工具）。好处正是换台电脑也能看到密码。<br />
+                          · 密码也会进 <code>user_data</code>，而 <b>实例自己读得到</b>
+                          （元数据服务），机器上任何本地账号都能读出 root 密码。<br />
+                          · Oracle 的 Ubuntu 镜像默认关掉 root 登录和密码认证，打开之后
+                          挂公网 IP 的机器<b>几分钟内就会被扫</b>。所以默认生成 20 位。<br />
+                          · 只图省事的话，用密钥 + 面板自带的网页终端就够了，不必开这条。
+                        </p>
+                      </div>
+                    </div>
+                  </el-form-item>
+
                   <el-form-item label="SSH 公钥">
                     <div style="width:100%;">
                       <el-input v-model="createForm.ssh_public_key" type="textarea" :rows="3" class="mono"
@@ -1066,6 +1110,8 @@
                 <p class="hint">
                   选 <code>~/.ssh/id_ed25519.pub</code> 这类 .pub 文件，不是私钥。创建完成后用
                   <code class="mono">ssh ubuntu@公网IP</code> 登录。
+                  勾了上面的密码登录之后，公钥可以留空——但<b>两样至少要有一样</b>，
+                  都不给的话机器建出来你登不进去。
                 </p>
               </div>
 
@@ -2612,6 +2658,7 @@ createApp({
       display_name: randomName(), shape: 'VM.Standard.A1.Flex',
       ocpus: 4, memory_gb: 24, boot_gb: 50,
       availability_domain: '', image_id: '', ssh_public_key: '',
+      use_password: false, root_password: '',
       assign_ipv6: false, open_all_ports: true,
     });
     const pubKeyName = ref('');
@@ -2693,6 +2740,9 @@ createApp({
     const canCreate = computed(() =>
       !!(preflight.value && preflight.value.allow && createForm.display_name &&
          createForm.availability_domain && createForm.image_id &&
+         (createForm.use_password
+            ? (createForm.root_password || '').length >= 12
+            : !!createForm.ssh_public_key) &&
          createForm.ssh_public_key));
 
     // ---- 一键更新状态 ----
@@ -3015,6 +3065,18 @@ createApp({
       return out;
     });
 
+    // 密码在界面上默认打码，按实例记住「显示/隐藏」
+    const pwShown = ref({});
+
+    // 20 位，去掉了容易看混的 0/O 和 1/l/I —— 这密码是要用眼睛抄的。
+    // 开了密码登录的机器，22 端口一暴露就会被全网扫，短密码撑不住。
+    function rollRootPassword() {
+      const abc = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%^*_-+=';
+      const buf = new Uint32Array(20);
+      crypto.getRandomValues(buf);
+      createForm.root_password = Array.from(buf, n => abc[n % abc.length]).join('');
+    }
+
     async function createInstance() {
       const p = preflight.value;
       const spec = isArm.value
@@ -3049,6 +3111,7 @@ createApp({
           memory_gb: createForm.memory_gb,
           boot_gb: createForm.boot_gb,
           ssh_public_key: createForm.ssh_public_key,
+          root_password: createForm.use_password ? createForm.root_password : '',
           assign_ipv6: createForm.assign_ipv6,
           open_all_ports: createForm.open_all_ports,
         });
@@ -4418,6 +4481,7 @@ createApp({
       loginCanvas, loginFlow,
       currentTabLabel,
       instView, setInstView, bays, fleet,
+      pwShown, rollRootPassword,
       createStep, pollJob,
       CW, CH, HOUR_RANGES, areaSeries, NAV, go, orphanBadge,
       pubKeyName, ipv6Busy,

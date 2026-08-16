@@ -168,7 +168,11 @@ class SDKBackend(Backend):
             # SDK 支持在创建时直接要一个 IPv6，不必等网卡挂好再补
             assign_ipv6_ip=bool(spec.get("assign_ipv6")),
         )
-        metadata = {"ssh_authorized_keys": spec["ssh_public_key"]}
+        # 公钥可以没有：选了「root + 密码」登录时就不一定给公钥。
+        # 原来是 spec["ssh_public_key"]，没有键会直接 KeyError。
+        metadata = {}
+        if spec.get("ssh_public_key"):
+            metadata["ssh_authorized_keys"] = spec["ssh_public_key"]
         if spec.get("user_data"):
             metadata["user_data"] = base64.b64encode(
                 spec["user_data"].encode("utf-8")).decode("ascii")
@@ -186,6 +190,8 @@ class SDKBackend(Backend):
                 boot_volume_size_in_gbs=int(spec["boot_gb"]),
             ),
         )
+        if spec.get("freeform_tags"):
+            details.freeform_tags = dict(spec["freeform_tags"])
         sc = spec.get("shape_config")
         if sc:
             details.shape_config = oci.core.models.LaunchInstanceShapeConfigDetails(

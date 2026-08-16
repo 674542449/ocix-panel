@@ -1,7 +1,7 @@
 
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 VALID_ACTIONS = ("START", "STOP", "SOFTSTOP", "RESET", "SOFTRESET")
 
@@ -75,7 +75,11 @@ class CreateInstanceRequest(BaseModel):
     ocpus: float = 1
     memory_gb: float = 6
     boot_gb: int = 50
-    ssh_public_key: str
+    # 公钥不再必填：可以只用 root + 密码登录。但两样至少要有一样，
+    # 一样都没有的机器建出来就进不去了（见下面的校验）
+    ssh_public_key: str = ""
+    # 填了就开 root + 密码登录，并把密码写进实例标签
+    root_password: str = ""
     assign_ipv6: bool = False
     # 建完自动放行全部端口；关掉则只留 OCI 默认的 22 端口
     open_all_ports: bool = True
@@ -88,16 +92,42 @@ class CreateInstanceRequest(BaseModel):
             raise ValueError("实例名称不能为空")
         return name
 
+    @field_validator("root_password")
+    @classmethod
+    def _check_root_password(cls, v: str) -> str:
+        pw = v or ""
+        if not pw:
+            return ""
+        if len(pw) < 12:
+            # 开了密码登录之后，公网上的 22 端口几分钟内就会被扫。
+            # 这里不是形式主义——短密码等于把机器送人。
+            raise ValueError("root 密码至少 12 位（开了密码登录的机器会被全网扫）")
+        if any(ord(c) < 32 or ord(c) == 127 for c in pw):
+            raise ValueError("root 密码里不能有控制字符")
+        return pw
+
     @field_validator("ssh_public_key")
     @classmethod
     def _check_key(cls, v: str) -> str:
         key = (v or "").strip()
+        if not key:
+            return ""          # 允许留空，由 _need_some_way_in 兜底
         if not key.startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-", "ssh-dss ")):
             raise ValueError("SSH 公钥格式不对，应以 ssh-rsa / ssh-ed25519 / ecdsa-sha2- 开头")
         if "PRIVATE KEY" in key:
             raise ValueError("这是私钥，不要贴私钥——只需要 .pub 文件里的公钥")
         return key
 
+    @model_validator(mode="after")
+    def _need_some_way_in(self):
+        """公钥和 root 密码至少要有一样。
+
+        两样都不给的话，机器建出来是能跑，但你永远登不进去——
+        只能靠串口控制台救，而串口控制台也需要系统里先有密码。
+        """
+        if not (self.ssh_public_key or self.root_password):
+            raise ValueError("至少要给一样登录方式：SSH 公钥，或 root 密码")
+        return self
 
 class InstanceRefRequest(BaseModel):
     """只需要定位一台实例的操作（换 IP、查防火墙等）。"""

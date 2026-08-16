@@ -357,7 +357,22 @@ def _availability_domains(profile: str) -> list:
 
 
 def list_availability_domains(profile: str) -> list:
-    return _availability_domains(profile)
+    """建实例表单用的可用域列表。
+
+    和上面那个内部函数不同：**这里不吞异常**。
+    内部那些地方查不到可用域只是少一条兜底路径，而这里查不到，
+    表单的下拉就是空的——「创建」按钮又要求必须选一个可用域，
+    于是按钮一直灰着，界面一句解释都没有。宁可把错误抛上去让人看见。
+    """
+    ck = (profile, "ads")
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+    ads = _b().list_availability_domains(profile, tenancy_of(profile))
+    names = [a.get("name") for a in ads if a.get("name")]
+    if not names:
+        raise OCIError("这个账户下没有可用域（Availability Domain），没法建实例")
+    return _read_cache.set(ck, names)
 
 
 # ---- 存储清理（200GB 额度的主要泄漏点）----
@@ -633,8 +648,11 @@ def launch_instance(profile: str, params: dict) -> dict:
         "subnet_id": params["subnet_id"],
         "shape": plan["shape"],
         "boot_gb": plan["boot_gb"],
-        "ssh_public_key": params["ssh_public_key"].strip(),
+        "ssh_public_key": (params.get("ssh_public_key") or "").strip(),
         "user_data": params.get("user_data"),
+        # 写进实例的自由标签。root 密码就存在这儿——控制台和面板都看得到，
+        # 而实例自己读不到（标签不走实例元数据服务）。
+        "freeform_tags": params.get("freeform_tags") or None,
         # CLI 后端无法在创建时分配 IPv6（没有对应参数），会忽略这个标志，
         # 由上层在创建完成后补挂；SDK 后端则可以一次到位。
         "assign_ipv6": bool(params.get("assign_ipv6")),

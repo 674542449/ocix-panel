@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .. import security
+from ..cloudinit import ROOT_PW_TAG
 from ..common import OCIError, gather
 from ..db import audit
 from ..oci_helpers import (
@@ -31,6 +32,10 @@ def _simplify(it: dict) -> dict:
         "public_ip": it.get("_public_ip"),
         "private_ip": it.get("_private_ip"),
         "ipv6": it.get("_ipv6"),
+        # 建实例时如果选了「root + 密码」，密码存在这个标签里。
+        # 带出来是为了换台电脑、换个浏览器也能在实例旁边直接看到。
+        "root_password": (it.get("freeform-tags") or it.get("freeform_tags")
+                          or {}).get(ROOT_PW_TAG),
     }
 
 
