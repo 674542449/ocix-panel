@@ -246,6 +246,39 @@ def test_tier_endpoint_honours_limits_flag(app_client, live_backend):
     assert live_backend.count("list_limit_values") == 0
 
 
+
+
+# ── 前端：单个账户的等级检测 ──
+
+def test_single_account_tier_button_exists_and_guards_the_bulk_sweep():
+    """账户列表的操作栏要能单独检测一个号的等级。
+
+    整表重测是**串行**的（同一时刻只让一个号跟 OCI 通信），号一多就得等很久，
+    只想确认某一个号时太亏。
+    """
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1]
+            / "src" / "ocix" / "web" / "index.html").read_text(encoding="utf-8")
+    assert "async function loadOneTier(name)" in html, "缺少单账户检测"
+    assert "isBusy('tier:' + row.name)" in html, "按钮要有自己的 loading 状态"
+    # 整表在跑的时候不能再单独发起一个，否则两边同时往 tiers 里写
+    assert ':disabled="tierBusy"' in html, "整表检测期间单行按钮要禁用"
+
+
+def test_unknown_tier_is_not_reported_as_success():
+    """判不出等级时不能弹绿色的「成功」。
+
+    踩过：接口判不出来时返回的是 200 + tier:unknown（不是报错），
+    于是走了成功分支，弹出「成功：无法确定」——荒唐，而且会让人以为查到了。
+    """
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1]
+            / "src" / "ocix" / "web" / "index.html").read_text(encoding="utf-8")
+    i = html.index("async function loadOneTier(name)")
+    body = html[i : html.index("async function loadAllTiers", i)]
+    assert "data.tier === 'unknown'" in body, "要单独判 unknown"
+    assert "ElMessage.warning" in body, "unknown 应当用警告色"
+
 # ── Oracle 账号（控制台登录）的密码有效期 ──
 #
 # 这是 Oracle 侧 Identity Domain 里的 passwordExpiresAfter，免费租户默认 120 天，

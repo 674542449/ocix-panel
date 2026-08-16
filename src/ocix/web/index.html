@@ -1492,17 +1492,21 @@
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="212" fixed="right">
+                <el-table-column label="操作" width="298" fixed="right">
                   <template #default="{row}">
-                    <el-button size="small" :type="lockedProfile === row.name ? 'warning' : ''"
-                               :loading="isBusy('lock:' + row.name)"
-                               @click="toggleLock(row.name)">
-                      {{ lockedProfile === row.name ? '解除锁定' : '锁定' }}
-                    </el-button>
-                    <el-button size="small" :loading="isBusy('test:' + row.name)"
-                               @click="testProfile(row.name)">校验</el-button>
-                    <el-button size="small" type="danger" :loading="isBusy('del:' + row.name)"
-                               @click="delProfile(row.name)">删除</el-button>
+                    <div class="row-actions">
+                      <el-button size="small" :type="lockedProfile === row.name ? 'warning' : ''"
+                                 :loading="isBusy('lock:' + row.name)"
+                                 @click="toggleLock(row.name)">
+                        {{ lockedProfile === row.name ? '解除锁定' : '锁定' }}
+                      </el-button>
+                      <el-button size="small" :loading="isBusy('tier:' + row.name)"
+                                 :disabled="tierBusy" @click="loadOneTier(row.name)">检测等级</el-button>
+                      <el-button size="small" :loading="isBusy('test:' + row.name)"
+                                 @click="testProfile(row.name)">校验</el-button>
+                      <el-button size="small" type="danger" :loading="isBusy('del:' + row.name)"
+                                 @click="delProfile(row.name)">删除</el-button>
+                    </div>
                   </template>
                 </el-table-column>
               </el-table>
@@ -3621,6 +3625,38 @@ createApp({
       return t ? [t.label].concat(t.reasons || []).join('\n') : '还没有检测过';
     };
 
+    // 只检测一个账户的等级。
+    // 整表重测要把所有号轮一遍，而且是**串行**的（面板承诺同一时刻只有一个号
+    // 在跟 OCI 通信），号一多就得等很久——只想确认某一个号的时候太亏。
+    async function loadOneTier(name) {
+      if (tierBusy.value) {
+        ElMessage.warning('正在整表检测，等它跑完再单独查');
+        return;
+      }
+      await withBusy('tier:' + name, async () => {
+        try {
+          // 列表只显示一个标签，不要限额明细，省一次请求
+          const { data } = await axios.get(
+            `/api/profiles/${encodeURIComponent(name)}/tier`, { params: { limits: false } });
+          tiers.value = { ...tiers.value, [name]: data };
+          // 接口判不出来时返回的是 200 + tier:unknown，不是报错。
+          // 这种情况必须用警告色——弹一个绿色的「成功：无法确定」很荒唐。
+          const label = data.label || TIER_SHORT[data.tier] || '未知';
+          if (data.tier === 'unknown') {
+            ElMessage.warning(`${name}：${label}（把鼠标放到「账户等级」那格看原因）`);
+          } else {
+            ElMessage.success(`${name}：${label}`);
+          }
+        } catch (e) {
+          // 失败也写进去，让那一行显示「检测失败」并把原因留在悬浮提示里，
+          // 而不是停在「未检测」让人以为没点到
+          tiers.value = { ...tiers.value, [name]: {
+            tier: 'unknown', label: '检测失败', reasons: [errMsg(e, '检测失败')] } };
+          ElMessage.error(errMsg(e, `${name} 等级检测失败`));
+        }
+      });
+    }
+
     async function loadAllTiers(force) {
       const names = profiles.value.map(p => p.name);
       if (!names.length) return;
@@ -4392,6 +4428,7 @@ createApp({
       consolePolicy, consoleForm, consoleLoading, consoleSaving, consoleDays,
       loadConsolePolicy, saveConsolePolicy,
       tier, tierLoading, loadTier, tiers, tierBusy, loadAllTiers,
+      loadOneTier,
       lockedProfile, toggleLock, isBusy, refreshConsole,
       detailOpen, detailLoading, detail, openDetail, refreshDetail,
       resizeForm, resizing, doResize, syncResizeMem,
