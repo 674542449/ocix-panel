@@ -158,10 +158,17 @@
 
     .container { max-width:1400px; margin:0 auto; padding:var(--sp-5); }
     .toolbar { display:flex; gap:var(--sp-3); flex-wrap:wrap; align-items:center; margin-bottom:var(--sp-4); }
-    .card { background:var(--surface); border:1px solid var(--line); border-radius:10px;
-            padding:var(--sp-4); margin-bottom:var(--sp-4); }
-    .card-head { display:flex; align-items:baseline; justify-content:space-between;
-                 gap:var(--sp-3); margin-bottom:var(--sp-3); flex-wrap:wrap; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:12px;
+            padding:var(--sp-5) var(--sp-5) var(--sp-5); margin-bottom:var(--sp-4); }
+    .card-head { display:flex; align-items:center; justify-content:space-between;
+                 gap:var(--sp-3); margin-bottom:var(--sp-4); flex-wrap:wrap; }
+    /* 卡片头做成一条独立的横幅：负外边距把它顶到卡片边缘，加一条分隔线。
+       原来标题和内容之间只有一点间距，19 张卡片看下来是一片没有节奏的方框。
+       只作用于直接子元素——别的地方也有叫 card-head 的，不能误伤。 */
+    .card > .card-head { margin:calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
+                         padding:13px var(--sp-5); border-bottom:1px solid var(--line);
+                         background:rgba(255,255,255,.018);
+                         border-radius:12px 12px 0 0; }
     /* 标题原来 13px，比 14px 的正文还小，层级是反的。
        提到 15px 之后卡片标题终于比它领起的内容显眼。
        h2 自带 margin，这里要清掉——.card-head 是 baseline 对齐的 flex。 */
@@ -325,6 +332,58 @@
                 box-shadow:0 0 0 1px var(--bg), 0 0 0 2.5px rgba(201,174,94,.45); }
     .dot.idle { background:var(--idle); }
     .state-label { font-size:12px; font-variant-numeric:tabular-nums; }
+
+    /* ── 机位视图 ──
+       Always Free 就那么几台机器，布局照着额度的形状来：两小一大。
+       表格是给「行数会涨」的东西用的（存储、审计、账单），机队不是。 */
+    .fleet { display:flex; gap:var(--sp-5); flex-wrap:wrap; align-items:center;
+             padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-4);
+             background:var(--surface-2); border:1px solid var(--line); border-radius:10px; }
+    .meter { min-width:190px; flex:1; }
+    .meter-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+                  margin-bottom:6px; }
+    .meter-k { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); }
+    .meter-v { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:15px;
+               font-weight:600; color:var(--text); }
+    .meter-v small { font-size:11.5px; font-weight:400; color:var(--text-3); margin-left:2px; }
+
+    .bays { display:grid; grid-template-columns:repeat(auto-fill, minmax(272px, 1fr));
+            gap:var(--sp-4); }
+    /* 一开始让 ARM 卡横跨两格去复刻「两小一大」的额度形状，实测在三列宽度下
+       第一行会空出一个洞、ARM 掉到第二行，机器数量一变就更乱。
+       形状那件事标识和登录页已经在讲了，这里改成等宽卡片——
+       ARM 靠左侧的主色边和更亮的机型标区分，任何宽度、任何台数都不会散。 */
+    .bay.wide { border-left:2px solid var(--accent-dim); }
+    .bay.wide .bay-tag { color:var(--accent); border-color:var(--accent-dim); }
+
+    .bay { position:relative; display:flex; flex-direction:column; gap:10px;
+           padding:var(--sp-4); border:1px solid var(--line); border-radius:12px;
+           background:var(--surface-2);
+           transition:border-color .18s ease, transform .18s ease; }
+    .bay:hover { border-color:var(--line-3); }
+    .bay-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .bay-name { font-size:16px; font-weight:600; color:var(--text); line-height:1.25;
+                word-break:break-all; }
+    .bay-tag { font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+               text-transform:uppercase; color:var(--text-3); border:1px solid var(--line-2);
+               border-radius:5px; padding:2px 6px; white-space:nowrap; flex:none; }
+    /* 公网 IP 是这张卡上最该显眼的东西——你来这页九成是为了它 */
+    .bay-ip { display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+              font-family:var(--mono); font-variant-numeric:tabular-nums;
+              font-size:17px; color:var(--accent); letter-spacing:-.01em; }
+    .bay-ip.none { font-size:13px; color:var(--text-3); }
+    .bay-sub { display:flex; gap:12px; flex-wrap:wrap; font-size:11.5px; color:var(--text-3);
+               font-family:var(--mono); }
+    .bay-acts { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
+    .bay-acts .el-button+.el-button { margin-left:0; }
+
+    /* 空机位：虚线 + 一句邀请。比在表格里看不出「还能再开一台」强 */
+    .bay.free { border-style:dashed; background:transparent; align-items:center;
+                justify-content:center; text-align:center; min-height:172px; gap:8px; }
+    .bay.free .bay-name { color:var(--text-3); font-size:13.5px; font-weight:500; }
+    .bay.free .bay-tag { opacity:.75; }
+
+    .view-toggle { margin-left:auto; }
 
     /* 网页终端 */
     .term-dialog .el-dialog__body { padding:0; }
@@ -728,11 +787,52 @@
         <section class="pane" v-show="activeTab === 'instances'">
           <div class="card">
             <div class="card-head">
-              <h2 class="card-title">{{ currentProfile || '未选择账户' }} 的实例</h2>
-              <span class="who">{{ instances.length }} 台</span>
+              <h2 class="card-title">{{ currentProfile || '未选择账户' }} 的机队</h2>
+              <div class="seg view-toggle" role="group" aria-label="切换视图">
+                <button type="button" :class="{ on: instView === 'bay' }"
+                        @click="setInstView('bay')">机位</button>
+                <button type="button" :class="{ on: instView === 'table' }"
+                        @click="setInstView('table')">表格</button>
+              </div>
             </div>
 
-            <div class="bulkbar" v-if="instSelection.length">
+            <!-- 机队额度。ARM 与 AMD 直接从已经拿到的实例列表算出来，
+                 不额外打 OCI——面板的原则是不在后台偷偷请求。
+                 存储要查引导卷，所以只在「免费额度」页已经取过时才显示。 -->
+            <div class="fleet" v-if="instances.length || usage">
+              <div class="meter">
+                <div class="meter-head">
+                  <span class="meter-k">AMD 微型</span>
+                  <span class="meter-v">{{ fleet.amd }}<small>/2 台</small></span>
+                </div>
+                <div class="bar"><i :style="{ width: (fleet.amd / 2 * 100) + '%' }"></i></div>
+              </div>
+              <div class="meter">
+                <div class="meter-head">
+                  <span class="meter-k">ARM OCPU</span>
+                  <span class="meter-v">{{ fleet.ocpu }}<small>/4</small></span>
+                </div>
+                <div class="bar"><i :style="{ width: (fleet.ocpu / 4 * 100) + '%' }"></i></div>
+              </div>
+              <div class="meter">
+                <div class="meter-head">
+                  <span class="meter-k">ARM 内存</span>
+                  <span class="meter-v">{{ fleet.mem }}<small>/24 GB</small></span>
+                </div>
+                <div class="bar"><i :style="{ width: (fleet.mem / 24 * 100) + '%' }"></i></div>
+              </div>
+              <div class="meter" v-if="usage">
+                <div class="meter-head">
+                  <span class="meter-k">存储</span>
+                  <span class="meter-v">{{ usage.storage_gb }}<small>/200 GB</small></span>
+                </div>
+                <div class="bar" :class="{ warn: usage.storage_gb > 170 }">
+                  <i :style="{ width: Math.min(100, usage.storage_gb / 200 * 100) + '%' }"></i>
+                </div>
+              </div>
+            </div>
+
+            <div class="bulkbar" v-if="instView === 'table' && instSelection.length">
               <span class="count">已选 {{ instSelection.length }} 台</span>
               <el-button size="small" type="success" @click="batchAct(instSelection,'START')">开机</el-button>
               <el-button size="small" @click="batchAct(instSelection,'SOFTSTOP')">关机</el-button>
@@ -743,7 +843,54 @@
             <div v-if="loading && !instances.length" aria-label="加载中">
               <div class="skel skel-row" v-for="i in 4" :key="i"></div>
             </div>
-            <div class="table-wrap" v-else-if="instances.length" :class="{ stale: loading }">
+            <!-- 机位视图 -->
+            <div class="bays" v-else-if="instView === 'bay' && instances.length"
+                 :class="{ stale: loading }">
+              <div v-for="(b, i) in bays" :key="b.inst ? b.inst.id : 'free-' + i"
+                   :class="['bay', { wide: b.kind === 'arm', free: !b.inst }]">
+                <template v-if="b.inst">
+                  <div class="bay-top">
+                    <span class="state">
+                      <i :class="['dot', stateTone(b.inst.state)]"></i>
+                      <span class="state-label">{{ stateText(b.inst.state) }}</span>
+                    </span>
+                    <span class="bay-tag">{{ b.kind === 'arm' ? 'ARM A1' :
+                      (b.kind === 'amd' ? 'AMD MICRO' : '非免费规格') }}</span>
+                  </div>
+                  <div class="bay-name">{{ b.inst.display_name }}</div>
+                  <div class="bay-ip" v-if="b.inst.public_ip">
+                    <span>{{ b.inst.public_ip }}</span>
+                    <button class="copy-btn" @click="copy(b.inst.public_ip)"
+                            :aria-label="'复制 ' + b.inst.public_ip">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                    </button>
+                  </div>
+                  <div class="bay-ip none" v-else>还没有公网 IP</div>
+                  <div class="bay-sub">
+                    <span>{{ b.inst.ocpus || 1 }}C · {{ b.inst.memory_gb || 1 }}G</span>
+                    <span v-if="b.inst.private_ip">内网 {{ b.inst.private_ip }}</span>
+                    <span v-if="b.inst.ipv6">IPv6 已挂</span>
+                  </div>
+                  <div class="bay-acts">
+                    <el-button size="small" type="primary" plain @click="openDetail(b.inst)"
+                               :loading="isBusy('detail:' + b.inst.id)">详情</el-button>
+                    <el-button size="small" type="success" :disabled="!canStart(b.inst)"
+                               @click="act(b.inst,'START')">开机</el-button>
+                    <el-button size="small" :disabled="!canStop(b.inst)"
+                               @click="act(b.inst,'SOFTSTOP')">关机</el-button>
+                    <el-button size="small" type="warning" :disabled="!canReset(b.inst)"
+                               @click="act(b.inst,'SOFTRESET')">重启</el-button>
+                  </div>
+                </template>
+                <template v-else>
+                  <span class="bay-tag">{{ b.kind === 'arm' ? 'ARM A1' : 'AMD MICRO' }}</span>
+                  <div class="bay-name">空闲机位</div>
+                  <el-button size="small" type="primary" plain @click="go('create')">去开一台</el-button>
+                </template>
+              </div>
+            </div>
+
+            <div class="table-wrap" v-else-if="instView === 'table' && instances.length" :class="{ stale: loading }">
               <el-table ref="instTableRef" :data="instances" size="small" stripe border row-key="id"
                         @selection-change="instSelection = $event" style="width:100%;">
                 <el-table-column type="selection" width="42" />
@@ -2819,6 +2966,43 @@ createApp({
       }
     }
 
+    // 机位视图 / 表格视图。选择记在本地，下次进来还是你上次看的那个。
+    const instView = ref(localStorage.getItem('ocix_inst_view') || 'bay');
+    function setInstView(v) {
+      instView.value = v;
+      localStorage.setItem('ocix_inst_view', v);
+      if (v === 'bay') clearInstSelection();     // 勾选只在表格里成立
+    }
+
+    const IS_AMD = (r) => /E2\.1\.Micro/i.test(r.shape || '');
+    const IS_ARM = (r) => /A1\.Flex/i.test(r.shape || '');
+
+    // 机队额度：ARM 与 AMD 都能从已经拿到的实例列表直接算，不额外打 OCI。
+    const fleet = computed(() => {
+      const list = instances.value || [];
+      const arm = list.filter(IS_ARM);
+      return {
+        amd: list.filter(IS_AMD).length,
+        ocpu: +arm.reduce((s, r) => s + (r.ocpus || 0), 0).toFixed(2),
+        mem: +arm.reduce((s, r) => s + (r.memory_gb || 0), 0).toFixed(2),
+      };
+    });
+
+    // 机位：照着额度的形状排——两个 AMD 位在前，然后是 ARM，
+    // 还有剩余额度就留一个空位当邀请。非免费规格的单独排在后面并标出来。
+    const bays = computed(() => {
+      const list = instances.value || [];
+      const amd = list.filter(IS_AMD);
+      const arm = list.filter(IS_ARM);
+      const other = list.filter(r => !IS_AMD(r) && !IS_ARM(r));
+      const out = [];
+      for (let i = 0; i < 2; i++) out.push({ kind: 'amd', inst: amd[i] || null });
+      arm.forEach(r => out.push({ kind: 'arm', inst: r }));
+      if (fleet.value.ocpu < 4) out.push({ kind: 'arm', inst: null });
+      other.forEach(r => out.push({ kind: 'other', inst: r }));
+      return out;
+    });
+
     async function createInstance() {
       const p = preflight.value;
       const spec = isArm.value
@@ -4189,6 +4373,7 @@ createApp({
     return {
       loginCanvas, loginFlow,
       currentTabLabel,
+      instView, setInstView, bays, fleet,
       createStep, pollJob,
       CW, CH, HOUR_RANGES, areaSeries, NAV, go, orphanBadge,
       pubKeyName, ipv6Busy,
