@@ -2,8 +2,8 @@
   <!-- Always Free 额度的实际形状：两台 AMD 微型 + 一台 ARM。
        面板管的就是这三块，所以标识直接用它，而不是通用的云朵/盾牌。
        两小块用中灰、大块用主色青，大小关系和主次一眼可辨。 -->
-  <rect width="24" height="24" rx="5" fill="#14171a"/>
-  <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" fill="#909aa4"/>
-  <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" fill="#909aa4"/>
-  <rect x="13.5" y="3.5" width="7" height="17" rx="1.6" fill="#5fa8b5"/>
+  <rect width="24" height="24" rx="5" fill="#131417"/>
+  <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" fill="#9198a5"/>
+  <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" fill="#9198a5"/>
+  <rect x="13.5" y="3.5" width="7" height="17" rx="1.6" fill="#7f8fd8"/>
 </svg>
