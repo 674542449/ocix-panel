@@ -134,18 +134,27 @@ def test_accent_is_far_from_the_running_colour():
 
 
 def test_element_plus_overrides_outrank_the_library():
-    """本站变量必须写成 :root.dark，不能退回 html.dark。
+    """本站的变量块特异性必须**高于**单个 :root / html.dark。
 
     CDN 回退路径是**运行时**把 element-plus 的样式表追加到 head 末尾的，
     排在面板这段 <style> 后面。同特异性下后来者赢，于是面板的配色会被
-    组件库的默认蓝整片盖掉——页面照常渲染，只是按钮全变回 #409eff。
-    :root.dark 是 (0,2,0)，压过 element-plus 的 html.dark (0,1,1)。
+    组件库整片盖掉——页面照常渲染，只是控件全变回组件库的默认样子。
+
+    这个坑踩过两次：
+      1. 一开始写 html.dark (0,1,1)，被 element-plus 自己的 html.dark 盖掉，
+         改成 :root.dark (0,2,0) 才压住。
+      2. 后来面板从暗色翻成亮色，html 上的 .dark 类去掉了，选择器顺手写成
+         :root——特异性掉回 (0,1,0)，而亮色主题的变量组件库也定义在 :root 上，
+         同一个 bug 立刻复发（实测 32 处对比度不达标）。
+         现在写成 :root:root，故意重复一次，拿到 (0,2,0)。
     """
     css = INDEX.read_text(encoding="utf-8")
-    assert ":root.dark {" in css, "变量块必须挂在 :root.dark 上"
-    assert not re.search(r"^\s*html\.dark\s*\{", css, flags=re.M), (
-        "html.dark 的特异性压不过 element-plus 自己的 html.dark，"
-        "CDN 回退时配色会被组件库盖掉"
+    assert ":root:root {" in css, "变量块要写成 :root:root 才压得过组件库"
+    # 单个 :root 或 html.dark 都不够
+    assert not re.search(r"^\s*html\.dark\s*\{", css, flags=re.M)
+    assert not re.search(r"^\s*:root \{\s*\n\s*--el-", css, flags=re.M), (
+        "element-plus 的变量块不能只挂在单个 :root 上——特异性和组件库打平，"
+        "CDN 回退时会被它盖掉"
     )
 
 

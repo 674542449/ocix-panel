@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,17 +14,17 @@
          和主色同宗，长时间盯着比高对比的蓝黑柔和。
          所有彩色的饱和度都压在 50% 以内（原来那套最高 93%）——
          「不刺眼」在数值上就是这一条。 */
-      --bg:#1f1e1d; --surface:#262624; --surface-2:#2e2d2b; --raise:#393836;
-      --line:#3a3937; --line-2:#4a4845; --line-3:#5c5a56;
-      --text:#f0eee6; --text-2:#b8b5ab; --text-3:#aeaba3;
+      --bg:#fcfcfb; --surface:#ffffff; --surface-2:#f6f5f2; --raise:#f0eee9;
+      --line:#e5e2db; --line-2:#d4d0c6; --line-3:#b7b1a4;
+      --text:#26251f; --text-2:#5b584f; --text-3:#706c61;
       --hi:#ffffff;
       /* 主色：低饱和青。离三个状态色都远，不会和「运行中」抢眼 */
-      --accent:#d97757; --accent-dim:#8a4c37; --on-accent:#1f1e1d;
+      --accent:#b04f2d; --accent-dim:#e6c3b3; --on-accent:#fcfcfb;
       /* 状态色：色相拉开 ≥46°，饱和度全部 ≤50% */
-      --ok:#6cae7a;    /* 鼠尾草绿 143° */
-      --warn:#d9a441;  /* 沙黄     45°  */
-      --crit:#dc7c8b;  /* 陶土玫瑰 352° —— 比正红柔和，但仍读得出是「出事了」*/
-      --idle:#aeaba3;  /* 中性灰 —— 未知/停用 */
+      --ok:#2d774b;    /* 鼠尾草绿 143° */
+      --warn:#7f601b;  /* 沙黄     45°  */
+      --crit:#b03a52;  /* 陶土玫瑰 352° —— 比正红柔和，但仍读得出是「出事了」*/
+      --idle:#706c61;  /* 中性灰 —— 未知/停用 */
       --panel:var(--surface); --panel-2:var(--surface-2); --muted:var(--text-2); --ink:var(--bg);
       --rule:var(--line); --rule-2:var(--line-2); --rule-3:var(--line-3);
       --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -33,17 +33,23 @@
     }
     /* Element Plus 暗色变量接到本站色板，避免组件和外壳像两套系统。
 
-       选择器写 :root.dark 而不是 html.dark，是为了压过 Element Plus 自己的
-       html.dark：两者按来源顺序谁后谁赢，而 CDN 回退路径是**运行时**把
-       element-plus 的 css 追加到 head 末尾的，排在这段 <style> 后面。
-       :root.dark 是 (0,2,0)，html.dark 是 (0,1,1)，特异性更高，
-       于是不管样式表按什么顺序落地都是本站的值说了算。 */
-    :root.dark {
+       面板现在是亮色主题，html 上不再挂 dark 类，用的是 element-plus 的
+       默认（亮色）变量。这里仍然整块覆盖，理由和以前一样：CDN 回退是
+       **运行时**把组件库的 css 追加到 head 末尾的，排在这段 <style> 后面，
+       同特异性下后来者赢。:root 里的自定义属性优先级由后面的规则决定，
+       所以下面每条组件规则都带了 :root 前缀去压过组件库。 */
+    /* 选择器写成 :root:root 是**故意重复**的：element-plus 的亮色主题也把
+       变量定义在 :root 上，同特异性下谁后加载谁赢——而 CDN 回退路径是
+       运行时把组件库的 css 追加到 head 末尾，正好排在这段 <style> 后面。
+       :root:root 是 (0,2,0)，压得过它的 (0,1,0)，跟加载顺序无关。
+       （暗色时代这里写的是 :root.dark，靠 .dark 拿到第二个类；
+       改亮色去掉那个类之后，特异性掉回 (0,1,0)，同一个 bug 又回来了一次。） */
+    :root:root {
       --el-bg-color: var(--surface);
       --el-bg-color-page: var(--bg);
       --el-bg-color-overlay: var(--surface-2);
       --el-text-color-primary: var(--text);
-      --el-text-color-regular: #ddd9cf;
+      --el-text-color-regular: #3b3931;
       --el-text-color-secondary: var(--text-2);
       --el-text-color-placeholder: var(--text-3);
       --el-border-color: var(--line);
@@ -54,31 +60,31 @@
       --el-fill-color-light: var(--raise);
       --el-fill-color-lighter: var(--surface-2);
       --el-fill-color-dark: var(--raise);
-      --el-color-primary:#d97757;
-      --el-color-primary-light-3:#a15c46; --el-color-primary-light-5:#804c3b;
-      --el-color-primary-light-7:#5e3c31; --el-color-primary-light-8:#4e342c;
-      --el-color-primary-light-9:#392a25; --el-color-primary-dark-2:#e08e70;
-      --el-color-success:#6cae7a;
-      --el-color-success-light-3:#55835e; --el-color-success-light-5:#47694d;
-      --el-color-success-light-7:#394f3d; --el-color-success-light-8:#324234;
-      --el-color-success-light-9:#2a322a; --el-color-success-dark-2:#8cc097;
-      --el-color-warning:#d9a441;
-      --el-color-warning-light-3:#a17c36; --el-color-warning-light-5:#806430;
-      --el-color-warning-light-7:#5e4c29; --el-color-warning-light-8:#4e4026;
-      --el-color-warning-light-9:#393122; --el-color-warning-dark-2:#e1b86b;
-      --el-color-danger:#dc7c8b; --el-color-error:#dc7c8b;
-      --el-color-danger-light-3:#a3606a; --el-color-danger-light-5:#814f56;
-      --el-color-danger-light-7:#5f3e42; --el-color-danger-light-8:#4e3638;
-      --el-color-danger-light-9:#392b2c; --el-color-danger-dark-2:#e499a5;
-      --el-color-error-light-3:#a3606a; --el-color-error-light-5:#814f56;
-      --el-color-error-light-7:#5f3e42; --el-color-error-light-8:#4e3638;
-      --el-color-error-light-9:#392b2c; --el-color-error-dark-2:#e499a5;
-      --el-color-info:#aeaba3;
-      --el-color-info-light-3:#83817b; --el-color-info-light-5:#696763;
-      --el-color-info-light-7:#504e4b; --el-color-info-light-8:#43413e;
-      --el-color-info-light-9:#333230; --el-color-info-dark-2:#c0bdb7;
-      --el-box-shadow: 0 8px 24px rgba(0,0,0,.5);
-      --el-box-shadow-light: 0 4px 14px rgba(0,0,0,.4);
+      --el-color-primary:#b04f2d;
+      --el-color-primary-light-3:#d9a48c; --el-color-primary-light-5:#e6c3b3;
+      --el-color-primary-light-7:#f0d9cd; --el-color-primary-light-8:#f5e4db;
+      --el-color-primary-light-9:#faf0ea; --el-color-primary-dark-2:#c96a45;
+      --el-color-success:#2d774b;
+      --el-color-success-light-3:#8fc2a3; --el-color-success-light-5:#b9dcc6;
+      --el-color-success-light-7:#d7ecdf; --el-color-success-light-8:#e6f3ea;
+      --el-color-success-light-9:#f0f8f3; --el-color-success-dark-2:#3f9a63;
+      --el-color-warning:#7f601b;
+      --el-color-warning-light-3:#c9b389; --el-color-warning-light-5:#ddcba6;
+      --el-color-warning-light-7:#e9dcc2; --el-color-warning-light-8:#f2e9d6;
+      --el-color-warning-light-9:#f8f3e8; --el-color-warning-dark-2:#6b5216;
+      --el-color-danger:#b03a52; --el-color-error:#b03a52;
+      --el-color-danger-light-3:#cf9aa6; --el-color-danger-light-5:#e0bcc3;
+      --el-color-danger-light-7:#eed6da; --el-color-danger-light-8:#f4e6e9;
+      --el-color-danger-light-9:#faf1f3; --el-color-danger-dark-2:#8f2c41;
+      --el-color-error-light-3:#cf9aa6; --el-color-error-light-5:#e0bcc3;
+      --el-color-error-light-7:#eed6da; --el-color-error-light-8:#f4e6e9;
+      --el-color-error-light-9:#faf1f3; --el-color-error-dark-2:#8f2c41;
+      --el-color-info:#706c61;
+      --el-color-info-light-3:#9b9890; --el-color-info-light-5:#b5b3ad;
+      --el-color-info-light-7:#cecdc9; --el-color-info-light-8:#e7e6e4;
+      --el-color-info-light-9:#efefee; --el-color-info-dark-2:#6b6759;
+      --el-box-shadow: 0 8px 24px rgba(252,252,251,.09);
+      --el-box-shadow-light: 0 4px 14px rgba(252,252,251,.07);
     }
     * { box-sizing: border-box; }
     body { margin:0; font-family:var(--sans); background:var(--bg); color:var(--text);
@@ -107,7 +113,7 @@
 
     /* 骨架屏：首次加载时占位，避免大片空白 */
     .skel { border-radius:6px; background:linear-gradient(90deg,
-            #2b2a28 25%, #3d3b38 37%, #2b2a28 63%);
+            #eeece7 25%, #e3e0d9 37%, #eeece7 63%);
             background-size:400% 100%; animation:shimmer 1.3s ease-in-out infinite; }
     @keyframes shimmer { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
     .skel-row { height:34px; margin-bottom:8px; }
@@ -119,7 +125,7 @@
     .stale { opacity:.55; transition:opacity .2s ease; pointer-events:none; }
 
     .topbar { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
-              padding:var(--sp-3) var(--sp-5); background:#232221; border-bottom:1px solid var(--line);
+              padding:var(--sp-3) var(--sp-5); background:#f7f6f3; border-bottom:1px solid var(--line);
               position:sticky; top:0; z-index:20; flex-wrap:wrap; }
     .brand { display:flex; align-items:center; gap:9px; white-space:nowrap; }
     .brand .wordmark { font-family:var(--mono); font-weight:600; font-size:15px;
@@ -133,7 +139,7 @@
     /* 左侧竖向导航 + 右侧内容 */
     .shell { display:flex; align-items:flex-start; min-height:calc(100vh - 57px); }
     .rail { width:212px; flex:none; padding:var(--sp-4) var(--sp-3); align-self:stretch;
-            border-right:1px solid var(--line); background:#232221;
+            border-right:1px solid var(--line); background:#f7f6f3;
             position:sticky; top:57px; max-height:calc(100vh - 57px); overflow-y:auto; }
     .rail-group + .rail-group { margin-top:var(--sp-4); }
     .rail-title { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
@@ -148,13 +154,13 @@
        赤陶字压在自己那层淡赤陶底上只有 4.16:1，不到 AA——
        等于「当前所在的这一项」成了全站最难读的一行字。
        标识身份的活儿交给左边那根主色竖条和加粗，颜色只管读得清。 */
-    .rail-item.on { background:rgba(217,119,87,.13); color:var(--text); font-weight:600; }
+    .rail-item.on { background:rgba(176,79,45,.13); color:var(--text); font-weight:600; }
     .rail-item.on svg { opacity:1; color:var(--accent); }
     .rail-item.on::before { content:""; position:absolute; left:-13px; top:7px; bottom:7px;
                             width:2px; border-radius:0 2px 2px 0;
                             background:var(--accent); }
     .rail-item em { margin-left:auto; font-style:normal; font-size:11px; font-weight:600;
-                    background:var(--crit); color:#2a1a1c; border-radius:9px; padding:1px 6px; }
+                    background:var(--crit); color:#ffffff; border-radius:9px; padding:1px 6px; }
     .main { flex:1; min-width:0; padding:var(--sp-5); max-width:1400px; }
     .pane { display:block; }
     /* 同一页里堆叠的卡片，间距统一由这里决定。
@@ -172,7 +178,7 @@
        只作用于直接子元素——别的地方也有叫 card-head 的，不能误伤。 */
     .card > .card-head { margin:calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
                          padding:13px var(--sp-5); border-bottom:1px solid var(--line);
-                         background:rgba(255,255,255,.018);
+                         background:rgba(0,0,0,.015);
                          border-radius:12px 12px 0 0; }
     /* 标题原来 13px，比 14px 的正文还小，层级是反的。
        提到 15px 之后卡片标题终于比它领起的内容显眼。
@@ -211,8 +217,8 @@
        左浓右淡——星球在右边，表单在左边。 */
     .login-veil { position:absolute; inset:0; pointer-events:none;
                   background:
-                    radial-gradient(70% 60% at 22% 50%, rgba(31,30,29,.92), rgba(31,30,29,.55) 55%, transparent 78%),
-                    linear-gradient(180deg, rgba(31,30,29,.75), transparent 22%, transparent 74%, rgba(31,30,29,.85)); }
+                    radial-gradient(70% 60% at 22% 50%, rgba(252,252,251,.92), rgba(252,252,251,.55) 55%, transparent 78%),
+                    linear-gradient(180deg, rgba(252,252,251,.75), transparent 22%, transparent 74%, rgba(252,252,251,.85)); }
 
     .login-hud { position:relative; padding:var(--sp-5) var(--sp-6); }
     .login-hud-top { display:flex; align-items:center; gap:12px; }
@@ -227,9 +233,9 @@
     /* 表单：半透明 + 背景模糊。底色压到 .92，就算背后正好飘过一颗亮粒子，
        文字对比度也不会跟着抖。 */
     .login-panel { width:100%; max-width:392px; padding:var(--sp-6) var(--sp-5);
-                   background:rgba(38,38,36,.92); border:1px solid var(--line-2);
+                   background:rgba(255,255,255,.92); border:1px solid var(--line-2);
                    border-radius:14px;
-                   box-shadow:0 30px 70px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.07);
+                   box-shadow:0 30px 70px rgba(252,252,251,.10), inset 0 1px 0 rgba(0,0,0,.06);
                    -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
                    animation:panel-in .55s cubic-bezier(.2,.7,.3,1) both; }
     @keyframes panel-in { from { opacity:0; transform:translateY(14px); }
@@ -240,10 +246,10 @@
     /* ── 底部状态条：把额度摆成三块机位，各带一颗呼吸灯 ── */
     .login-hud-bottom { display:flex; align-items:center; justify-content:space-between;
                         gap:var(--sp-4); flex-wrap:wrap;
-                        border-top:1px solid rgba(255,255,255,.06); }
+                        border-top:1px solid rgba(0,0,0,.05); }
     .hud-chips { display:flex; gap:var(--sp-2); flex-wrap:wrap; }
     .chip { display:inline-flex; align-items:center; gap:8px; padding:7px 12px 7px 10px;
-            border:1px solid var(--line); border-radius:8px; background:rgba(38,38,36,.72);
+            border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.72);
             font-size:11.5px; color:var(--text-2); white-space:nowrap;
             animation:panel-in .5s cubic-bezier(.2,.7,.3,1) both; }
     .chip:nth-child(2) { animation-delay:.07s; }
@@ -259,7 +265,7 @@
     .chip-arm .led { animation-delay:-2.4s; }
     .hud-meta { font-size:11px; color:var(--text-3); letter-spacing:.06em;
                 display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .hud-meta code { background:rgba(217,119,87,.12); color:var(--accent);
+    .hud-meta code { background:rgba(176,79,45,.12); color:var(--accent);
                      padding:1px 5px; border-radius:4px; font-size:10.5px; }
     /* 星球上刚跑完一趟的那条链路。内容由场景回填，是真实的 OCI 区域名。 */
     .hud-flow { color:var(--accent); opacity:.9; }
@@ -272,8 +278,8 @@
                      padding-bottom:var(--sp-4); }
       .login-panel { max-width:420px; }
       .login-veil { background:
-                      radial-gradient(80% 46% at 50% 74%, rgba(31,30,29,.94), rgba(31,30,29,.6) 58%, transparent 82%),
-                      linear-gradient(180deg, rgba(31,30,29,.6), transparent 18%, transparent 62%, rgba(31,30,29,.9)); }
+                      radial-gradient(80% 46% at 50% 74%, rgba(252,252,251,.94), rgba(252,252,251,.6) 58%, transparent 82%),
+                      linear-gradient(180deg, rgba(252,252,251,.6), transparent 18%, transparent 62%, rgba(252,252,251,.9)); }
       .login-hud-bottom { justify-content:center; }
       .hud-meta { display:none; }
     }
@@ -318,10 +324,10 @@
          原来只让光晕在 .10~.22 之间涨落，幅度太小，等于没动。
          点本身在 .78~1.2 之间缩放（8px 的灯就是 6.2px ↔ 9.6px），
          配上亮度和光晕，是一眼能看见的一呼一吸。 */
-      0%, 100% { transform:scale(.78); background:#5a9268;
-                 box-shadow:0 0 0 0 rgba(108,174,122,.5), 0 0 4px 0 rgba(108,174,122,.35); }
-      50%      { transform:scale(1.2); background:#8ecb98;
-                 box-shadow:0 0 0 5px rgba(108,174,122,.18), 0 0 16px 3px rgba(108,174,122,.9); }
+      0%, 100% { transform:scale(.78); background:#24603c;
+                 box-shadow:0 0 0 0 rgba(45,119,75,.5), 0 0 4px 0 rgba(45,119,75,.35); }
+      50%      { transform:scale(1.2); background:#3f9a63;
+                 box-shadow:0 0 0 5px rgba(45,119,75,.18), 0 0 16px 3px rgba(45,119,75,.9); }
     }
     /* 一排机器同时同步呼吸像圣诞灯，真机架不会同步。用负延迟错开三档，
        负值让动画立刻从周期中段开始，不会有一段死等。 */
@@ -334,7 +340,7 @@
        更实际的原因是——关掉动效之后 warn 只剩一个静止的点，
        跟同色的 attn 就分不出来了，靠形状才不依赖动画。 */
     .dot.attn { background:var(--warn); border-radius:2px;
-                box-shadow:0 0 0 1px var(--bg), 0 0 0 2.5px rgba(217,164,65,.45); }
+                box-shadow:0 0 0 1px var(--bg), 0 0 0 2.5px rgba(127,96,27,.45); }
     .dot.idle { background:var(--idle); }
     .state-label { font-size:12px; font-variant-numeric:tabular-nums; }
 
@@ -392,7 +398,7 @@
        或者你在录屏。点一下才显示。 */
     .bay-pw { display:flex; align-items:center; gap:7px; flex-wrap:wrap;
               padding:7px 9px; border-radius:7px; font-size:11.5px;
-              background:rgba(217,119,87,.09); border:1px solid rgba(217,119,87,.28); }
+              background:rgba(176,79,45,.09); border:1px solid rgba(176,79,45,.28); }
     .bay-pw .k { color:var(--text-3); }
     .bay-pw .v { color:var(--text); letter-spacing:.02em; }
 
@@ -400,7 +406,7 @@
 
     /* 网页终端 */
     .term-dialog .el-dialog__body { padding:0; }
-    .term-wrap { background:#1a1918; padding:10px 12px; height:62vh; min-height:320px; }
+    .term-wrap { background:#1e1d1b; padding:10px 12px; height:62vh; min-height:320px; }
     .term-wrap .xterm { height:100%; }
     .term-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
                 padding:10px 14px; border-bottom:1px solid var(--line); background:var(--surface-2); }
@@ -416,7 +422,7 @@
 
     /* 一行状态摘要：状态点 + 一句说明 */
     .kv { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(217,164,65,.5); } 70% { box-shadow:0 0 0 7px rgba(217,164,65,0); } 100% { box-shadow:0 0 0 0 rgba(217,164,65,0); } }
+    @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(127,96,27,.5); } 70% { box-shadow:0 0 0 7px rgba(127,96,27,0); } 100% { box-shadow:0 0 0 0 rgba(127,96,27,0); } }
 
     /* 自动刷新指示灯 */
     .live { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
@@ -433,7 +439,7 @@
 
     /* 批量操作条 */
     .bulkbar { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;
-               background:rgba(217,119,87,.08); border:1px solid var(--accent-dim); border-radius:8px;
+               background:rgba(176,79,45,.08); border:1px solid var(--accent-dim); border-radius:8px;
                padding:var(--sp-2) var(--sp-3); margin-bottom:var(--sp-3); }
     .bulkbar .count { font-family:var(--mono); font-size:12.5px; color:var(--accent); font-weight:600; }
 
@@ -441,7 +447,7 @@
     .quota { display:grid; grid-template-columns:150px 1fr 132px; gap:var(--sp-3);
              align-items:center; padding:var(--sp-2) 0; border-bottom:1px solid var(--line); }
     .quota:last-child { border-bottom:0; }
-    .quota .label { font-size:12.5px; color:#ddd9cf; }
+    .quota .label { font-size:12.5px; color:#3b3931; }
     .quota .num { font-family:var(--mono); font-size:12.5px; text-align:right; color:var(--text-2); }
     .quota .num b { color:var(--text); font-weight:600; }
     .bar { height:6px; border-radius:3px; background:var(--raise); overflow:hidden; }
@@ -453,7 +459,7 @@
     .bar.warn > i { background:var(--warn); }
     /* 超额除了变色还打斜纹：这是唯一一处「已经出错」的进度条，值得多一层强调 */
     .bar.over > i { background:repeating-linear-gradient(-45deg,
-                    var(--crit) 0 3px, #a85463 3px 6px); }
+                    var(--crit) 0 3px, #8f2c41 3px 6px); }
 
     /* 建实例的当前步骤 */
     .create-step { display:flex; align-items:center; gap:8px; margin:10px 0 0;
@@ -475,14 +481,14 @@
     .create-grid { display:grid; grid-template-columns:1fr 380px; gap:var(--sp-5); align-items:start; }
     .pf-card { background:var(--surface-2); border:1px solid var(--line); border-radius:10px;
                padding:var(--sp-4); position:sticky; top:76px; }
-    .pf-card.ok { border-color:rgba(108,174,122,.5); }
-    .pf-card.bad { border-color:rgba(220,124,139,.6); }
+    .pf-card.ok { border-color:rgba(45,119,75,.5); }
+    .pf-card.bad { border-color:rgba(176,58,82,.6); }
     .pf-head { display:flex; align-items:center; justify-content:space-between;
                gap:var(--sp-2); margin-bottom:var(--sp-3); }
     .pf-row { display:grid; grid-template-columns:auto 1fr auto; gap:var(--sp-2);
               align-items:center; padding:7px 0; border-bottom:1px solid var(--line); }
     .pf-row:last-of-type { border-bottom:0; }
-    .pf-label { font-size:12.5px; color:#ddd9cf; }
+    .pf-label { font-size:12.5px; color:#3b3931; }
     .pf-calc { font-size:12px; color:var(--text-2); white-space:nowrap; }
     .pf-calc em { font-style:normal; color:var(--accent); }
     .pf-calc b { color:var(--text); font-weight:600; }
@@ -490,12 +496,12 @@
        颜色回来了也留着——色弱的人靠线型一样分得清 */
     .pf-msg { font-size:12px; line-height:1.6; margin-top:var(--sp-2); padding:8px 10px;
               border-radius:6px; }
-    .pf-msg.crit { color:#eec2c9; background:rgba(220,124,139,.12);
-                   border:1px solid rgba(220,124,139,.35); border-left:3px solid var(--crit); }
-    .pf-msg.warn { color:#e8cfa0; background:rgba(217,164,65,.1);
-                   border:1px dashed rgba(217,164,65,.35); border-left:3px dashed var(--warn); }
+    .pf-msg.crit { color:#7a2136; background:rgba(176,58,82,.12);
+                   border:1px solid rgba(176,58,82,.35); border-left:3px solid var(--crit); }
+    .pf-msg.warn { color:#5e4a14; background:rgba(127,96,27,.1);
+                   border:1px dashed rgba(127,96,27,.35); border-left:3px dashed var(--warn); }
     /* 孤儿卷：整行压色 + 左侧标记条，扫一眼就知道哪几行该删 */
-    .el-table .orphan-row td { background:rgba(220,124,139,.08) !important; }
+    .el-table .orphan-row td { background:rgba(176,58,82,.08) !important; }
     .el-table .orphan-row td:first-child { box-shadow:inset 3px 0 0 var(--crit); }
     code { font-family:var(--mono); font-size:12px; background:var(--raise); padding:1px 5px; border-radius:4px; }
     @media (max-width:1100px) {
@@ -525,8 +531,8 @@
     .fw-verdict { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;
                   background:var(--surface-2); border:1px solid var(--line); border-radius:8px;
                   padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-3); }
-    .fw-verdict.open { border-color:rgba(217,164,65,.55); border-left-width:3px; }
-    .fw-verdict.partial { border-color:rgba(108,174,122,.5); border-left-width:3px; }
+    .fw-verdict.open { border-color:rgba(127,96,27,.55); border-left-width:3px; }
+    .fw-verdict.partial { border-color:rgba(45,119,75,.5); border-left-width:3px; }
     .fw-verdict b { display:block; font-size:13.5px; color:var(--text); }
     .fw-verdict span { font-size:12px; color:var(--text-2); }
     .fw-actions { margin-left:auto; }
@@ -538,23 +544,23 @@
     .ver-box .k { font-size:11.5px; color:var(--text-3); }
     .ver-box .v { font-size:19px; font-weight:600; margin-top:2px; color:var(--text); }
     .ver-arrow { color:var(--text-3); font-size:18px; }
-    .cmd-box { display:flex; align-items:center; gap:var(--sp-2); background:#1a1918;
+    .cmd-box { display:flex; align-items:center; gap:var(--sp-2); background:#f2f1ed;
                border:1px solid var(--line); border-radius:7px; padding:10px 12px;
                margin:var(--sp-2) 0 var(--sp-3); overflow-x:auto; }
-    .cmd-box code { background:none; padding:0; color:#ddd9cf; white-space:nowrap; font-size:12.5px; }
+    .cmd-box code { background:none; padding:0; color:#3b3931; white-space:nowrap; font-size:12.5px; }
     .cmd-box .copy-btn { margin-left:auto; flex:none; }
     /* 多行日志。和 .cmd-box 同一套配色，但 .cmd-box 是给单行命令用的
        flex 行（code 还带 nowrap），塞多行文本会错位，所以单独一个类。 */
-    .log-box { background:#1a1918; border:1px solid var(--line); border-radius:7px;
+    .log-box { background:#f2f1ed; border:1px solid var(--line); border-radius:7px;
                padding:10px 12px; margin:var(--sp-3) 0 0;
                max-height:260px; overflow:auto; }
     .log-box pre { margin:0; white-space:pre-wrap; word-break:break-word;
-                   color:#ddd9cf; font-size:12px; line-height:1.65; }
+                   color:#3b3931; font-size:12px; line-height:1.65; }
 
     /* 链接带下划线：颜色能标示可点击，但下划线不挑视力也不挑屏幕 */
     .link { color:var(--accent); text-decoration:underline; text-underline-offset:3px;
-            text-decoration-color:rgba(217,119,87,.45); transition:text-decoration-color .18s ease, color .18s ease; }
-    .link:hover { color:#e08e70; text-decoration-color:currentColor; }
+            text-decoration-color:rgba(176,79,45,.45); transition:text-decoration-color .18s ease, color .18s ease; }
+    .link:hover { color:#c96a45; text-decoration-color:currentColor; }
 
     .empty { text-align:center; color:var(--text-2); padding:var(--sp-6) var(--sp-4); font-size:13px; }
     .empty b { display:block; color:var(--text); font-size:14px; margin-bottom:6px; font-weight:600; }
@@ -575,7 +581,7 @@
     .mini-btn:hover { color:var(--accent); border-color:var(--accent); }
     .el-button.term-btn { color:var(--crit); padding-left:6px; padding-right:6px; }
     .el-button.term-btn:hover, .el-button.term-btn:focus-visible {
-      color:#e79aa6; background:rgba(220,124,139,.14); border-color:rgba(220,124,139,.4); }
+      color:#8f2c41; background:rgba(176,58,82,.14); border-color:rgba(176,58,82,.4); }
     .copy-btn { background:none; border:0; color:var(--text-3); cursor:pointer; padding:2px;
                 border-radius:4px; line-height:0; transition:color .18s ease, background .18s ease; }
     .copy-btn:hover { color:var(--accent); background:var(--raise); }
@@ -585,18 +591,18 @@
     /* ── Element Plus 组件 ──
        特异性统一加一层 :root，理由同上面变量块：CDN 回退时组件库的样式表
        会追加到这段 <style> 后面，同特异性就被它盖掉了。 */
-    :root .el-button--primary { --el-button-bg-color:#d97757; --el-button-border-color:#d97757;
-      --el-button-text-color:#1f1e1d; --el-button-hover-bg-color:#e08e70;
-      --el-button-hover-border-color:#e08e70; --el-button-hover-text-color:#1f1e1d;
-      --el-button-active-bg-color:#c4674a; --el-button-active-border-color:#c4674a;
-      --el-button-disabled-bg-color:#4a3a33; --el-button-disabled-border-color:#4a3a33;
-      --el-button-disabled-text-color:#8f7b70; font-weight:600; }
-    :root .el-button--danger { --el-button-bg-color:transparent; --el-button-border-color:rgba(220,124,139,.5);
-      --el-button-text-color:#dc7c8b; --el-button-hover-bg-color:rgba(220,124,139,.15);
-      --el-button-hover-border-color:#dc7c8b; --el-button-hover-text-color:#e79aa6;
-      --el-button-active-bg-color:rgba(220,124,139,.25); --el-button-active-border-color:#dc7c8b;
-      --el-button-disabled-bg-color:transparent; --el-button-disabled-border-color:#43383a;
-      --el-button-disabled-text-color:#7a6166; font-weight:600; }
+    :root .el-button--primary { --el-button-bg-color:#b04f2d; --el-button-border-color:#b04f2d;
+      --el-button-text-color:#fcfcfb; --el-button-hover-bg-color:#c96a45;
+      --el-button-hover-border-color:#c96a45; --el-button-hover-text-color:#fcfcfb;
+      --el-button-active-bg-color:#96421f; --el-button-active-border-color:#96421f;
+      --el-button-disabled-bg-color:#efe7e2; --el-button-disabled-border-color:#efe7e2;
+      --el-button-disabled-text-color:#8a7268; font-weight:600; }
+    :root .el-button--danger { --el-button-bg-color:transparent; --el-button-border-color:rgba(176,58,82,.5);
+      --el-button-text-color:#b03a52; --el-button-hover-bg-color:rgba(176,58,82,.15);
+      --el-button-hover-border-color:#b03a52; --el-button-hover-text-color:#8f2c41;
+      --el-button-active-bg-color:rgba(176,58,82,.25); --el-button-active-border-color:#b03a52;
+      --el-button-disabled-bg-color:transparent; --el-button-disabled-border-color:#e7dfe1;
+      --el-button-disabled-text-color:#9b7c82; font-weight:600; }
     /* 语义标签除了颜色也保留线型差异——同一条信息给两个通道 */
     :root .el-tag { border-style:solid; }
     :root .el-tag.el-tag--warning { border-style:dashed; }
@@ -646,9 +652,9 @@
                                animation-delay:0s !important; transition-duration:.001ms !important; }
       /* 不能动的时候，过渡态用双环表示，别退化成和 attn 一个样 */
       .dot.warn { box-shadow:0 0 0 1px var(--bg), 0 0 0 2px var(--warn),
-                             0 0 0 3px var(--bg), 0 0 0 4px rgba(217,164,65,.5); }
+                             0 0 0 3px var(--bg), 0 0 0 4px rgba(127,96,27,.5); }
       /* 呼吸灯退化成静态光晕：仍然比其它状态亮一圈，不是一颗死灯 */
-      .dot.ok, .led { box-shadow:0 0 0 3px rgba(108,174,122,.2), 0 0 8px 2px rgba(108,174,122,.5); }
+      .dot.ok, .led { box-shadow:0 0 0 3px rgba(45,119,75,.2), 0 0 8px 2px rgba(45,119,75,.5); }
     }
   </style>
 </head>
@@ -1450,7 +1456,7 @@
                         stroke-width="1.8" :stroke-dasharray="s.dash ? '5 4' : ''" vector-effect="non-scaling-stroke"
                         stroke-linejoin="round" />
                   <line v-if="hoverIdx >= 0" class="grid" :x1="hoverX" y1="8" :x2="hoverX" :y2="CH-20"
-                        stroke="#d97757" stroke-dasharray="3 3" />
+                        stroke="#b04f2d" stroke-dasharray="3 3" />
                   <text class="axis-t" x="46" :y="CH-6">{{ axisStart }}</text>
                   <text class="axis-t" :x="CW-8" :y="CH-6" text-anchor="end">{{ axisEnd }}</text>
                 </svg>
@@ -2368,9 +2374,9 @@ const OcixScene = (() => {
 
     // 球体本身：一层极淡的辉光，让球有体积感而不是一堆浮点
     const g = ctx.createRadialGradient(L.cx, L.cy, L.R * 0.1, L.cx, L.cy, L.R * 1.25);
-    g.addColorStop(0, 'rgba(217,119,87,0.10)');
-    g.addColorStop(0.55, 'rgba(217,119,87,0.04)');
-    g.addColorStop(1, 'rgba(217,119,87,0)');
+    g.addColorStop(0, 'rgba(176,79,45,0.10)');
+    g.addColorStop(0.55, 'rgba(176,79,45,0.04)');
+    g.addColorStop(1, 'rgba(176,79,45,0)');
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(L.cx, L.cy, L.R * 1.25, 0, Math.PI * 2); ctx.fill();
 
@@ -2379,7 +2385,7 @@ const OcixScene = (() => {
       const pt = project(rotY(dots[k], spin), L);
       const front = pt.z > 0;
       const a = front ? 0.24 + pt.z * 0.55 : 0.07 + (1 + pt.z) * 0.08;
-      ctx.fillStyle = 'rgba(184,181,171,' + a.toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(143,138,125,' + a.toFixed(3) + ')';
       const r = (front ? 1.15 : 0.8) * pt.s * 0.62;
       ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2); ctx.fill();
     }
@@ -2399,7 +2405,7 @@ const OcixScene = (() => {
         if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
         else ctx.lineTo(pt.x, pt.y);
       }
-      ctx.strokeStyle = 'rgba(217,119,87,0.26)';
+      ctx.strokeStyle = 'rgba(176,79,45,0.26)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
@@ -2412,8 +2418,8 @@ const OcixScene = (() => {
         if (m[2] < -0.1) continue;
         const fade = (1 - q / 12);
         ctx.fillStyle = q === 0
-          ? 'rgba(247,244,234,' + (1 * fade).toFixed(3) + ')'
-          : 'rgba(224,142,112,' + (0.7 * fade * fade).toFixed(3) + ')';
+          ? 'rgba(59,57,49,' + (1 * fade).toFixed(3) + ')'
+          : 'rgba(201,106,69,' + (0.7 * fade * fade).toFixed(3) + ')';
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, (q === 0 ? 2.9 : 1.8) * pt.s * 0.75, 0, Math.PI * 2);
         ctx.fill();
@@ -2430,10 +2436,10 @@ const OcixScene = (() => {
       ctx.fillStyle = fl > 0.02
         ? 'rgba(' + (95 + 130 * fl).toFixed(0) + ',' + (168 + 70 * fl).toFixed(0) + ',' +
           (181 + 60 * fl).toFixed(0) + ',' + a.toFixed(3) + ')'
-        : 'rgba(217,119,87,' + a.toFixed(3) + ')';
+        : 'rgba(176,79,45,' + a.toFixed(3) + ')';
       ctx.beginPath(); ctx.arc(pt.x, pt.y, (1.9 + fl * 1.6) * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
       // 抵达时向外扩一圈，扩完就没——和状态点的脉冲同一个语汇
-      ctx.strokeStyle = 'rgba(217,119,87,' + (a * (0.32 + fl * 0.5)).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(176,79,45,' + (a * (0.32 + fl * 0.5)).toFixed(3) + ')';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, (5.2 + fl * 9) * pt.s * 0.8, 0, Math.PI * 2); ctx.stroke();
@@ -4145,8 +4151,8 @@ createApp({
         termInst = new window.Terminal({
           fontSize: 13, cursorBlink: true, convertEol: true,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-          theme: { background: '#1a1918', foreground: '#f0eee6', cursor: '#d97757',
-                   selectionBackground: '#45423e' },
+          theme: { background: '#1e1d1b', foreground: '#eceae4', cursor: '#e08e70',
+                   selectionBackground: '#463f3a' },
         });
         const FitAddon = window.FitAddon && (window.FitAddon.FitAddon || window.FitAddon);
         termFit = FitAddon ? new FitAddon() : null;
@@ -4373,8 +4379,8 @@ createApp({
 
     // ---- 折线图（点数不过千，内联 SVG 足够，也免掉一个图表库依赖）----
     const SERIES_STYLE = {
-      CpuUtilization: { color: '#d97757', dash: false },
-      MemoryUtilization: { color: '#d9a441', dash: true },
+      CpuUtilization: { color: '#b04f2d', dash: false },
+      MemoryUtilization: { color: '#7f601b', dash: true },
     };
     const withPoints = computed(() => metrics.value.filter(m => m.points && m.points.length > 1));
     const hasMetricPoints = computed(() => withPoints.value.length > 0);
@@ -4392,7 +4398,7 @@ createApp({
     const yAt = (v) => PAD_T + (1 - v / yMax.value) * (CH - PAD_T - PAD_B);
 
     const chartSeries = computed(() => withPoints.value.map(m => {
-      const style = SERIES_STYLE[m.metric] || { color: '#aeaba3', dash: false };
+      const style = SERIES_STYLE[m.metric] || { color: '#706c61', dash: false };
       const n = m.points.length;
       const coords = m.points.map((p, i) => [xAt(i, n), yAt(p.v)]);
       const line = coords.map((c, i) => (i ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1)).join(' ');
