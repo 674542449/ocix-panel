@@ -1,9 +1,9 @@
 """面板配色的几条红线。
 
-配色本身可以换（换过一次：彩色 → 纯灰阶 → 现在的低饱和石墨青），
+配色换过好几轮（艳丽 → 纯灰阶 → 低饱和石墨青 → 石墨靛 → 现在的「青春」），
 但下面这几条不管换成什么都得成立：
 
-  * 不许艳丽——所有彩色的饱和度有上限
+  * 饱和度有上限——上限本身可以随方向调整，但必须是明写的，不能没有
   * 状态不能只靠颜色区分——形态也得带着信息
   * 变量块的特异性要压得过 element-plus
   * 链接要有下划线
@@ -20,11 +20,21 @@ WEB = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web"
 INDEX = WEB / "index.html"
 FAVICON = WEB / "favicon.svg"
 
-# 饱和度上限。用户明确否掉过「艳丽」的配色——原来那套 accent #38bdf8 是 93%、
-# ok #22c55e 是 71%、crit #ef4444 是 84%。60% 这条线放得过现在的一套
-# （最高 50%），但拦得住任何一个 Tailwind 默认色。
-MAX_SATURATION = 60
-# 亮度太低的颜色算「暗色底」，不受饱和度约束——深色背景本来就该有点色调
+# 饱和度上限。**这条线抬过一次，说明原因。**
+#
+# 早先用户否掉了「艳丽」的配色，于是这里卡在 HSL 饱和度 60%。
+# 后来用户要「青春的配色」——方向反过来了，就该明说、把线抬上去，
+# 而不是留着一条过不去的规则再想办法绕。
+#
+# 顺带把度量换了：HSL 饱和度在高明度下会虚高（#6f8dff 是 HSL 100%，
+# 但它是个亮蓝，并不刺眼），HSV 饱和度才贴近「看着有多艳」。实测：
+#     现在这套（青春）  HSV 51~72%
+#     被否掉的那套      HSV 72~96%
+#     纯霓虹绿 #00ff00  HSV 100%
+# 也就是说新配色其实**比被否掉那版更不艳**，只是更亮、色相更鲜。
+# 80% 这条线放得过现在这套，仍拦得住霓虹和 #f59e0b 那种（96%）。
+MAX_SATURATION = 80
+# 亮度太低的颜色算「暗色底」，不受约束——深色背景本来就该有点色调
 MIN_LIGHTNESS_FOR_CHECK = 25
 
 _HEX = re.compile(r"#([0-9a-fA-F]{6})\b")
@@ -37,10 +47,18 @@ def _strip_comments(text: str) -> str:
 
 
 def _hls(hex_color: str) -> tuple[float, float, float]:
+    """返回 (色相°, 明度%, **HSV 饱和度%**)。
+
+    第三个值刻意用 HSV 而不是 HSL 的饱和度：HSL 的那个在高明度下会虚高，
+    把「亮但不刺眼」的颜色误判成艳色。
+    """
     h = hex_color.lstrip("#")
-    r, g, b = (int(h[i : i + 2], 16) / 255 for i in (0, 2, 4))
-    hue, light, sat = colorsys.rgb_to_hls(r, g, b)
-    return hue * 360, light * 100, sat * 100
+    ch = [int(h[i : i + 2], 16) for i in (0, 2, 4)]
+    r, g, b = (v / 255 for v in ch)
+    hue, light, _ = colorsys.rgb_to_hls(r, g, b)
+    mx = max(ch)
+    sat_v = 0.0 if mx == 0 else (mx - min(ch)) / mx * 100
+    return hue * 360, light * 100, sat_v
 
 
 def _too_vivid(text: str) -> list[str]:
@@ -55,8 +73,8 @@ def _too_vivid(text: str) -> list[str]:
 def test_no_vivid_colors_in_panel():
     bad = _too_vivid(INDEX.read_text(encoding="utf-8"))
     assert not bad, (
-        f"这些颜色太艳了：{bad}。面板的配色是低饱和的，"
-        f"上限 {MAX_SATURATION}%——用户明确否掉过高饱和那一版。"
+        f"这些颜色太艳了：{bad}。上限是 HSV 饱和度 {MAX_SATURATION}%——"
+        "要抬这条线就在常量那儿改并写清理由，别在颜色上凑。"
     )
 
 
@@ -66,10 +84,10 @@ def test_no_vivid_colors_in_favicon():
 
 
 def test_status_hues_are_far_enough_apart():
-    """状态色的色相要拉开，否则低饱和之下两个状态会糊成一片。
+    """状态色的色相要拉开，否则两个状态会糊成一片。
 
-    尤其是 warn（沙黄）和 crit（陶土玫瑰）——把饱和度压下来之后，
-    这两个如果色相只差二十几度，并排摆着就分不出来了。
+    踩过两次：warn 和 crit 曾经只差 26°；主色曾经是青 189°，离「运行中」
+    的绿只有 46°，既不像可操作又跟状态抢意思。
     """
     css = INDEX.read_text(encoding="utf-8")
     tokens = {}
@@ -84,8 +102,25 @@ def test_status_hues_are_far_enough_apart():
         gap = (nxt_hue - hue) % 360
         assert gap >= 40, (
             f"{name} ({hue:.0f}°) 和 {nxt_name} ({nxt_hue:.0f}°) 只差 {gap:.0f}°，"
-            "低饱和下分不出来"
+            "分不出来"
         )
+
+
+def test_secondary_accent_is_not_a_status_colour():
+    """副色只跟主色搭着用，不能挤进状态语义。
+
+    它跟主色只差 36°（本来就是要搭在一起做渐变的），所以刻意不放进上面
+    那条「相邻至少 40°」的检查里；但必须离四档状态色都够远，
+    免得有人看见紫色以为是某种状态。
+    """
+    css = INDEX.read_text(encoding="utf-8")
+    m = re.search(r"--accent-2:\s*(#[0-9a-fA-F]{6})", css)
+    assert m, "找不到 --accent-2"
+    a2 = _hls(m.group(1))[0]
+    for name in ("ok", "warn", "crit"):
+        v = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", css)
+        gap = min((a2 - _hls(v.group(1))[0]) % 360, (_hls(v.group(1))[0] - a2) % 360)
+        assert gap >= 40, f"副色离 {name} 只有 {gap:.0f}°，会被当成状态色"
 
 
 def test_element_plus_overrides_outrank_the_library():
