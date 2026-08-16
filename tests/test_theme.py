@@ -84,14 +84,13 @@ def test_no_vivid_colors_in_favicon():
 
 
 def test_status_hues_are_far_enough_apart():
-    """状态色的色相要拉开，否则两个状态会糊成一片。
+    """三档状态色彼此必须拉开——它们会同时出现在同一个列表里。
 
-    踩过两次：warn 和 crit 曾经只差 26°；主色曾经是青 189°，离「运行中」
-    的绿只有 46°，既不像可操作又跟状态抢意思。
+    踩过：warn 和 crit 曾经只差 26°，并排摆着分不出来。
     """
     css = INDEX.read_text(encoding="utf-8")
     tokens = {}
-    for name in ("accent", "ok", "warn", "crit"):
+    for name in ("ok", "warn", "crit"):
         m = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", css)
         assert m, f"找不到 --{name} 的定义"
         tokens[name] = m.group(1)
@@ -102,25 +101,36 @@ def test_status_hues_are_far_enough_apart():
         gap = (nxt_hue - hue) % 360
         assert gap >= 40, (
             f"{name} ({hue:.0f}°) 和 {nxt_name} ({nxt_hue:.0f}°) 只差 {gap:.0f}°，"
-            "分不出来"
+            "同一个列表里分不出来"
         )
 
 
-def test_secondary_accent_is_not_a_status_colour():
-    """副色只跟主色搭着用，不能挤进状态语义。
+def test_accent_is_far_from_the_running_colour():
+    """主色离「运行中」的绿必须远，但**不要求**离 warn / crit 远。
 
-    它跟主色只差 36°（本来就是要搭在一起做渐变的），所以刻意不放进上面
-    那条「相邻至少 40°」的检查里；但必须离四档状态色都够远，
-    免得有人看见紫色以为是某种状态。
+    这条原本是「四个色两两相邻 >=40°」，现在拆开了，因为那个说法表达不了
+    真正的意图：
+
+      * 主色和 ok 必须分得开——踩过。主色曾是青 189°，离绿 143° 只有 46°，
+        结果既不像「能点」，又跟状态色抢意思。
+      * 主色和 warn / crit 挨得近可以接受：主色永远不会以状态点的形态出现，
+        而状态点除了颜色还带形态（实心/空心/方块/脉动）。
+        现在是暖色系，赤陶主色离琥珀只有 24°——唯一真会混的地方是进度条，
+        所以普通进度条已经改成中性色，下面那条断言盯着它。
     """
     css = INDEX.read_text(encoding="utf-8")
-    m = re.search(r"--accent-2:\s*(#[0-9a-fA-F]{6})", css)
-    assert m, "找不到 --accent-2"
-    a2 = _hls(m.group(1))[0]
-    for name in ("ok", "warn", "crit"):
-        v = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", css)
-        gap = min((a2 - _hls(v.group(1))[0]) % 360, (_hls(v.group(1))[0] - a2) % 360)
-        assert gap >= 40, f"副色离 {name} 只有 {gap:.0f}°，会被当成状态色"
+    acc = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})", css)
+    ok = re.search(r"--ok:\s*(#[0-9a-fA-F]{6})", css)
+    assert acc and ok, "取不到主色或运行中的颜色"
+    ha, ho = _hls(acc.group(1))[0], _hls(ok.group(1))[0]
+    gap = min((ha - ho) % 360, (ho - ha) % 360)
+    assert gap >= 40, f"主色 {ha:.0f}° 离「运行中」{ho:.0f}° 只有 {gap:.0f}°"
+
+    bar = re.search(r"\.bar > i \{([^}]*)\}", css)
+    assert bar, "找不到进度条的样式"
+    assert "var(--accent)" not in bar.group(1), (
+        "普通进度条不该用主色：暖色系下它离「接近上限」太近，两根条并排分不出来"
+    )
 
 
 def test_element_plus_overrides_outrank_the_library():
