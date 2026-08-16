@@ -61,15 +61,51 @@ def test_create_returns_a_job_id_immediately(app_client, live_backend):
     assert snap["steps"][-1]["text"] == "完成"
 
 
-def test_double_submit_creates_only_one_instance(app_client, live_backend):
-    """用户被 524 吓到去重试、或者手快点两下，都不该变成两台机器。"""
+def test_double_submit_while_one_is_running_creates_only_one(app_client, live_backend,
+                                                             monkeypatch):
+    """手快点两下、或者第一单还在跑时又提交一次，都不该变成两台机器。
+
+    去重挡的是**同时在飞**的重复提交。所以这里得把第一单摁住不让它跑完，
+    否则在快机器上它眨眼就结束了，第二次提交自然就不算重复——
+    CI 上就是这么翻的（本地过、CI 挂），不是偶发。
+    """
+    import threading
+
+    from ocix.routers import provision
+
+    hold = threading.Event()
+    real = provision.launch_instance
+
+    def slow_launch(profile, params):
+        hold.wait(timeout=10)          # 摁住，保证第二次提交时它还在跑
+        return real(profile, params)
+
+    monkeypatch.setattr(provision, "launch_instance", slow_launch)
+
     a = app_client.post("/api/provision/instances", json=_spec("dup-1"))
     b = app_client.post("/api/provision/instances", json=_spec("dup-1"))
     assert a.status_code == 202 and b.status_code == 202
+    assert a.json()["job_id"] == b.json()["job_id"], "第二次提交应当拿回同一个任务号"
+    assert b.json()["started"] is False
 
+    hold.set()
+    snap = _drain(app_client, a.json()["job_id"])
+    assert snap["state"] == "ok", snap
+    assert live_backend.count("launch_instance") == 1, "只应当下单一次"
+
+
+def test_resubmit_after_it_finished_is_allowed(app_client, live_backend):
+    """跑完之后再提交同名任务是允许的——用户可能真的要再建一台。
+
+    也就是说去重只覆盖「还在飞」的那段，不是永久的。写清楚免得被误读。
+    """
+    a = app_client.post("/api/provision/instances", json=_spec("again-1"))
     _drain(app_client, a.json()["job_id"])
+    b = app_client.post("/api/provision/instances", json=_spec("again-1"))
+    assert b.json()["job_id"] != a.json()["job_id"]
+    assert b.json()["started"] is True
     _drain(app_client, b.json()["job_id"])
-    assert live_backend.count("launch_instance") == 1, "同名重复提交只应当下单一次"
+    assert live_backend.count("launch_instance") == 2
 
 
 def test_quota_blockers_come_back_through_the_job(app_client, live_backend):
