@@ -279,6 +279,28 @@ def test_unknown_tier_is_not_reported_as_success():
     assert "data.tier === 'unknown'" in body, "要单独判 unknown"
     assert "ElMessage.warning" in body, "unknown 应当用警告色"
 
+
+
+def test_tier_is_never_detected_automatically():
+    """账户等级只在点击时检测，任何页面切换都不能触发。
+
+    等级要往 OCI 打一次订阅查询。原来进「账户配置」会整表扫一遍、
+    进「免费额度」会查一次、换账户还会再查一次——而这个面板承诺
+    「不主动操作就不在后台请求 OCI」，这三处是自相矛盾的。
+
+    判定方式：带 false 的调用就是当初那三处自动加载（手动入口一律传 true）。
+    """
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1]
+            / "src" / "ocix" / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert "loadTier(false)" not in html, "还有地方在自动查单账户等级"
+    assert "loadAllTiers(false)" not in html, "还有地方在自动整表扫等级"
+    # 手动入口必须还在
+    assert '@click="loadTier(true)"' in html, "免费额度页的检测按钮不见了"
+    assert '@click="loadAllTiers(true)"' in html, "账户配置页的整表检测按钮不见了"
+    assert "loadOneTier(row.name)" in html, "单行检测按钮不见了"
+
 # ── Oracle 账号（控制台登录）的密码有效期 ──
 #
 # 这是 Oracle 侧 Identity Domain 里的 passwordExpiresAfter，免费租户默认 120 天，

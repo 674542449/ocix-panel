@@ -1503,9 +1503,12 @@
               <h2 class="card-title">已配置账户</h2>
               <div style="display:flex; align-items:center; gap:8px;">
                 <span class="who" v-if="profiles.length">{{ profiles.length }} 个</span>
+                <!-- 从不自动检测。文案跟着状态走——一次都没查过还写「重新检测」，
+                     会让人以为已经查过一轮了 -->
                 <el-button size="small" @click="loadAllTiers(true)"
                            :disabled="!profiles.length || tierBusy">
-                  {{ tierBusy ? '检测中…' : '重新检测等级' }}
+                  {{ tierBusy ? '检测中…'
+                     : (Object.keys(tiers).length ? '重新检测全部' : '检测全部等级') }}
                 </el-button>
               </div>
             </div>
@@ -1561,6 +1564,11 @@
               <b>还没有配置任何账户</b>
               在下面「导入账户」里粘贴一份 ~/.oci/config 并附上私钥即可开始。
             </div>
+            <p class="hint">
+              账户等级<strong>不会自动检测</strong>——它要往 OCI 打一次订阅查询，
+              而进这一页多半只是想看看账户还在不在。点上面的「检测全部等级」，
+              或某一行操作栏里的「检测等级」只查那一个号。
+            </p>
             <p class="hint">
               <strong>锁定</strong>后所有页面都固定用这个账户，顶部不再能切换，
               省得每次操作前先确认选对了没有。设置存在服务端，换浏览器一样生效。
@@ -3450,7 +3458,8 @@ createApp({
       createForm.assign_ipv6 = false;
       loadCompartments();
       loadSingle(activeTab.value === 'usage');
-      if (activeTab.value === 'usage') loadTier(false);
+      // 等级不自动查：它要往 OCI 打一次订阅查询，而多数时候换账户只是想看看
+      // 机器在不在。上面已经把 tier 清空了，界面会回到「未检测」，点了才查。
       if (activeTab.value === 'password') loadConsolePolicy(true);
       if (activeTab.value === 'create') { loadCreateOptions(); doPreflight(); }
       if (activeTab.value === 'storage') loadStorage();
@@ -3474,9 +3483,8 @@ createApp({
         watchUpdate(false);
       }
       if (name === 'password') loadConsolePolicy(false);
-      if (name === 'usage') { loadTier(false); loadEgress(false); }
+      if (name === 'usage') loadEgress(false);
       if (name === 'billing') loadBilling(false);
-      if (name === 'profile') loadAllTiers(false);
       if (name === 'firewall') {
         if (!instances.value.length) loadSingle();
         if (!fwInstance.value && instances.value.length) {
