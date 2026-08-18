@@ -783,10 +783,9 @@ def _ensure_ipv6_route(profile: str, vcn_id: str, compartment_id: str, route_tab
 
 
 def _ensure_ipv6_ingress(profile: str, subnet_id: str) -> None:
-    """放行 ::/0 的入站。
+    """为 ::/0 放行全部协议入站规则。
 
-    若现有安全列表已是全放行状态（0.0.0.0/0 全部协议），则为 IPv6 同步放行全部协议；
-    否则补一条 IPv6 SSH (22) 入站规则。
+    默认开放 IPv6 的全协议全端口入站（protocol: all），避免仅开放 TCP 22 导致其他服务受阻。
     """
     sub = _b().get_subnet(profile, subnet_id)
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
@@ -794,21 +793,15 @@ def _ensure_ipv6_ingress(profile: str, subnet_id: str) -> None:
         return
     sid = sl_ids[0]
     rules = _raw_ingress(profile, sid)
-    if any(r.get("source") == _ALL_V6 and r.get("protocol") in ("all", "6") for r in rules):
+    if any(r.get("source") == _ALL_V6 and r.get("protocol") == "all" for r in rules):
         return
 
-    has_all_v4 = any(r.get("source") == _ALL_V4 and r.get("protocol") == "all" for r in rules)
-    if has_all_v4:
-        rules.append({
-            "protocol": "all", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
-            "isStateless": False, "description": "ocix: allow all (IPv6)",
-        })
-    else:
-        rules.append({
-            "protocol": "6", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
-            "isStateless": False, "description": "ocix: ssh over ipv6",
-            "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}},
-        })
+    # 移除旧的仅限 SSH 的 IPv6 规则，写入全部协议放行规则
+    rules = [r for r in rules if not (r.get("source") == _ALL_V6 and r.get("protocol") == "6")]
+    rules.append({
+        "protocol": "all", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
+        "isStateless": False, "description": "ocix: allow all (IPv6)",
+    })
     _set_ingress(profile, sid, rules)
 
 

@@ -744,18 +744,10 @@
         <section class="pane" v-show="activeTab === 'instances'">
           <div class="card">
             <div class="card-head">
-              <h2 class="card-title">{{ currentProfile || '未选择账户' }} 的机队</h2>
-              <div class="seg view-toggle" role="group" aria-label="切换视图">
-                <button type="button" :class="{ on: instView === 'bay' }"
-                        @click="setInstView('bay')">机位</button>
-                <button type="button" :class="{ on: instView === 'table' }"
-                        @click="setInstView('table')">表格</button>
-              </div>
+              <h2 class="card-title">{{ currentProfile || '未选择账户' }} 的实例</h2>
             </div>
 
-            <!-- 机队额度。ARM 与 AMD 直接从已经拿到的实例列表算出来，
-                 不额外打 OCI——面板的原则是不在后台偷偷请求。
-                 存储要查引导卷，所以只在「免费额度」页已经取过时才显示。 -->
+            <!-- 机队额度 -->
             <div class="fleet" v-if="instances.length || usage">
               <div class="meter">
                 <div class="meter-head">
@@ -778,18 +770,18 @@
                 </div>
                 <div class="bar"><i :style="{ width: (fleet.mem / 24 * 100) + '%' }"></i></div>
               </div>
-              <div class="meter" v-if="usage">
+              <div class="meter">
                 <div class="meter-head">
-                  <span class="meter-k">存储</span>
-                  <span class="meter-v">{{ usage.storage_gb }}<small>/200 GB</small></span>
+                  <span class="meter-k">免费存储</span>
+                  <span class="meter-v">{{ usage ? usage.storage_gb : '—' }}<small>/200 GB</small></span>
                 </div>
-                <div class="bar" :class="{ warn: usage.storage_gb > 170 }">
-                  <i :style="{ width: Math.min(100, usage.storage_gb / 200 * 100) + '%' }"></i>
+                <div class="bar" :class="{ warn: usage && usage.storage_gb > 170 }">
+                  <i :style="{ width: usage ? Math.min(100, usage.storage_gb / 200 * 100) + '%' : '0%' }"></i>
                 </div>
               </div>
             </div>
 
-            <div class="bulkbar" v-if="instView === 'table' && instSelection.length">
+            <div class="bulkbar" v-if="instSelection.length">
               <span class="count">已选 {{ instSelection.length }} 台</span>
               <el-button size="small" type="success" @click="batchAct(instSelection,'START')">开机</el-button>
               <el-button size="small" @click="batchAct(instSelection,'SOFTSTOP')">关机</el-button>
@@ -800,64 +792,9 @@
             <div v-if="loading && !instances.length" aria-label="加载中">
               <div class="skel skel-row" v-for="i in 4" :key="i"></div>
             </div>
-            <!-- 机位视图 -->
-            <div class="bays" v-else-if="instView === 'bay' && instances.length"
-                 :class="{ stale: loading }">
-              <div v-for="(b, i) in bays" :key="b.inst ? b.inst.id : 'free-' + i"
-                   :class="['bay', { wide: b.kind === 'arm', free: !b.inst }]">
-                <template v-if="b.inst">
-                  <div class="bay-top">
-                    <span class="state">
-                      <i :class="['dot', stateTone(b.inst.state)]"></i>
-                      <span class="state-label">{{ stateText(b.inst.state) }}</span>
-                    </span>
-                    <span class="bay-tag">{{ b.kind === 'arm' ? 'ARM A1' :
-                      (b.kind === 'amd' ? 'AMD MICRO' : '非免费规格') }}</span>
-                  </div>
-                  <div class="bay-name">{{ b.inst.display_name }}</div>
-                  <div class="bay-ip" v-if="b.inst.public_ip">
-                    <span>{{ b.inst.public_ip }}</span>
-                    <button class="copy-btn" @click="copy(b.inst.public_ip)"
-                            :aria-label="'复制 ' + b.inst.public_ip">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-                    </button>
-                  </div>
-                  <div class="bay-ip none" v-else>还没有公网 IP</div>
-                  <div class="bay-sub">
-                    <span>{{ b.inst.ocpus || 1 }}C · {{ b.inst.memory_gb || 1 }}G</span>
-                    <span v-if="b.inst.private_ip">内网 {{ b.inst.private_ip }}</span>
-                    <span v-if="b.inst.ipv6">IPv6 已挂</span>
-                  </div>
-                  <!-- 建的时候选了 root + 密码，密码存在实例标签里，这里直接摆出来。
-                       换台电脑、换个浏览器进来也看得到——这正是把它存在标签上的原因。 -->
-                  <div class="bay-pw" v-if="b.inst.root_password">
-                    <span class="k">root 密码</span>
-                    <span class="mono v">{{ pwShown[b.inst.id] ? b.inst.root_password : '••••••••••' }}</span>
-                    <button class="mini-btn" @click="pwShown = { ...pwShown, [b.inst.id]: !pwShown[b.inst.id] }">
-                      {{ pwShown[b.inst.id] ? '隐藏' : '显示' }}
-                    </button>
-                    <button class="mini-btn" @click="copy(b.inst.root_password)">复制</button>
-                  </div>
-                  <div class="bay-acts">
-                    <el-button size="small" type="primary" plain @click="openDetail(b.inst)"
-                               :loading="isBusy('detail:' + b.inst.id)">详情</el-button>
-                    <el-button size="small" type="success" :disabled="!canStart(b.inst)"
-                               @click="act(b.inst,'START')">开机</el-button>
-                    <el-button size="small" :disabled="!canStop(b.inst)"
-                               @click="act(b.inst,'SOFTSTOP')">关机</el-button>
-                    <el-button size="small" type="warning" :disabled="!canReset(b.inst)"
-                               @click="act(b.inst,'SOFTRESET')">重启</el-button>
-                  </div>
-                </template>
-                <template v-else>
-                  <span class="bay-tag">{{ b.kind === 'arm' ? 'ARM A1' : 'AMD MICRO' }}</span>
-                  <div class="bay-name">空闲机位</div>
-                  <el-button size="small" type="primary" plain @click="go('create')">去开一台</el-button>
-                </template>
-              </div>
-            </div>
 
-            <div class="table-wrap" v-else-if="instView === 'table' && instances.length" :class="{ stale: loading }">
+            <!-- 实例列表表格 -->
+            <div class="table-wrap" v-else-if="instances.length" :class="{ stale: loading }">
               <el-table ref="instTableRef" :data="instances" size="small" stripe border row-key="id"
                         @selection-change="instSelection = $event" style="width:100%;">
                 <el-table-column type="selection" width="42" />
@@ -904,6 +841,31 @@
                     <el-button v-else size="small" text type="primary" :loading="ipv6Busy === row.id"
                                @click="addIpv6(row)">+ 添加</el-button>
                   </template>
+                </el-table-column>
+                <el-table-column label="创建时间" width="168">
+                  <template #default="{row}"><span class="mono">{{ fmtTime(row.time_created) }}</span></template>
+                </el-table-column>
+                <el-table-column label="操作" width="316" fixed="right">
+                  <template #default="{row}">
+                    <div class="row-actions">
+                      <el-button size="small" type="primary" plain @click="openDetail(row)"
+                                 :loading="isBusy('detail:' + row.id)">详情</el-button>
+                      <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
+                      <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
+                      <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
+                      <el-button size="small" text class="term-btn" @click="terminate(row)">终止</el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div class="empty" v-else-if="!loading">
+              <b>这个账户下没有实例</b>
+              换个 compartment，或勾选「含子 compartment」再查一次。
+            </div>
+            <p class="hint">被 Oracle 回收或停掉的免费实例不会自动重开，需要你手动点击「开机」——这是为了守住 Oracle 的回收策略，不做抢机。</p>
+          </div>
+        </section> </template>
                 </el-table-column>
                 <el-table-column label="创建于" width="100">
                   <template #default="{row}"><span class="mono">{{ fmtDate(row.time_created) }}</span></template>
@@ -3083,16 +3045,13 @@ createApp({
       if (!currentProfile.value) { instances.value = []; usage.value = null; return; }
       loading.value = true;
       try {
-        // 额度数据只在「免费额度」页才取：
-        // 在实例页顺带查一遍会多花 6 次 OCI 请求
-        const reqs = [axios.get('/api/instances', { params: { ...scopeParams(), with_ip: true } })];
-        if (withUsage) {
-          reqs.push(axios.get('/api/monitor/usage', { params: scopeParams() })
-            .catch(() => ({ data: null })));
-        }
+        const reqs = [
+          axios.get('/api/instances', { params: { ...scopeParams(), with_ip: true } }),
+          axios.get('/api/monitor/usage', { params: scopeParams() }).catch(() => ({ data: null })),
+        ];
         const [inst, usg] = await Promise.all(reqs);
         instances.value = inst.data.instances;
-        if (withUsage) usage.value = usg.data;
+        if (usg && usg.data) usage.value = usg.data;
         stamp();
       } catch (e) {
         ElMessage.error(errMsg(e, '实例加载失败'));
