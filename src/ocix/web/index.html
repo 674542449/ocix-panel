@@ -9,20 +9,20 @@
   <link rel="stylesheet" href="/assets/element-plus-dark.css" />
   <style>
     :root {
-      /* ── 现代高阶云控制台调色盘 (Slate & Sapphire) ── */
-      --bg: #f8fafc;
-      --surface: #ffffff;
-      --surface-2: #f1f5f9;
-      --raise: #e2e8f0;
-      --line: #e2e8f0;
-      --line-2: #cbd5e1;
-      --line-3: #94a3b8;
-      --text: #0f172a;
-      --text-2: #475569;
-      --text-3: #64748b;
+      /* ── Obsidian & Cyber Sapphire (统一沉浸式暗黑黑曜石调色板) ── */
+      --bg: #080c14;
+      --surface: rgba(15, 23, 42, 0.72);
+      --surface-2: rgba(30, 41, 59, 0.65);
+      --raise: rgba(51, 65, 85, 0.5);
+      --line: rgba(255, 255, 255, 0.08);
+      --line-2: rgba(255, 255, 255, 0.16);
+      --line-3: #64748b;
+      --text: #f8fafc;
+      --text-2: #cbd5e1;
+      --text-3: #94a3b8;
       --hi: #ffffff;
 
-      /* 主色：现代科技高阶蓝 (HSV 79.9%) */
+      /* 主色：现代科技电光蓝 (HSV 79.9%) */
       --accent: #2b72d6;
       --accent-dim: #93c5fd;
       --on-accent: #ffffff;
@@ -31,7 +31,7 @@
       --ok: #289e6d;     /* 翡翠绿 155° (HSV 74.7%) */
       --warn: #af7d2b;   /* 琥珀金 37° (HSV 75.4%) */
       --crit: #c73a4d;   /* 柔和玫瑰红 352° (HSV 70.9%) */
-      --idle: #64748b;   /* 板岩灰 215° */
+      --idle: #64748b;   /* 黑曜灰 215° */
 
       --panel: var(--surface);
       --panel-2: var(--surface-2);
@@ -44,27 +44,27 @@
       --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
       --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
       --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
-      --shadow-subtle: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
-      --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
-      --shadow-hover: 0 12px 24px -4px rgba(43, 114, 214, 0.10), 0 4px 8px -2px rgba(0, 0, 0, 0.04);
+      --shadow-subtle: 0 1px 3px rgba(0,0,0,0.3);
+      --shadow-card: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      --shadow-hover: 0 20px 40px -10px rgba(43, 114, 214, 0.25), 0 0 0 1px rgba(43, 114, 214, 0.4);
     }
 
     :root:root {
-      --el-bg-color: var(--surface);
+      --el-bg-color: rgba(15, 23, 42, 0.85);
       --el-bg-color-page: var(--bg);
-      --el-bg-color-overlay: var(--surface);
+      --el-bg-color-overlay: rgba(15, 23, 42, 0.95);
       --el-text-color-primary: var(--text);
       --el-text-color-regular: var(--text-2);
       --el-text-color-secondary: var(--text-3);
-      --el-text-color-placeholder: #94a3b8;
-      --el-border-color: var(--line);
-      --el-border-color-light: var(--line);
-      --el-border-color-lighter: #f1f5f9;
-      --el-border-color-extra-light: #f8fafc;
-      --el-fill-color-blank: var(--surface);
-      --el-fill-color-light: var(--surface-2);
-      --el-fill-color-lighter: var(--bg);
-      --el-fill-color-dark: var(--raise);
+      --el-text-color-placeholder: #64748b;
+      --el-border-color: rgba(255, 255, 255, 0.1);
+      --el-border-color-light: rgba(255, 255, 255, 0.08);
+      --el-border-color-lighter: rgba(255, 255, 255, 0.05);
+      --el-border-color-extra-light: rgba(255, 255, 255, 0.03);
+      --el-fill-color-blank: rgba(15, 23, 42, 0.6);
+      --el-fill-color-light: rgba(30, 41, 59, 0.5);
+      --el-fill-color-lighter: rgba(30, 41, 59, 0.3);
+      --el-fill-color-dark: rgba(51, 65, 85, 0.6);
       
       --el-color-primary: #2b72d6;
       --el-color-primary-light-3: #6ba1ea;
@@ -104,16 +104,19 @@
       --el-color-info-light-5: #cbd5e1;
       --el-color-info-light-7: #e2e8f0;
       --el-color-info-light-8: #f1f5f9;
-      --el-color-info-light-9: #f8fafc;
+      --el-color-info-light-9: #0f172a;
       --el-color-info-dark-2: #475569;
 
-      --el-box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-      --el-box-shadow-light: 0 4px 14px rgba(15, 23, 42, 0.05);
+      --el-box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      --el-box-shadow-light: 0 6px 18px rgba(0, 0, 0, 0.35);
     }
 
     * { box-sizing: border-box; }
     body { margin:0; font-family:var(--sans); background:var(--bg); color:var(--text);
-           font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+           font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+           background-image: radial-gradient(80% 60% at 50% -10%, rgba(56,189,248,0.12), transparent 70%),
+                             radial-gradient(60% 50% at 90% 80%, rgba(43,114,214,0.08), transparent 60%);
+           background-attachment: fixed; }
     #app { min-height:100vh; }
     .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:12.5px; letter-spacing:-.01em; }
     :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
@@ -122,7 +125,7 @@
     .netbar { position:fixed; top:0; left:0; height:2px; width:100%; z-index:2000;
               background:transparent; pointer-events:none; }
     .netbar > i { display:block; height:100%; width:100%; transform-origin:0 50%;
-                  background:linear-gradient(90deg, var(--accent-dim), var(--accent));
+                  background:linear-gradient(90deg, #38bdf8, #818cf8);
                   animation:netbar 1.1s ease-in-out infinite; }
     @keyframes netbar {
       0%   { transform:scaleX(0);   opacity:1; }
@@ -136,7 +139,7 @@
 
     /* 骨架屏 */
     .skel { border-radius:6px; background:linear-gradient(90deg,
-            #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+            rgba(30,41,59,.4) 25%, rgba(51,65,85,.5) 37%, rgba(30,41,59,.4) 63%);
             background-size:400% 100%; animation:shimmer 1.3s ease-in-out infinite; }
     @keyframes shimmer { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
     .skel-row { height:34px; margin-bottom:8px; }
@@ -147,13 +150,16 @@
     .stale { opacity:.55; transition:opacity .2s ease; pointer-events:none; }
 
     .topbar { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
-              padding:var(--sp-3) var(--sp-5); background:#ffffff; border-bottom:1px solid var(--line);
-              position:sticky; top:0; z-index:20; flex-wrap:wrap; box-shadow:0 1px 3px 0 rgba(0,0,0,0.03); }
+              padding:var(--sp-3) var(--sp-5); background:rgba(11, 15, 25, 0.82);
+              border-bottom:1px solid rgba(255, 255, 255, 0.08);
+              -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px);
+              position:sticky; top:0; z-index:20; flex-wrap:wrap;
+              box-shadow:0 4px 20px -2px rgba(0,0,0,0.4); }
     .brand { display:flex; align-items:center; gap:9px; white-space:nowrap; }
-    .brand .wordmark { font-family:var(--mono); font-weight:600; font-size:15px;
-                       letter-spacing:.16em; color:var(--text); }
-    .brand .wordmark b { color:var(--accent); font-weight:600; }
-    .brand small { display:block; font-weight:400; font-size:11px; color:var(--text-3);
+    .brand .wordmark { font-family:var(--mono); font-weight:700; font-size:15px;
+                       letter-spacing:.16em; color:#ffffff; }
+    .brand .wordmark b { color:#38bdf8; font-weight:700; }
+    .brand small { display:block; font-weight:400; font-size:10px; color:var(--text-3);
                    letter-spacing:0; }
     .topbar-right { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; }
     .who { color:var(--text-2); font-size:12.5px; }
@@ -161,22 +167,24 @@
     /* 左侧竖向导航 + 右侧内容 */
     .shell { display:flex; align-items:flex-start; min-height:calc(100vh - 57px); }
     .rail { width:212px; flex:none; padding:var(--sp-4) var(--sp-3); align-self:stretch;
-            border-right:1px solid var(--line); background:#ffffff;
+            border-right:1px solid rgba(255, 255, 255, 0.08);
+            background:rgba(11, 15, 25, 0.65); -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px);
             position:sticky; top:57px; max-height:calc(100vh - 57px); overflow-y:auto; }
     .rail-group + .rail-group { margin-top:var(--sp-4); }
-    .rail-title { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+    .rail-title { font-size:10px; letter-spacing:.14em; text-transform:uppercase;
                   color:var(--text-3); padding:0 10px var(--sp-2); font-weight:600; }
     .rail-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
                  background:none; border:0; color:var(--text-2); font-family:var(--sans);
-                 font-size:13.5px; padding:8px 10px; border-radius:7px; cursor:pointer;
-                 transition:background .18s ease, color .18s ease; position:relative; }
-    .rail-item svg { width:17px; height:17px; flex:none; opacity:.8; }
-    .rail-item:hover { background:var(--raise); color:var(--text); }
-    .rail-item.on { background:rgba(43,114,214,.12); color:var(--accent); font-weight:600; }
-    .rail-item.on svg { opacity:1; color:var(--accent); }
-    .rail-item.on::before { content:""; position:absolute; left:-13px; top:7px; bottom:7px;
+                 font-size:13.5px; padding:9px 12px; border-radius:8px; cursor:pointer;
+                 transition:background .18s ease, color .18s ease, transform .15s ease; position:relative; }
+    .rail-item svg { width:16px; height:16px; flex:none; opacity:.8; }
+    .rail-item:hover { background:rgba(255, 255, 255, 0.06); color:#ffffff; }
+    .rail-item.on { background:linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0.04));
+                    color:#38bdf8; font-weight:600; }
+    .rail-item.on svg { opacity:1; color:#38bdf8; }
+    .rail-item.on::before { content:""; position:absolute; left:0; top:8px; bottom:8px;
                             width:3px; border-radius:0 3px 3px 0;
-                            background:var(--accent); }
+                            background:#38bdf8; box-shadow:0 0 8px #38bdf8; }
     .rail-item em { margin-left:auto; font-style:normal; font-size:11px; font-weight:600;
                     background:var(--crit); color:#ffffff; border-radius:9px; padding:1px 6px; }
     .main { flex:1; min-width:0; padding:var(--sp-5); max-width:1440px; }
@@ -185,27 +193,27 @@
 
     .container { max-width:1440px; margin:0 auto; padding:var(--sp-5); }
     .toolbar { display:flex; gap:var(--sp-3); flex-wrap:wrap; align-items:center; margin-bottom:var(--sp-4); }
-    .card { background:var(--surface); border:1px solid var(--line); border-radius:12px;
-            padding:var(--sp-5) var(--sp-5) var(--sp-5); margin-bottom:var(--sp-4);
-            box-shadow: 0 1px 3px 0 rgba(0,0,0,0.03); }
+    .card { background:rgba(15, 23, 42, 0.72); border:1px solid rgba(255, 255, 255, 0.08); border-radius:14px;
+            padding:var(--sp-5); margin-bottom:var(--sp-4);
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+            -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px); }
     .card-head { display:flex; align-items:center; justify-content:space-between;
                  gap:var(--sp-3); margin-bottom:var(--sp-4); flex-wrap:wrap; }
     .card > .card-head { margin:calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
-                         padding:13px var(--sp-5); border-bottom:1px solid var(--line);
-                         background:rgba(0,0,0,.015);
-                         border-radius:12px 12px 0 0; }
+                         padding:14px var(--sp-5); border-bottom:1px solid rgba(255, 255, 255, 0.08);
+                         background:rgba(255, 255, 255, 0.02);
+                         border-radius:14px 14px 0 0; }
     .card-title { margin:0; font-size:15px; font-weight:600; letter-spacing:.01em;
-                  color:var(--text); }
+                  color:#ffffff; }
 
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
                overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
     .skip-link { position:fixed; left:var(--sp-3); top:-60px; z-index:3000;
-                 background:var(--accent); color:var(--on-accent); font-weight:600;
+                 background:var(--accent); color:#080c14; font-weight:600;
                  padding:9px 14px; border-radius:0 0 8px 8px; text-decoration:none;
                  transition:top .18s ease; }
     .skip-link:focus { top:0; }
     #main-content:focus { outline:none; }
-    .hint { font-size:12px; color:var(--text-2); line-height:1.7; margin:var(--sp-3) 0 0; }
     .table-wrap { overflow-x:auto; }
 
     .mark { flex:none; display:block; }
@@ -297,7 +305,7 @@
       .login-panel { padding:24px 20px; }
     }
 
-    .rail-foot { margin-top:var(--sp-5); padding:var(--sp-3) 10px 0; border-top:1px solid var(--line);
+    .rail-foot { margin-top:var(--sp-5); padding:var(--sp-3) 10px 0; border-top:1px solid rgba(255, 255, 255, 0.08);
                  display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
     .rail-foot .ver { font-family:var(--mono); font-size:11px; color:var(--text-3); }
     .rail-foot .svc { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--text-2); }
@@ -324,180 +332,140 @@
     .dot.attn { background:var(--warn); border-radius:2px;
                 box-shadow:0 0 0 1px var(--bg), 0 0 0 2.5px rgba(175,125,43,.45); }
     .dot.idle { background:var(--idle); }
-    .state-label { font-size:12px; font-variant-numeric:tabular-nums; }
+    .state-label { font-size:12px; font-variant-numeric:tabular-nums; color:var(--text-2); }
+    @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(175,125,43,.5); } 70% { box-shadow:0 0 0 7px rgba(175,125,43,0); } 100% { box-shadow:0 0 0 0 rgba(175,125,43,0); } }
 
-    /* ── 机位视图 ── */
+    /* ── 额度总览仪表盘 ── */
     .fleet { display:flex; gap:var(--sp-5); flex-wrap:wrap; align-items:center;
-             padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-4);
-             background:var(--surface-2); border:1px solid var(--line); border-radius:10px; }
+             padding:14px 18px; margin-bottom:var(--sp-4);
+             background:rgba(30, 41, 59, 0.4); border:1px solid rgba(255, 255, 255, 0.08); border-radius:12px;
+             -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); }
     .meter { min-width:190px; flex:1; }
     .meter-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px;
                   margin-bottom:6px; }
-    .meter-k { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); }
+    .meter-k { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); font-weight:600; }
     .meter-v { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:15px;
-               font-weight:600; color:var(--text); }
+               font-weight:700; color:#ffffff; }
     .meter-v small { font-size:11.5px; font-weight:400; color:var(--text-3); margin-left:2px; }
 
-    .bays { display:grid; grid-template-columns:repeat(auto-fill, minmax(272px, 1fr));
-            gap:var(--sp-4); }
-    .bay.wide { border-left:3px solid var(--accent); }
-    .bay.wide .bay-tag { color:var(--accent); border-color:var(--accent-dim); background:rgba(43,114,214,.08); }
-
-    .bay { position:relative; display:flex; flex-direction:column; gap:10px;
-           padding:var(--sp-4); border:1px solid var(--line); border-radius:12px;
-           background:var(--surface);
-           transition:border-color .18s ease, transform .18s ease, box-shadow .18s ease;
-           box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
-    .bay:hover { border-color:var(--accent-dim); transform:translateY(-2px); box-shadow:var(--shadow-hover); }
-    .bay-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-    .bay-name { font-size:16px; font-weight:600; color:var(--text); line-height:1.25;
-                word-break:break-all; }
-    .bay-tag { font-family:var(--mono); font-size:10px; letter-spacing:.1em;
-               text-transform:uppercase; color:var(--text-3); border:1px solid var(--line-2);
-               border-radius:5px; padding:2px 6px; white-space:nowrap; flex:none; }
-    .bay-ip { display:flex; align-items:center; gap:7px; flex-wrap:wrap;
-              font-family:var(--mono); font-variant-numeric:tabular-nums;
-              font-size:17px; font-weight:700; color:var(--accent); letter-spacing:-.01em; }
-    .bay-ip.none { font-size:13px; color:var(--text-3); font-weight:normal; }
-    .bay-sub { display:flex; gap:12px; flex-wrap:wrap; font-size:11.5px; color:var(--text-3);
-               font-family:var(--mono); }
-    .bay-acts { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
-    .bay-acts .el-button+.el-button { margin-left:0; }
-
-    .bay.free { border-style:dashed; background:transparent; align-items:center;
-                justify-content:center; text-align:center; min-height:172px; gap:8px; }
-    .bay.free:hover { border-color:var(--accent); background:rgba(43,114,214,0.04); }
-    .bay.free .bay-name { color:var(--text-3); font-size:13.5px; font-weight:500; }
-    .bay.free .bay-tag { opacity:.75; }
-
-    .bay-pw { display:flex; align-items:center; gap:7px; flex-wrap:wrap;
-              padding:7px 9px; border-radius:7px; font-size:11.5px;
-              background:rgba(43,114,214,.08); border:1px solid var(--accent-dim); }
-    .bay-pw .k { color:var(--text-3); }
-    .bay-pw .v { color:var(--text); letter-spacing:.02em; }
-
-    .view-toggle { margin-left:auto; }
-
     .term-dialog .el-dialog__body { padding:0; }
-    .term-wrap { background:#0f172a; padding:10px 12px; height:62vh; min-height:320px; }
+    .term-wrap { background:#030712; padding:12px 14px; height:62vh; min-height:320px; }
     .term-wrap .xterm { height:100%; }
     .term-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-                padding:10px 14px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+                padding:12px 16px; border-bottom:1px solid rgba(255, 255, 255, 0.08); background:rgba(30, 41, 59, 0.6); }
     .term-bar .who { margin-left:auto; }
 
-    .dl { display:grid; grid-template-columns:96px 1fr; gap:8px 14px; font-size:13px; }
+    .dl { display:grid; grid-template-columns:110px 1fr; gap:10px 16px; font-size:13px; }
     .dl dt { color:var(--text-3); font-size:12px; }
     .dl dd { margin:0; word-break:break-all; color:var(--text); }
-    .drawer-sec { margin-top:var(--sp-5); }
-    .drawer-sec > h3 { margin:0 0 var(--sp-3); font-size:13px; font-weight:600;
+    .drawer-sec { margin-top:var(--sp-5); border-top:1px solid rgba(255, 255, 255, 0.08); padding-top:var(--sp-4); }
+    .drawer-sec:first-child { border-top:0; margin-top:0; padding-top:0; }
+    .drawer-sec > h3 { margin:0 0 var(--sp-3); font-size:13.5px; font-weight:600; color:#ffffff;
                        display:flex; align-items:center; justify-content:space-between; }
 
     .kv { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(175,125,43,.5); } 70% { box-shadow:0 0 0 7px rgba(175,125,43,0); } 100% { box-shadow:0 0 0 0 rgba(175,125,43,0); } }
-
-    .live { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
-    .live .dot { width:6px; height:6px; }
-    .live .dot.ok { box-shadow:none; animation:none; }
 
     .stats { display:flex; gap:var(--sp-5); flex-wrap:wrap; }
     .stat { min-width:92px; }
-    .stat .v { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:24px; font-weight:600; line-height:1.2; }
-    .stat .k { font-size:11.5px; color:var(--text-2); letter-spacing:.03em; }
+    .stat .v { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:24px; font-weight:700; line-height:1.2; }
+    .stat .k { font-size:11px; color:var(--text-3); letter-spacing:.05em; text-transform:uppercase; margin-top:3px; }
     .stat.ok .v { color:var(--ok); } .stat.idle .v { color:var(--text-3); } .stat.crit .v { color:var(--crit); }
 
     .bulkbar { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;
-               background:rgba(43,114,214,.08); border:1px solid var(--accent-dim); border-radius:8px;
+               background:rgba(56, 189, 248, 0.08); border:1px solid rgba(56, 189, 248, 0.25); border-radius:10px;
                padding:var(--sp-2) var(--sp-3); margin-bottom:var(--sp-3); }
-    .bulkbar .count { font-family:var(--mono); font-size:12.5px; color:var(--accent); font-weight:600; }
+    .bulkbar .count { font-family:var(--mono); font-size:12.5px; color:#38bdf8; font-weight:600; }
 
-    .quota { display:grid; grid-template-columns:150px 1fr 132px; gap:var(--sp-3);
-             align-items:center; padding:var(--sp-2) 0; border-bottom:1px solid var(--line); }
+    .quota { display:grid; grid-template-columns:160px 1fr 140px; gap:var(--sp-4);
+             align-items:center; padding:12px 0; border-bottom:1px solid rgba(255, 255, 255, 0.06); }
     .quota:last-child { border-bottom:0; }
-    .quota .label { font-size:12.5px; color:#3b3931; }
-    .quota .num { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:12.5px; text-align:right; }
-    .quota .num b { color:var(--text); }
-    .bar { height:6px; background:var(--raise); border-radius:3px; overflow:hidden; }
-    .bar > i { display:block; height:100%; background:linear-gradient(90deg, #6ba1ea, #2b72d6); transition:width .3s ease; }
-    .bar.warn > i { background:var(--warn); }
+    .quota .label { font-size:13px; color:var(--text-2); font-weight:500; }
+    .quota .num { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:13px; text-align:right; }
+    .quota .num b { color:#ffffff; font-weight:600; }
+    .bar { height:6px; background:rgba(255, 255, 255, 0.08); border-radius:3px; overflow:hidden; }
+    .bar > i { display:block; height:100%; background:linear-gradient(90deg, #38bdf8, #818cf8); transition:width .3s ease;
+               box-shadow:0 0 10px rgba(56, 189, 248, 0.5); }
+    .bar.warn > i { background:var(--warn); box-shadow:0 0 10px rgba(245, 158, 11, 0.5); }
 
     .create-grid { display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(320px, 1fr); gap:var(--sp-5); align-items:start; }
-    .pf-card { background:#ffffff; border:1px solid #e2e8f0; border-radius:12px;
-               padding:var(--sp-4); position:sticky; top:80px; box-shadow:0 4px 16px rgba(15,23,42,.05); }
-    .pf-card.ok { border-color:rgba(40,158,109,.5); box-shadow:0 4px 18px rgba(40,158,109,.08); }
-    .pf-card.bad { border-color:rgba(199,58,77,.5); box-shadow:0 4px 18px rgba(199,58,77,.08); }
+    .pf-card { background:rgba(15, 23, 42, 0.75); border:1px solid rgba(255, 255, 255, 0.1); border-radius:14px;
+               padding:var(--sp-4); position:sticky; top:80px; box-shadow:0 12px 36px rgba(0, 0, 0, 0.5);
+               -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px); }
+    .pf-card.ok { border-color:rgba(16, 185, 129, 0.4); box-shadow:0 12px 36px rgba(16, 185, 129, 0.1); }
+    .pf-card.bad { border-color:rgba(244, 63, 94, 0.4); box-shadow:0 12px 36px rgba(244, 63, 94, 0.1); }
     .pf-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
     .pf-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
-              padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:12.5px; }
+              padding:10px 0; border-bottom:1px solid rgba(255, 255, 255, 0.06); font-size:12.5px; }
     .pf-row:last-child { border-bottom:0; }
-    .pf-label { font-weight:500; color:#334155; flex:1; min-width:80px; }
-    .pf-calc { font-family:var(--mono); font-size:12px; color:#64748b; text-align:right; white-space:nowrap; }
-    .pf-calc em { color:#2b72d6; font-style:normal; font-weight:600; margin:0 2px; }
-    .pf-calc b { color:#0f172a; font-weight:700; }
+    .pf-label { font-weight:500; color:var(--text-2); flex:1; min-width:80px; }
+    .pf-calc { font-family:var(--mono); font-size:12px; color:var(--text-3); text-align:right; white-space:nowrap; }
+    .pf-calc em { color:#38bdf8; font-style:normal; font-weight:600; margin:0 2px; }
+    .pf-calc b { color:#ffffff; font-weight:700; }
     .pf-msg { margin-top:10px; padding:9px 12px; border-radius:8px; font-size:12px; line-height:1.55; }
-    .pf-msg.crit { color:#a12b3b; background:#fef2f2;
-                   border:1px solid #fecaca; border-left:3px solid var(--crit); }
-    .pf-msg.warn { color:#8c6320; background:#fffbeb;
-                   border:1px dashed #fde68a; border-left:3px dashed var(--warn); }
-    .create-step { margin-top:12px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe;
+    .pf-msg.crit { color:#fda4af; background:rgba(244, 63, 94, 0.12);
+                   border:1px solid rgba(244, 63, 94, 0.3); border-left:3px solid var(--crit); }
+    .pf-msg.warn { color:#fde68a; background:rgba(245, 158, 11, 0.12);
+                   border:1px dashed rgba(245, 158, 11, 0.3); border-left:3px dashed var(--warn); }
+    .create-step { margin-top:12px; padding:10px 14px; background:rgba(56, 189, 248, 0.1); border:1px solid rgba(56, 189, 248, 0.25);
                    border-radius:8px; display:flex; align-items:center; gap:8px; font-size:12.5px;
-                   color:#2b72d6; font-weight:500; }
-    .el-table .orphan-row td { background:rgba(199,58,77,.08) !important; }
+                   color:#38bdf8; font-weight:600; }
+    .el-table .orphan-row td { background:rgba(244, 63, 94, 0.1) !important; }
     .el-table .orphan-row td:first-child { box-shadow:inset 3px 0 0 var(--crit); }
-    code { font-family:var(--mono); font-size:12px; background:var(--raise); padding:1px 5px; border-radius:4px; }
+    code { font-family:var(--mono); font-size:12px; background:rgba(255, 255, 255, 0.08); padding:2px 6px; border-radius:4px; color:#38bdf8; }
     @media (max-width:1100px) {
       .create-grid { grid-template-columns:1fr; }
       .pf-card { position:static; }
     }
 
-    .seg { display:inline-flex; border:1px solid var(--line-2); border-radius:6px; overflow:hidden; }
+    .seg { display:inline-flex; border:1px solid rgba(255, 255, 255, 0.12); border-radius:8px; overflow:hidden; background:rgba(15, 23, 42, 0.6); }
     .seg button { appearance:none; border:0; background:transparent; color:var(--text-2);
-                  font-family:var(--sans); font-size:12.5px; padding:6px 13px; cursor:pointer;
-                  border-right:1px solid var(--line-2); transition:background .18s ease, color .18s ease; }
+                  font-family:var(--sans); font-size:12.5px; padding:7px 14px; cursor:pointer;
+                  border-right:1px solid rgba(255, 255, 255, 0.12); transition:all .18s ease; }
     .seg button:last-child { border-right:0; }
-    .seg button:hover { background:var(--raise); color:var(--text); }
-    .seg button.on { background:var(--accent); color:var(--on-accent); font-weight:600; }
+    .seg button:hover { background:rgba(255, 255, 255, 0.08); color:#ffffff; }
+    .seg button.on { background:var(--accent); color:#080c14; font-weight:700; }
 
     .vpu-cell { display:flex; align-items:center; gap:8px; }
     .vpu-tier { font-size:11.5px; color:var(--text-3); white-space:nowrap; }
     .vpu-tier.paid { color:var(--warn); font-weight:600; }
     .rule-form { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-                 background:var(--surface-2); border:1px solid var(--line);
-                 border-radius:8px; padding:var(--sp-3); }
+                 background:rgba(30, 41, 59, 0.45); border:1px solid rgba(255, 255, 255, 0.08);
+                 border-radius:10px; padding:var(--sp-3); }
     .rule-sep { color:var(--text-3); font-size:12.5px; }
 
     .fw-verdict { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;
-                  background:var(--surface-2); border:1px solid var(--line); border-radius:8px;
+                  background:rgba(30, 41, 59, 0.45); border:1px solid rgba(255, 255, 255, 0.08); border-radius:10px;
                   padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-3); }
-    .fw-verdict.open { border-color:rgba(175,125,43,.55); border-left-width:3px; }
-    .fw-verdict.partial { border-color:rgba(40,158,109,.5); border-left-width:3px; }
-    .fw-verdict b { display:block; font-size:13.5px; color:var(--text); }
+    .fw-verdict.open { border-color:rgba(245, 158, 11, 0.5); border-left-width:3px; }
+    .fw-verdict.partial { border-color:rgba(16, 185, 129, 0.5); border-left-width:3px; }
+    .fw-verdict b { display:block; font-size:13.5px; color:#ffffff; }
     .fw-verdict span { font-size:12px; color:var(--text-2); }
     .fw-actions { margin-left:auto; }
 
     .ver-row { display:flex; align-items:center; gap:var(--sp-4); margin-bottom:var(--sp-4); }
-    .ver-box { background:var(--surface-2); border:1px solid var(--line); border-radius:8px;
+    .ver-box { background:rgba(30, 41, 59, 0.45); border:1px solid rgba(255, 255, 255, 0.08); border-radius:10px;
                padding:var(--sp-3) var(--sp-4); min-width:130px; }
-    .ver-box .k { font-size:11.5px; color:var(--text-3); }
-    .ver-box .v { font-size:19px; font-weight:600; margin-top:2px; color:var(--text); }
+    .ver-box .k { font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.05em; }
+    .ver-box .v { font-size:19px; font-weight:700; margin-top:2px; color:#ffffff; }
     .ver-arrow { color:var(--text-3); font-size:18px; }
-    .cmd-box { display:flex; align-items:center; gap:var(--sp-2); background:#0f172a;
-               border:1px solid #1e293b; border-radius:7px; padding:10px 12px;
+    .cmd-box { display:flex; align-items:center; gap:var(--sp-2); background:#030712;
+               border:1px solid rgba(255, 255, 255, 0.1); border-radius:8px; padding:10px 12px;
                margin:var(--sp-2) 0 var(--sp-3); overflow-x:auto; }
     .cmd-box code { background:none; padding:0; color:#38bdf8; white-space:nowrap; font-size:12.5px; }
     .cmd-box .copy-btn { margin-left:auto; flex:none; color:#94a3b8; }
     .cmd-box .copy-btn:hover { color:#ffffff; }
-    .log-box { background:#0f172a; border:1px solid #1e293b; border-radius:7px;
+    .log-box { background:#030712; border:1px solid rgba(255, 255, 255, 0.1); border-radius:8px;
                padding:10px 12px; margin:var(--sp-3) 0 0;
                max-height:260px; overflow:auto; }
     .log-box pre { margin:0; white-space:pre-wrap; word-break:break-word;
-                   color:#e2e8f0; font-size:12px; line-height:1.65; }
+                   color:#e2e8f0; font-size:12px; line-height:1.65; font-family:var(--mono); }
 
     .link { color:var(--accent); text-decoration:underline; text-underline-offset:3px;
             text-decoration-color:rgba(43,114,214,.45); transition:text-decoration-color .18s ease, color .18s ease; }
-    .link:hover { color:#2667bc; text-decoration-color:currentColor; }
+    .link:hover { color:#6ba1ea; text-decoration-color:currentColor; }
 
-    .empty { text-align:center; color:var(--text-2); padding:var(--sp-6) var(--sp-4); font-size:13px; }
-    .empty b { display:block; color:var(--text); font-size:14px; margin-bottom:6px; font-weight:600; }
+    .empty { text-align:center; color:var(--text-3); padding:var(--sp-6) var(--sp-4); font-size:13px; }
+    .empty b { display:block; color:#ffffff; font-size:14.5px; margin-bottom:6px; font-weight:600; }
     .ip-cell { display:inline-flex; align-items:center; gap:6px; max-width:100%; }
     .ip-stack { display:flex; flex-direction:column; gap:1px; line-height:1.35; }
     .ip-sub { font-size:11px; color:var(--text-3); }
@@ -506,50 +474,56 @@
     .row-actions .el-button { margin-left:0 !important; padding-left:9px; padding-right:9px; }
     .row-actions .el-button.term-btn { padding-left:5px; padding-right:5px; }
 
-    .mini-btn { background:var(--raise); border:1px solid var(--line-2); color:var(--text-2);
+    .mini-btn { background:rgba(255, 255, 255, 0.08); border:1px solid rgba(255, 255, 255, 0.12); color:var(--text-2);
                 font-family:var(--sans); font-size:11px; line-height:1; padding:3px 6px;
-                border-radius:4px; cursor:pointer; transition:color .18s ease, border-color .18s ease; }
-    .mini-btn:hover { color:var(--accent); border-color:var(--accent); }
+                border-radius:4px; cursor:pointer; transition:all .18s ease; }
+    .mini-btn:hover { color:#38bdf8; border-color:#38bdf8; background:rgba(56, 189, 248, 0.12); }
     .el-button.term-btn { color:var(--crit); padding-left:6px; padding-right:6px; }
     .el-button.term-btn:hover, .el-button.term-btn:focus-visible {
-      color:#a12b3b; background:rgba(199,58,77,.14); border-color:rgba(199,58,77,.4); }
+      color:#fda4af; background:rgba(244, 63, 94, 0.15); border-color:rgba(244, 63, 94, 0.4); }
     .copy-btn { background:none; border:0; color:var(--text-3); cursor:pointer; padding:2px;
                 border-radius:4px; line-height:0; transition:color .18s ease, background .18s ease; }
-    .copy-btn:hover { color:var(--accent); background:var(--raise); }
+    .copy-btn:hover { color:#38bdf8; background:rgba(255, 255, 255, 0.08); }
     .el-button, .copy-btn, .el-select, [role="tab"] { cursor:pointer; }
     .el-table .cell { line-height:1.45; }
 
-    /* ── Element Plus 组件 ── */
-    :root .el-button--primary { --el-button-bg-color:#2b72d6; --el-button-border-color:#2b72d6;
-      --el-button-text-color:#ffffff; --el-button-hover-bg-color:#2667bc;
-      --el-button-hover-border-color:#2667bc; --el-button-hover-text-color:#ffffff;
+    /* ── Element Plus 深度暗黑重写 ── */
+    .el-table { background:transparent !important; color:var(--text) !important; }
+    .el-table th.el-table__cell { background:rgba(30, 41, 59, 0.7) !important; color:var(--text-2) !important; border-bottom:1px solid rgba(255, 255, 255, 0.08) !important; font-weight:600; }
+    .el-table td.el-table__cell { background:rgba(15, 23, 42, 0.45) !important; border-bottom:1px solid rgba(255, 255, 255, 0.05) !important; }
+    .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell { background:rgba(30, 41, 59, 0.3) !important; }
+    .el-table__body tr:hover > td.el-table__cell { background:rgba(56, 189, 248, 0.08) !important; }
+    
+    .el-drawer { background:rgba(11, 15, 25, 0.96) !important; -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px); border-left:1px solid rgba(255, 255, 255, 0.1) !important; }
+    .el-dialog { background:rgba(15, 23, 42, 0.95) !important; -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px); border:1px solid rgba(255, 255, 255, 0.12) !important; border-radius:14px; }
+    
+    .el-input__wrapper, .el-textarea__inner { background:rgba(30, 41, 59, 0.6) !important; border:1px solid rgba(255, 255, 255, 0.1) !important; box-shadow:none !important; color:#ffffff !important; }
+    .el-input__wrapper.is-focus, .el-textarea__inner:focus { border-color:#38bdf8 !important; box-shadow:0 0 0 2px rgba(56, 189, 248, 0.2) !important; }
+    .el-input__inner { color:#ffffff !important; }
+    
+    :root .el-button--primary { --el-button-bg-color:#38bdf8; --el-button-border-color:#38bdf8;
+      --el-button-text-color:#080c14; --el-button-hover-bg-color:#7dd3fc;
+      --el-button-hover-border-color:#7dd3fc; --el-button-hover-text-color:#080c14;
       --el-button-active-bg-color:#255494; --el-button-active-border-color:#255494;
-      --el-button-disabled-bg-color:#e2e8f0; --el-button-disabled-border-color:#e2e8f0;
-      --el-button-disabled-text-color:#94a3b8; font-weight:600; }
-    :root .el-button--danger { --el-button-bg-color:transparent; --el-button-border-color:rgba(199,58,77,.5);
-      --el-button-text-color:#c73a4d; --el-button-hover-bg-color:rgba(199,58,77,.15);
-      --el-button-hover-border-color:#c73a4d; --el-button-hover-text-color:#a12b3b;
-      --el-button-active-bg-color:rgba(199,58,77,.25); --el-button-active-border-color:#c73a4d;
-      --el-button-disabled-bg-color:transparent; --el-button-disabled-border-color:#e2e8f0;
-      --el-button-disabled-text-color:#94a3b8; font-weight:600; }
-    :root .el-tag { border-style:solid; }
-    :root .el-tag.el-tag--warning { border-style:dashed; }
-    :root .el-tag.el-tag--danger { font-weight:600; }
-    :root .el-alert--error, :root .el-alert--warning { border-left:3px solid var(--warn); }
-    :root .el-alert--error { border-left-color:var(--crit); }
+      font-weight:700; }
+    :root .el-button--danger { --el-button-bg-color:transparent; --el-button-border-color:rgba(244, 63, 94, 0.5);
+      --el-button-text-color:#f43f5e; --el-button-hover-bg-color:rgba(244, 63, 94, 0.15);
+      --el-button-hover-border-color:#f43f5e; --el-button-hover-text-color:#fda4af;
+      font-weight:600; }
+    :root .el-alert--error, :root .el-alert--warning { border-left:3px solid var(--warn); background:rgba(245, 158, 11, 0.1) !important; color:var(--text) !important; }
+    :root .el-alert--error { border-left-color:var(--crit); background:rgba(244, 63, 94, 0.1) !important; }
+    :root .el-alert--info { background:rgba(56, 189, 248, 0.08) !important; border-left:3px solid #38bdf8; color:var(--text) !important; }
     :root .el-progress-bar__inner { background-color:var(--accent); }
-    :root .el-table__body tr.current-row > td.el-table__cell,
-    :root .el-table__body tr:hover > td.el-table__cell { background:var(--raise) !important; }
 
     @media (max-width:900px) {
       .shell { display:block; }
       .rail { width:auto; position:static; max-height:none; border-right:0;
-              border-bottom:1px solid var(--line); padding:var(--sp-2) var(--sp-3);
+              border-bottom:1px solid rgba(255, 255, 255, 0.08); padding:var(--sp-2) var(--sp-3);
               overflow-x:auto; overflow-y:hidden; }
       .rail nav { display:flex; gap:var(--sp-3); }
       .rail-group { display:flex; align-items:center; gap:4px; }
       .rail-group + .rail-group { margin-top:0; padding-left:var(--sp-3);
-                                  border-left:1px solid var(--line); }
+                                  border-left:1px solid rgba(255, 255, 255, 0.08); }
       .rail-title { display:none; }
       .rail-item { width:auto; white-space:nowrap; padding:9px 12px; }
       .rail-item.on::before { display:none; }
@@ -860,10 +834,8 @@
               </el-table>
             </div>
             <div class="empty" v-else-if="!loading">
-              <b>这个账户下没有实例</b>
-              换个 compartment，或勾选「含子 compartment」再查一次。
+              <b>当前账户下没有实例</b>
             </div>
-            <p class="hint">被 Oracle 回收或停掉的免费实例不会自动重开，需要你手动点击「开机」——这是为了守住 Oracle 的回收策略，不做抢机。</p>
           </div>
         </section>
 
@@ -872,12 +844,10 @@
           <div class="card">
             <div class="card-head">
               <h2 class="card-title">新建实例</h2>
-              <span class="who">仅提供 Always Free 规格</span>
             </div>
 
             <el-alert v-if="opts.needs_network" type="info" show-icon :closable="false"
-                      style="margin-bottom:14px;" title="这个账户还没有网络，创建第一台机器时会自动建好"
-                      description="面板会建一个 VCN + 互联网网关 + 公共子网，之后所有实例都用它，无需手动干预。" />
+                      style="margin-bottom:14px;" title="网络基础设施将随首台实例自动就绪" />
 
             <div class="create-grid">
               <div>
@@ -903,16 +873,16 @@
                       <el-slider v-model="createForm.ocpus" :min="1" :max="4" :step="1"
                                  show-stops @change="onOcpuChange" style="width:100%;" />
                     </el-form-item>
-                    <el-form-item :label="'内存：' + createForm.memory_gb + ' GB（每 OCPU 最多 ' + opts.arm_gb_per_ocpu + 'GB）'">
+                    <el-form-item :label="'内存：' + createForm.memory_gb + ' GB'">
                       <el-slider v-model="createForm.memory_gb" :min="1" :max="24" :step="1"
                                  @change="runPreflight" style="width:100%;" />
                     </el-form-item>
                   </template>
                   <el-form-item v-else label="规格配置">
-                    <span class="mono" style="color:var(--muted);">1 OCPU / 1 GB（AMD 微型规格固定，不可调）</span>
+                    <span class="mono" style="color:var(--muted);">1 OCPU / 1 GB</span>
                   </el-form-item>
 
-                  <el-form-item :label="'引导卷：' + createForm.boot_gb + ' GB（最小 ' + opts.min_boot_gb + 'GB）'">
+                  <el-form-item :label="'引导卷：' + createForm.boot_gb + ' GB'">
                     <el-slider v-model="createForm.boot_gb" :min="50" :max="200" :step="5"
                                @change="runPreflight" style="width:100%;" />
                   </el-form-item>
@@ -924,9 +894,9 @@
                     </el-select>
                   </el-form-item>
 
-                  <el-form-item label="系统镜像（只列 Ubuntu）">
+                  <el-form-item label="系统镜像">
                     <el-select v-model="createForm.image_id" style="width:100%;" filterable
-                               :loading="optsLoading" placeholder="选择 Ubuntu 镜像">
+                               :loading="optsLoading" placeholder="选择镜像">
                       <el-option v-for="im in opts.images" :key="im.id" :value="im.id"
                                  :label="im.display_name" />
                     </el-select>
@@ -934,22 +904,15 @@
 
                   <el-form-item label="网络">
                     <div style="width:100%;">
-                      <el-checkbox v-model="createForm.assign_ipv6" label="同时分配 IPv6 地址" />
-                      <el-checkbox v-model="createForm.open_all_ports" label="创建后自动放行所有端口" />
-                      <p class="hint" style="margin-top:4px;">
-                        子网由面板统一管理，所有实例共用一个。这个账户还没有网络的话，
-                        创建时会自动建好 VCN、网关和子网。勾选 IPv6 会自动开通子网 IPv6 并分配地址。<br />
-                        <b style="color:var(--warn);">放行所有端口</b>会给子网加一条任何来源任何端口的入站规则，
-                        <b>同子网下所有实例都会被放开</b>；有 IPv6 时 <code>::/0</code> 一并放行。
-                        实例内部的 iptables 仍需你自己开。
-                      </p>
+                      <el-checkbox v-model="createForm.assign_ipv6" label="分配 IPv6 地址" />
+                      <el-checkbox v-model="createForm.open_all_ports" label="放行所有端口" />
                     </div>
                   </el-form-item>
 
                   <el-form-item label="登录方式">
                     <div style="width:100%;">
                       <el-checkbox v-model="createForm.use_password"
-                                   label="用 root + 密码登录（密码会存在实例标签上）" />
+                                   label="启用 root 密码登录" />
                       <div v-if="createForm.use_password" style="margin-top:8px;">
                         <div style="display:flex; gap:8px; align-items:center;">
                           <el-input v-model="createForm.root_password" class="mono"
@@ -958,16 +921,6 @@
                           <el-button size="small" :disabled="!createForm.root_password"
                                      @click="copy(createForm.root_password)">复制</el-button>
                         </div>
-                        <p class="hint" style="margin-top:6px;">
-                          <b style="color:var(--warn);">这是拿安全换方便，先看清楚：</b><br />
-                          · 密码<b>明文</b>存在实例的自由标签里——凡是能读这个租户的人都看得见
-                          （OCI 控制台、任何调 API 的工具）。好处正是换台电脑也能看到密码。<br />
-                          · 密码也会进 <code>user_data</code>，而 <b>实例自己读得到</b>
-                          （元数据服务），机器上任何本地账号都能读出 root 密码。<br />
-                          · Oracle 的 Ubuntu 镜像默认关掉 root 登录和密码认证，打开之后
-                          挂公网 IP 的机器<b>几分钟内就会被扫</b>。所以默认生成 20 位。<br />
-                          · 只图省事的话，用密钥 + 面板自带的网页终端就够了，不必开这条。
-                        </p>
                       </div>
                     </div>
                   </el-form-item>
@@ -984,16 +937,9 @@
                       </div>
                       <el-input v-model="createForm.ssh_public_key" type="textarea" :rows="3" class="mono"
                                 placeholder="ssh-ed25519 AAAA... 或 ssh-rsa AAAA..." />
-                      <span class="hint" v-if="pubKeyName">已导入 {{ pubKeyName }}</span>
                     </div>
                   </el-form-item>
                 </el-form>
-                <p class="hint">
-                  选 <code>~/.ssh/id_ed25519.pub</code> 这类 .pub 文件，不是私钥。创建完成后用
-                  <code class="mono">ssh ubuntu@公网IP</code> 登录。
-                  勾了上面的密码登录之后，公钥可以留空——但<b>两样至少要有一样</b>，
-                  都不给的话机器建出来你登不进去。
-                </p>
               </div>
 
               <!-- 额度预检 -->
@@ -1029,15 +975,8 @@
                            :disabled="!canCreate" :loading="creating" @click="createInstance">
                   {{ preflight && !preflight.allow ? '超出免费额度，无法创建' : '创建实例' }}
                 </el-button>
-                <!-- 建实例正常也要一分多钟（建网络、等网卡）。
-                     把后端当前那一步显示出来，否则用户只看到一个转圈，
-                     很容易以为卡死了就去刷新或者重试。 -->
                 <p class="create-step" v-if="creating && createStep">
                   <i class="dot warn"></i><span>{{ createStep }}</span>
-                </p>
-                <p class="hint">
-                  创建前后端会**再核算一次**额度，超额一律拒绝——即使你绕过界面直接调接口也拦得住。
-                  ARM 遇到「Out of host capacity」是 Oracle 侧没库存，面板只报错，不会自动循环重试。
                 </p>
               </div>
             </div>
@@ -1061,14 +1000,6 @@
               </span>
               <span class="who">{{ (tier.reasons || [])[0] }}</span>
             </div>
-            <div v-else-if="!tierLoading" class="hint" style="margin-top:0;">
-              点「检测」查询这个账户是纯免费号还是已升级为付费。
-            </div>
-
-            <p class="hint" v-if="tier.tier && (tier.reasons || []).length > 1">
-              {{ tier.reasons.slice(1).join(' ') }}
-            </p>
-            <p class="hint" v-if="tier.limits_note">{{ tier.limits_note }}</p>
           </div>
 
           <div class="card">
@@ -1087,11 +1018,7 @@
                 <div class="val mono">{{ fmtGb(egress.egress_gb) }} / 10 TB</div>
               </div>
               <p class="hint" v-if="egress.error" style="color:var(--crit);">{{ egress.error }}</p>
-              <p class="hint">{{ egress.note }}</p>
             </template>
-            <div class="hint" v-else-if="!egressLoading" style="margin-top:0;">
-              Always Free 每月含 10 TB 出网流量。点「查询」按当月统计。
-            </div>
           </div>
 
           <div class="card" v-if="loading && !usage" aria-label="加载中">
@@ -1110,14 +1037,9 @@
               </div>
               <div class="num"><b>{{ it.used }}</b> / {{ it.limit }} {{ it.unit }}</div>
             </div>
-            <p class="hint">
-              上限对照 Oracle Always Free 公开文档，仅供参考，以控制台实际配额为准。
-              引导卷同样占用 200GB 存储额度，所以这里把引导卷和块存储合并计算。
-            </p>
           </div>
           <div class="card empty" v-else-if="!loading">
-            <b>还没有额度数据</b>
-            选一个账户后点击「刷新」。
+            <b>暂无额度数据</b>
           </div>
         </section>
 
@@ -1148,8 +1070,7 @@
 
               <el-alert v-if="storage.summary.orphan_count" type="warning" show-icon :closable="false"
                         style="margin-bottom:12px;"
-                        :title="'有 ' + storage.summary.orphan_count + ' 个未挂载卷，占用 ' + storage.summary.orphan_gb + 'GB 额度'"
-                        description="这些卷没挂在任何实例上——通常是终止实例时勾了「保留引导卷」留下的。删掉即可释放额度，但卷里的数据会一并消失。" />
+                        :title="'检测到 ' + storage.summary.orphan_count + ' 个未挂载卷（' + storage.summary.orphan_gb + ' GB）'" />
 
               <div class="table-wrap" v-if="storage.volumes.length">
                 <el-table :data="storage.volumes" size="small" stripe border style="width:100%;"
@@ -1193,12 +1114,9 @@
                   </el-table-column>
                 </el-table>
               </div>
-              <div class="empty" v-else><b>这个账户下没有卷</b>建实例后引导卷会出现在这里。</div>
-              <p class="hint">
-                只有未挂载卷可以删。要删仍挂载的引导卷，请先到「实例」页终止对应实例。
-              </p>
+              <div class="empty" v-else><b>当前账户下没有卷</b></div>
             </template>
-            <div class="empty" v-else-if="!storageLoading"><b>还没有存储数据</b>点击「刷新」加载。</div>
+            <div class="empty" v-else-if="!storageLoading"><b>暂无存储数据</b></div>
           </div>
         </section>
 
@@ -1206,7 +1124,7 @@
         <section class="pane" v-show="activeTab === 'firewall'">
           <div class="card">
             <div class="card-head">
-              <h2 class="card-title">云端防火墙（VCN 安全列表）</h2>
+              <h2 class="card-title">云端防火墙（安全列表）</h2>
             </div>
             <div class="toolbar">
               <el-select v-model="fwInstance" placeholder="选择实例" style="width:280px;" @change="loadFirewall">
@@ -1255,7 +1173,7 @@
                   </el-table-column>
                 </el-table>
               </div>
-              <div class="empty" v-else><b>没有任何入站规则</b>该实例目前从公网完全不可达。</div>
+              <div class="empty" v-else><b>无入站规则</b></div>
 
               <div class="card-head" style="margin-top:18px;">
                 <h2 class="card-title">新增入站规则</h2>
@@ -1278,22 +1196,9 @@
                 </el-select>
                 <el-button type="primary" :loading="fwBusy" @click="addRule">添加</el-button>
               </div>
-              <p class="hint" style="margin-top:6px;">
-                常用端口：HTTP 80、HTTPS 443、SSH 22。端口范围相同即表示单个端口。
-              </p>
-
-              <el-alert type="warning" show-icon :closable="false" style="margin-top:14px;"
-                        title="放行后如果端口还是不通，是实例内部的防火墙在挡"
-                        description="Oracle 的 Ubuntu 镜像自带 iptables 规则，默认只放 22。安全列表只是云端这一层，两层都要开。" />
-              <p class="hint">
-                实例内执行（Ubuntu）：<br />
-                <code>sudo iptables -I INPUT -j ACCEPT &amp;&amp; sudo netfilter-persistent save</code><br />
-                只想开单个端口更稳妥：<code>sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT</code>
-              </p>
             </template>
             <div class="empty" v-else-if="!fwLoading">
-              <b>选一台实例查看防火墙状态</b>
-              这里读的是 OCI 云端的安全列表，换机器部署面板也照样看得到。
+              <b>请选择实例以查看防火墙规则</b>
             </div>
           </div>
         </section>
@@ -1364,16 +1269,14 @@
                   <template #default="{row}">
                     <span style="color:var(--crit);" v-if="row.error">{{ row.error }}</span>
                     <span class="mono" style="color:var(--muted);" v-else-if="row.latest_time">{{ fmtTime(row.latest_time) }}</span>
-                    <span style="color:var(--muted);" v-else>该指标没有数据</span>
+                    <span style="color:var(--muted);" v-else>—</span>
                   </template>
                 </el-table-column>
               </el-table>
             </div>
             <div class="empty" v-else-if="!metricsLoading">
-              <b>选一台实例查看 CPU 与内存</b>
-              指标来自 oci_computeagent，需要实例上的 Oracle Cloud Agent 已启用监控插件。
+              <b>请选择实例以查询监控指标</b>
             </div>
-            <p class="hint">CPU 无需额外配置。内存要求实例已安装并启用 Oracle Cloud Agent 的「Compute Instance Monitoring」插件。</p>
           </div>
         </section>
 
@@ -1443,33 +1346,18 @@
               </el-table>
             </div>
             <div class="empty" v-else>
-              <b>还没有配置任何账户</b>
-              在下面「导入账户」里粘贴一份 ~/.oci/config 并附上私钥即可开始。
+              <b>暂无配置账户</b>
             </div>
-            <p class="hint">
-              账户等级<strong>不会自动检测</strong>——它要往 OCI 打一次订阅查询，
-              而进这一页多半只是想看看账户还在不在。点上面的「检测全部等级」，
-              或某一行操作栏里的「检测等级」只查那一个号。
-            </p>
-            <p class="hint">
-              <strong>锁定</strong>后所有页面都固定用这个账户，顶部不再能切换，
-              省得每次操作前先确认选对了没有。设置存在服务端，换浏览器一样生效。
-            </p>
-            <p class="hint">
-              账户等级依据租户的<strong>订阅记录</strong>判定。
-              免费号超额只是开不出机器；已升级的账号超额会真实计费。
-            </p>
           </div>
 
           <div class="card">
             <div class="card-head"><h2 class="card-title">导入账户</h2></div>
             <el-alert type="info" :closable="false" show-icon
-                      title="原样粘贴 ~/.oci/config 里的段落"
-                      description="面板跑在容器里，读不到你本机的私钥文件，所以私钥必须上传或粘贴一份。" />
+                      title="粘贴 ~/.oci/config 配置段落并附上私钥" />
             <div style="margin:16px 0;">
               <el-form label-position="top">
                 <el-form-item label="Profile 名称">
-                  <el-input v-model="importForm.profile_name" placeholder="留空则用粘贴文本里的段名" />
+                  <el-input v-model="importForm.profile_name" placeholder="留空则使用默认配置名" />
                 </el-form-item>
                 <el-form-item label="配置内容">
                   <el-input v-model="importForm.config_text" type="textarea" :rows="9" class="mono"
@@ -1493,14 +1381,12 @@
                               placeholder="-----BEGIN PRIVATE KEY-----" />
                   </div>
                 </el-form-item>
-                <el-form-item label="私钥口令（没有就留空）">
+                <el-form-item label="私钥口令（可选）">
                   <el-input v-model="importForm.pass_phrase" type="password" show-password style="max-width:320px;" />
                 </el-form-item>
               </el-form>
               <el-button type="primary" @click="importProfile" :loading="importing">导入并校验</el-button>
-              <span class="hint" style="margin-left:12px;">导入时会立刻调用 oci iam user get 验证，失败会自动回滚。</span>
             </div>
-
           </div>
         </section>
 
@@ -1543,12 +1429,6 @@
                          :disabled="!termAvailable || !detail.public_ip">
                 直连 SSH
               </el-button>
-              <p class="hint" v-if="!detail.public_ip">
-                这台实例没有公网 IP，直连不了；可以用下面的串口控制台。
-              </p>
-              <p class="hint" v-else>
-                私钥只在这次连接期间存在于内存，关掉终端即销毁，不会写进面板。
-              </p>
             </div>
 
             <!-- 改规格：只有 Flex 机型能改 -->
@@ -1567,10 +1447,6 @@
                 </div>
                 <el-button type="primary" @click="doResize" :loading="resizing">应用</el-button>
               </div>
-              <p class="hint">
-                ARM 免费额度合计 4 OCPU / 24GB，每 OCPU 最多 6GB。
-                <strong>应用后 OCI 可能会重启这台实例。</strong>
-              </p>
             </div>
 
             <!-- 引导卷 -->
@@ -1593,10 +1469,6 @@
                 <el-button @click="doGrow" :loading="growing">扩容</el-button>
                 <el-button @click="doBackup" :loading="backingUp">立即备份</el-button>
               </div>
-              <p class="hint">
-                引导卷只能变大不能变小。扩容后还要进系统执行
-                <code class="mono">sudo /usr/libexec/oci-growfs</code> 才会生效。
-              </p>
             </div>
 
             <!-- 串口控制台 -->
@@ -1612,11 +1484,7 @@
                                 : (detail.console[0].state === 'FAILED' ? 'crit' : 'warn')]"></i>
                     <span class="state-label">{{ detail.console[0].state }}</span>
                   </span>
-                  <span class="who" v-if="detail.console[0].state === 'CREATING'">
-                    还在创建，通常几秒钟；好了再点「在网页里连接」
-                  </span>
                 </div>
-                <p class="hint" style="margin-top:0;">用与公钥配对的私钥执行：</p>
                 <div class="log-box" v-for="c in detail.console" :key="c.id">
                   <pre class="mono">{{ c.ssh_command }}</pre>
                 </div>
@@ -1632,15 +1500,8 @@
                              :loading="isBusy('console-drop')"
                              @click="dropConsole(detail.console[0].id)">删除连接</el-button>
                 </div>
-                <p class="hint" v-if="!termAvailable">
-                  服务端没有装 paramiko，网页终端不可用；上面的命令仍可在本地执行。
-                </p>
               </template>
               <template v-else>
-                <p class="hint" style="margin-top:0;">
-                  SSH 进不去时（防火墙关错、fstab 写坏、sshd 配置改崩）靠它救命，
-                  走带外链路，不依赖实例的网络。
-                </p>
                 <div style="display:flex; gap:8px; margin-bottom:10px;">
                   <el-select v-model="selectedConsoleKeyId" placeholder="从公钥池选择" style="flex:1;" clearable @change="onSelectConsoleKeyFromVault">
                     <el-option v-for="k in sshKeys" :key="k.id" :value="k.id" :label="k.name + ' (' + (k.key_type || 'SSH') + ')'" />
@@ -1659,15 +1520,12 @@
                 </el-upload>
                 <el-input v-else v-model="consoleKey" type="textarea" :rows="2" class="mono"
                           placeholder="ssh-ed25519 AAAA..." />
-                <p class="hint" v-if="consoleKeyMode === 'file' && consoleKey">
-                  已读取：{{ consoleKey.slice(0, 42) }}…
-                </p>
                 <el-button type="primary" size="small" style="margin-top:10px;"
                            @click="doConsole" :loading="consoling">创建连接</el-button>
               </template>
             </div>
 
-            <!-- 备份：按引导卷来的，找不到卷就没法列 -->
+            <!-- 备份 -->
             <div class="drawer-sec" v-if="detail.boot_volume">
               <h3>
                 备份
@@ -1701,11 +1559,7 @@
                   </el-table-column>
                 </el-table>
               </div>
-              <p class="hint" v-else-if="!backupsLoading">还没有备份。</p>
-              <p class="hint">
-                还原<strong>不是原地回滚</strong>：OCI 只能用备份造一个新的引导卷，
-                原实例不受影响。新卷会占 200GB 额度。
-              </p>
+              <div class="empty" v-else-if="!backupsLoading"><b>暂无备份</b></div>
             </div>
           </template>
         </el-drawer>
@@ -1714,7 +1568,7 @@
         <el-dialog v-model="keyModalOpen" :title="keyModalTitle" width="540px" append-to-body>
           <el-form label-position="top">
             <el-form-item label="公钥备注名称">
-              <el-input v-model="keyForm.name" placeholder="例如 我的主力电脑 / MacBook Pro" />
+              <el-input v-model="keyForm.name" placeholder="例如 主力机 / 运维终端" />
             </el-form-item>
             <el-form-item label="公钥内容 (id_rsa.pub / id_ed25519.pub)">
               <el-input v-model="keyForm.public_key" type="textarea" :rows="5" class="mono"
@@ -1738,17 +1592,16 @@
             </template>
             <el-upload :auto-upload="false" :limit="1" :on-change="onPrivateKeyFile"
                        :show-file-list="false" accept=".pem,.key,.txt,">
-              <el-button size="small">{{ termKey ? '换一把私钥' : '选择私钥文件' }}</el-button>
+              <el-button size="small">{{ termKey ? '更换私钥' : '选择私钥文件' }}</el-button>
             </el-upload>
             <span class="who mono" v-if="termKeyName">{{ termKeyName }}</span>
             <el-input v-model="termPass" size="small" type="password" show-password
-                      style="width:150px;" placeholder="私钥口令（可空）" />
+                      style="width:150px;" placeholder="私钥口令（可选）" />
             <el-button type="primary" size="small" @click="termConnect"
                        :loading="termConnecting" :disabled="!termKey">连接</el-button>
           </div>
           <div class="term-bar" v-else>
             <span class="state"><i class="dot ok"></i><span class="state-label">已连接</span></span>
-            <span class="who">私钥只在内存里，关掉窗口即销毁</span>
             <el-button size="small" @click="termOpen = false">断开</el-button>
           </div>
           <div class="term-wrap"><div ref="termEl" style="height:100%;"></div></div>
@@ -1776,12 +1629,10 @@
                   </el-table-column>
                 </el-table>
               </div>
-              <p class="hint" v-if="cost.note">{{ cost.note }}</p>
               <p class="hint" v-if="cost.error" style="color:var(--crit);">{{ cost.error }}</p>
             </template>
             <div class="empty" v-else-if="!billingLoading">
-              <b>还没查询</b>
-              点「刷新」查询当月消费与账单。
+              <b>暂无消费数据</b>
             </div>
           </div>
 
@@ -1832,8 +1683,7 @@
                 </el-table>
               </div>
               <div class="empty" v-else>
-                <b>没有账单记录</b>
-                {{ invoices.note || 'Always Free 账号不会产生账单。' }}
+                <b>暂无账单记录</b>
               </div>
             </template>
           </div>
@@ -1885,7 +1735,7 @@
                              :total="auditTotal" :page-size="auditSize" :current-page="auditPage"
                              @current-change="loadAudit" />
             </div>
-            <div class="empty" v-else-if="!auditLoading"><b>还没有记录</b>登录、改密、开关机和账户变更都会写到这里。</div>
+            <div class="empty" v-else-if="!auditLoading"><b>暂无操作记录</b></div>
           </div>
         </section>
 
@@ -1910,14 +1760,13 @@
             </div>
 
             <el-alert v-if="sys.check_error" type="info" show-icon :closable="false"
-                      style="margin-bottom:12px;" title="查不到最新版本"
+                      style="margin-bottom:12px;" title="获取最新版本信息异常"
                       :description="sys.check_error" />
             <el-alert v-else-if="sys.update_available" type="warning" show-icon :closable="false"
                       style="margin-bottom:12px;"
-                      :title="'有新版本 v' + sys.latest + ' 可用'"
-                      description="更新只拉代码并重建容器，你的配置、密码和审计记录都不会动。" />
+                      :title="'检测到新版本 v' + sys.latest" />
             <el-alert v-else-if="sys.latest" type="success" show-icon :closable="false"
-                      style="margin-bottom:12px;" title="已经是最新版本" />
+                      style="margin-bottom:12px;" title="当前已是最新版本" />
 
             <div class="card-head" style="margin-top:18px;">
               <h2 class="card-title">一键更新</h2>
@@ -1925,7 +1774,7 @@
 
             <template v-if="upd.agent && !upd.agent.online">
               <el-alert type="warning" show-icon :closable="false" style="margin-bottom:10px;"
-                        title="一键更新还差最后一步：宿主机上的更新代理没装"
+                        title="宿主机更新代理未安装"
                         :description="upd.agent.hint" />
               <div class="cmd-box">
                 <code class="mono">{{ upd.agent.fix_command }}</code>
@@ -1934,18 +1783,9 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
                 </button>
               </div>
-              <p class="hint" style="margin-top:0;">
-                <strong>只需要跑这一次</strong>：这条命令在更新的同时会把代理装成开机自启的服务，
-                以后更新点按钮就行，不用再登服务器。
-              </p>
             </template>
 
-            <p class="hint" style="margin-top:0;">
-              点下面的按钮就会在宿主机上执行更新。面板容器本身<strong>没有</strong> docker 权限——
-              它只是写一个请求标记，真正干活的是宿主机上的更新代理。
-            </p>
-
-            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px;">
               <el-button type="primary" @click="doUpdate"
                          :loading="updBusy"
                          :disabled="updRunning || (upd.agent && !upd.agent.online)">
@@ -1957,43 +1797,19 @@
               <span class="who" v-if="upd.message">{{ upd.message }}</span>
             </div>
 
-            <p class="hint" v-if="updRunning">
-              更新过程中面板容器会被重启，这个页面可能短暂连不上——属正常，稍等会自动恢复。
-            </p>
-
             <div v-if="upd.log" class="log-box">
               <pre class="mono">{{ upd.log }}</pre>
             </div>
 
             <div class="card-head" style="margin-top:18px;">
-              <h2 class="card-title">手动更新</h2>
+              <h2 class="card-title">手动更新指令</h2>
             </div>
-            <p class="hint" style="margin-top:0;">
-              也可以直接在服务器上执行：
-            </p>
             <div class="cmd-box">
               <code class="mono">{{ sys.update_command }}</code>
               <button class="copy-btn" @click="copy(sys.update_command)" aria-label="复制更新命令">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               </button>
             </div>
-            <p class="hint">
-              只想看看有什么变化、先不更新：
-            </p>
-            <div class="cmd-box">
-              <code class="mono">{{ sys.check_command }}</code>
-              <button class="copy-btn" @click="copy(sys.check_command)" aria-label="复制检查命令">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-              </button>
-            </div>
-
-            <p class="hint">
-              安装目录 <code class="mono">{{ sys.install_dir }}</code> ·
-              <a :href="sys.repo_url" target="_blank" rel="noopener noreferrer" class="link">项目主页</a>
-              <template v-if="sys.compare_url">
-                · <a :href="sys.compare_url" target="_blank" rel="noopener noreferrer" class="link">看看这版改了什么</a>
-              </template>
-            </p>
           </div>
         </section>
 
@@ -2004,9 +1820,6 @@
               <h2 class="card-title">SSH 公钥池</h2>
               <el-button size="small" type="primary" @click="openCreateKeyModal">+ 添加 SSH 公钥</el-button>
             </div>
-            <p class="hint" style="margin-top:-6px; margin-bottom:12px;">
-              集中管理你的 SSH 公钥。在新建实例或连接串口控制台时可直接下拉选用。
-            </p>
             <div class="table-wrap" v-if="sshKeys.length">
               <el-table :data="sshKeys" size="small" stripe border style="width:100%;">
                 <el-table-column prop="name" label="备注名称" min-width="150" />
@@ -2042,8 +1855,7 @@
               </el-table>
             </div>
             <div class="empty" v-else-if="!sshKeysLoading">
-              <b>公钥池还是空的</b>
-              点击右上角「+ 添加 SSH 公钥」保存你的第一把公钥。
+              <b>公钥池暂无密钥</b>
             </div>
           </div>
         </section>
@@ -2055,20 +1867,12 @@
               <h2 class="card-title">Telegram 通知设置</h2>
               <el-switch v-model="tgSettings.enabled" active-text="开启 TG 通知" />
             </div>
-            <el-alert type="info" show-icon :closable="false" style="margin-bottom:16px;"
-                      title="通知范围说明"
-                      description="本功能仅在「创建实例成功/失败」和「删除/终止实例」时向 Telegram 发送通知，绝不发送多余垃圾信息。" />
             <el-form label-position="top" style="max-width:600px;">
               <el-form-item label="Telegram Bot Token">
                 <el-input v-model="tgSettings.bot_token" placeholder="例如 123456789:ABCdefGhIjKlMnOpQrStUvWxYz" class="mono" />
-                <p class="hint" v-if="tgSettings.has_token" style="color:var(--ok); font-weight:500;">
-                  ✓ 已保存有效 Token（如无需更换可保持不变）。
-                </p>
-                <p class="hint" v-else>从 @BotFather 创建机器人获取的 Token。</p>
               </el-form-item>
               <el-form-item label="接收通知的 Chat ID">
                 <el-input v-model="tgSettings.chat_id" placeholder="例如 123456789 或群组 -100123456789" class="mono" />
-                <p class="hint">你的个人 Telegram ID 或频道/群组 Chat ID（可向 @userinfobot 发送任意消息获取）。</p>
               </el-form-item>
               <div style="display:flex; gap:10px; margin-top:16px;">
                 <el-button type="primary" :loading="tgSaving" @click="saveTgSettings">保存配置</el-button>
@@ -2080,17 +1884,12 @@
 
         <!-- 密码 -->
         <section class="pane" v-show="activeTab === 'password'">
-          <!-- Oracle 账号的密码策略放最前面：那条 120 天的强制改密就是它 -->
           <div class="card">
             <div class="card-head">
               <h2 class="card-title">Oracle 账号密码有效期</h2>
               <el-button size="small" @click="loadConsolePolicy(true)"
                          :loading="consoleLoading">重新读取</el-button>
             </div>
-
-            <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px;"
-                      title="这是 Oracle 账号（控制台登录）的密码策略，不是面板的登录密码"
-                      description="免费租户默认 120 天必须改一次控制台密码。改成 0 就不再到期。" />
 
             <template v-if="consolePolicy.supported">
               <div class="kv" style="margin-bottom:12px;">
@@ -2116,7 +1915,7 @@
               </div>
 
               <el-form label-position="top" @submit.prevent style="margin-top:10px;">
-                <el-form-item label="多少天后必须改密（0 = 永不过期）">
+                <el-form-item label="密码有效天数（0 为永不过期）">
                   <el-input-number v-model="consoleForm.days" :min="0" :max="3650" :step="30"
                                    style="width:180px;" />
                 </el-form-item>
@@ -2126,15 +1925,10 @@
                 <el-button @click="consoleForm.days = 0; saveConsolePolicy()"
                            :loading="consoleSaving">设为永不过期</el-button>
               </el-form>
-              <p class="hint">
-                改的是 Identity Domain 里的 <code class="mono">passwordExpiresAfter</code>，
-                等同于在 OCI 控制台改密码策略。需要当前用户有该域的写权限。
-              </p>
             </template>
 
             <div class="empty" v-else-if="!consoleLoading">
-              <b>读不到控制台密码策略</b>
-              {{ consolePolicy.error || '选一个账户后点「重新读取」。' }}
+              <b>暂无密码策略数据</b>
             </div>
           </div>
 
@@ -2150,7 +1944,6 @@
               </el-form-item>
               <el-button type="primary" @click="changePw" :loading="loading">保存新密码</el-button>
             </el-form>
-            <p class="hint">改密后所有已登录的会话立即失效，需要重新登录。密码存在数据卷里，重启容器不会丢。</p>
           </div>
         </section>
       </main>
@@ -2229,25 +2022,25 @@ const CW = 720, CH = 200, PAD_L = 46, PAD_R = 8, PAD_T = 8, PAD_B = 26;
 
 const NAV = [
   { title: '总览', items: [
-    { name: 'instances', label: '实例', icon: 'M4 5h16v6H4zM4 13h16v6H4zM7.5 8h.01M7.5 16h.01' },
+    { name: 'instances', label: '实例', icon: 'M2 2h20v8H2zM2 14h20v8H2zM6 6h.01M6 18h.01' },
   ]},
   { title: '资源', items: [
     { name: 'create', label: '新建实例', icon: 'M12 5v14M5 12h14' },
-    { name: 'storage', label: '存储', icon: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3' },
-    { name: 'firewall', label: '防火墙', icon: 'M12 3l8 3v6c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V6z' },
-    { name: 'ssh_keys', label: 'SSH 公钥', icon: 'M15 7a2 2 0 0 1 2 2m4 0a6 6 0 0 1-7.743 5.743L11 17H9v2H7v2H4a1 1 0 0 1-1-1v-2.586a1 1 0 0 1 .293-.707l5.964-5.964A6 6 0 1 1 21 9z' },
+    { name: 'storage', label: '存储', icon: 'M3 5a9 3 0 1 0 18 0A9 3 0 1 0 3 5zM3 5v14a9 3 0 0 0 18 0V5M3 12a9 3 0 0 0 18 0' },
+    { name: 'firewall', label: '防火墙', icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' },
+    { name: 'ssh_keys', label: 'SSH 公钥', icon: 'm21 2-2 2m-1.5 1.5L14 9l-1.5-1.5L11 9l-1.5-1.5L8 9l-1.5-1.5L5 9l-3 3 7 7 3-3' },
   ]},
   { title: '观测', items: [
-    { name: 'usage', label: '免费额度', icon: 'M20 12a8 8 0 1 0-8 8M12 12l4.5-3M12 20v.01' },
-    { name: 'metrics', label: '监控', icon: 'M3 12h4l3 8 4-16 3 8h4' },
-    { name: 'billing', label: '账单', icon: 'M4 4h16v16l-3-2-2 2-3-2-3 2-2-2-3 2zM8 9h8M8 13h5' },
-    { name: 'audit', label: '审计', icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
+    { name: 'usage', label: '免费额度', icon: 'M21.21 15.89A10 10 0 1 1 8 2.83M22 12A10 10 0 0 0 12 2v10z' },
+    { name: 'metrics', label: '监控', icon: 'M3 3v18h18M19 9l-5 5-4-4-3 3' },
+    { name: 'billing', label: '账单', icon: 'M2 5h20v14H2zM2 10h20' },
+    { name: 'audit', label: '审计', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8' },
   ]},
   { title: '设置', items: [
-    { name: 'profile', label: '账户配置', icon: 'M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4' },
-    { name: 'notification', label: 'TG 通知', icon: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z' },
-    { name: 'password', label: '密码', icon: 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3' },
-    { name: 'update', label: '更新', icon: 'M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6' },
+    { name: 'profile', label: '账户配置', icon: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z' },
+    { name: 'notification', label: 'TG 通知', icon: 'm22 2-7 20-4-9-9-4zM22 2 11 13' },
+    { name: 'password', label: '密码', icon: 'M3 11h18v11H3zM7 11V7a5 5 0 0 1 10 0v4' },
+    { name: 'update', label: '更新', icon: 'M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16M16 21h5v-5' },
   ]},
 ];
 
@@ -4132,13 +3925,11 @@ createApp({
     async function doRestore(row) {
       try {
         await ElMessageBox.confirm(
-          `用备份「${row.display_name}」还原？\n\n` +
-          `这不是原地回滚：会新建一个 ${row.size_gb} GB 的引导卷，` +
-          `当前这台实例不受影响。新卷会占用 200GB 存储额度，` +
-          `之后需要用它开一台新实例才能真正用上。`,
-          '还原备份',
-          { type: 'warning', confirmButtonText: '还原', cancelButtonText: '取消',
-            customStyle: { whiteSpace: 'pre-wrap', maxWidth: '520px' } });
+          `确认从备份「${row.display_name}」创建还原卷？\n\n` +
+          `将新建 ${row.size_gb} GB 引导卷，原实例保持运行。`,
+          '还原引导卷',
+          { type: 'warning', confirmButtonText: '确认还原', cancelButtonText: '取消',
+            customStyle: { whiteSpace: 'pre-wrap', maxWidth: '480px' } });
       } catch { return; }
       await withBusy('restore:' + row.id, async () => {
         try {
@@ -4170,7 +3961,7 @@ createApp({
     function onConsoleKeyFile(file) {
       readFileAsText(file, (text) => {
         if (text.includes('PRIVATE KEY')) {
-          ElMessage.error('这是私钥文件。创建串口控制台连接需要的是公钥（.pub）');
+          ElMessage.error('创建串口连接需要公钥文件（.pub）');
           return;
         }
         consoleKey.value = text;
@@ -4180,7 +3971,7 @@ createApp({
     function onPrivateKeyFile(file) {
       readFileAsText(file, (text) => {
         if (!text.includes('PRIVATE KEY')) {
-          ElMessage.error('这不像私钥。网页终端要的是私钥文件，不是 .pub');
+          ElMessage.error('请选择有效的 SSH 私钥文件');
           return;
         }
         termKey.value = text;
@@ -4220,7 +4011,7 @@ createApp({
       termConnected.value = false;
       termOpen.value = true;
       try { await ensureXterm(); }
-      catch { ElMessage.error('终端组件加载失败，检查服务器能否访问 CDN'); }
+      catch { ElMessage.error('终端组件加载失败，检查网络连通性'); }
     }
 
     function closeTerm() {
@@ -4234,24 +4025,14 @@ createApp({
       }
       termFit = null;
       termConnected.value = false;
-      // 私钥不留在内存里过夜
       termKey.value = ''; termKeyName.value = ''; termPass.value = '';
     }
 
-    // 串口控制台 ≠ SSH。它是一条虚拟串口线，接到实例的 ttyS0 上，
-    // 你面对的是内核和 getty，跟密钥认证毫无关系——私钥只用来打通
-    // 到 Oracle 网关的那条隧道。这段提示直接写进终端，因为人是在
-    // 看到 login: 的那一刻才会困惑，那时已经离开面板界面了。
     function consoleTips() {
       const d = '\x1b[90m', y = '\x1b[33m', c = '\x1b[36m', r = '\x1b[0m';
       return '\r\n' +
-        y + '这是串口控制台（虚拟串口），不是 SSH。' + r + '\r\n' +
-        d + '下面的 ' + r + c + 'login:' + r + d + ' 只认系统用户名 + ' + r +
-        y + '密码' + r + d + '，私钥到这一层就用不上了。' + r + '\r\n' +
-        d + 'Oracle 的 Ubuntu 镜像默认没给 ubuntu 设密码，所以这里输什么都进不去；' + r + '\r\n' +
-        d + '趁 SSH 还能进的时候先 ' + r + c + 'sudo passwd ubuntu' + r + d +
-        '，这条救命通道才真的能救命。' + r + '\r\n' +
-        d + '（黑屏没提示符？敲一下回车。要用密钥登录系统请走「直连 SSH」）' + r + '\r\n\r\n';
+        y + '串口控制台 (Serial Console) 已就绪' + r + '\r\n' +
+        d + '通过 ' + r + c + 'login:' + r + d + ' 输入系统账户与密码验证登录。' + r + '\r\n\r\n';
     }
 
     async function termConnect() {
