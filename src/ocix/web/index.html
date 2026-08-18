@@ -773,10 +773,10 @@
               <div class="meter">
                 <div class="meter-head">
                   <span class="meter-k">免费存储</span>
-                  <span class="meter-v">{{ usage ? usage.storage_gb : '—' }}<small>/200 GB</small></span>
+                  <span class="meter-v">{{ storageUsedGb }}<small>/200 GB</small></span>
                 </div>
-                <div class="bar" :class="{ warn: usage && usage.storage_gb > 170 }">
-                  <i :style="{ width: usage ? Math.min(100, usage.storage_gb / 200 * 100) + '%' : '0%' }"></i>
+                <div class="bar" :class="{ warn: typeof storageUsedGb === 'number' && storageUsedGb > 170 }">
+                  <i :style="{ width: (typeof storageUsedGb === 'number' ? Math.min(100, storageUsedGb / 200 * 100) : 0) + '%' }"></i>
                 </div>
               </div>
             </div>
@@ -3177,19 +3177,14 @@ createApp({
       };
     });
 
-    // 机位：照着额度的形状排——两个 AMD 位在前，然后是 ARM，
-    // 还有剩余额度就留一个空位当邀请。非免费规格的单独排在后面并标出来。
-    const bays = computed(() => {
-      const list = instances.value || [];
-      const amd = list.filter(IS_AMD);
-      const arm = list.filter(IS_ARM);
-      const other = list.filter(r => !IS_AMD(r) && !IS_ARM(r));
-      const out = [];
-      for (let i = 0; i < 2; i++) out.push({ kind: 'amd', inst: amd[i] || null });
-      arm.forEach(r => out.push({ kind: 'arm', inst: r }));
-      if (fleet.value.ocpu < 4) out.push({ kind: 'arm', inst: null });
-      other.forEach(r => out.push({ kind: 'other', inst: r }));
-      return out;
+    const storageUsedGb = computed(() => {
+      if (!usage.value) return '—';
+      const cur = usage.value.current;
+      if (cur && cur.storage_gb !== undefined) return cur.storage_gb;
+      if (usage.value.storage_gb !== undefined) return usage.value.storage_gb;
+      const it = (usage.value.items || []).find(i => (i.label || '').includes('存储'));
+      if (it && it.current !== undefined) return it.current;
+      return '—';
     });
 
     // 密码在界面上默认打码，按实例记住「显示/隐藏」
@@ -4615,7 +4610,7 @@ createApp({
       loadSshKeys, openCreateKeyModal, openEditKeyModal, saveSshKey, deleteSshKey, onSelectKeyFromVault, onSelectConsoleKeyFromVault,
       tgSettings, tgLoading, tgSaving, tgTesting, loadTgSettings, saveTgSettings, testTgConnection,
       currentTabLabel,
-      instView, setInstView, bays, fleet,
+      fleet, storageUsedGb,
       pwShown, rollRootPassword,
       createStep, pollJob,
       CW, CH, HOUR_RANGES, areaSeries, NAV, go, orphanBadge,
