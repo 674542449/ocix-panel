@@ -472,29 +472,60 @@
     :root .el-alert--info { background:rgba(56, 189, 248, 0.08) !important; border-left:3px solid #38bdf8; color:var(--text) !important; }
     :root .el-progress-bar__inner { background-color:var(--accent); }
 
+    /* ── 响应式适配 (电脑与手机端全量适配) ── */
     @media (max-width:900px) {
       .shell { display:block; }
-      .rail { width:auto; position:static; max-height:none; border-right:0;
-              border-bottom:1px solid rgba(255, 255, 255, 0.08); padding:var(--sp-2) var(--sp-3);
-              overflow-x:auto; overflow-y:hidden; }
-      .rail nav { display:flex; gap:var(--sp-3); }
-      .rail-group { display:flex; align-items:center; gap:4px; }
-      .rail-group + .rail-group { margin-top:0; padding-left:var(--sp-3);
+      .rail { width:auto; position:sticky; top:53px; z-index:18; height:auto; max-height:none;
+              border-right:0; border-bottom:1px solid rgba(255, 255, 255, 0.08);
+              padding:8px 12px; background:rgba(11, 15, 25, 0.92);
+              overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; }
+      .rail::-webkit-scrollbar { display:none; }
+      .rail nav { display:flex; gap:8px; flex:none; }
+      .rail-group { display:flex; align-items:center; gap:6px; flex:none; }
+      .rail-group + .rail-group { margin-top:0; padding-left:8px;
                                   border-left:1px solid rgba(255, 255, 255, 0.08); }
       .rail-title { display:none; }
-      .rail-item { width:auto; white-space:nowrap; padding:9px 12px; }
+      .rail-item { width:auto; white-space:nowrap; padding:8px 12px; font-size:13px; border-radius:6px; }
       .rail-item.on::before { display:none; }
-      .main { padding:var(--sp-3); }
+      .rail-foot { display:none; }
+      .main { padding:16px 14px; }
     }
-    @media (max-width:860px) {
-      .container { padding:var(--sp-3); }
+
+    @media (max-width:768px) {
+      .topbar { padding:10px 14px; gap:8px; }
+      .topbar-right { gap:8px; }
+      .topbar-right .who { max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .container { padding:14px; }
+      .toolbar { gap:10px; }
+      .toolbar .el-select { width:100% !important; }
+      .fleet { padding:12px 14px; gap:12px; }
       .quota { grid-template-columns:1fr; gap:var(--sp-1); }
       .quota .num { text-align:left; }
-      .el-table .el-button--small { min-height:36px; padding-left:12px; padding-right:12px; }
-      .el-table .el-button + .el-button { margin-left:8px; }
-      .bulkbar .el-button { min-height:36px; }
-      .seg button { padding:10px 14px; }
+      .el-table .el-button--small { min-height:36px; padding-left:10px; padding-right:10px; font-size:12.5px; }
+      .el-table .el-button + .el-button { margin-left:6px; }
+      .bulkbar { flex-direction:column; align-items:stretch; gap:10px; }
+      .bulkbar .el-button { min-height:38px; }
+      .seg button { padding:9px 12px; font-size:12.5px; }
+      .el-dialog { width:92% !important; max-width:92% !important; margin:20px auto !important; }
+      .el-drawer { width:88% !important; }
     }
+
+    @media (max-width:480px) {
+      .login-stage { padding:0 14px; }
+      .login-panel { padding:28px 18px 22px; border-radius:16px; }
+      .login-brand-logo { width:42px; height:42px; margin-bottom:10px; }
+      .login-title { font-size:20px; }
+      .login-sub { font-size:11.5px; }
+      .topbar .brand small { display:none; }
+      .topbar .live { font-size:10.5px; }
+      .topbar .live span { display:none; }
+      .topbar-right .el-switch { transform:scale(0.9); }
+      .card { padding:14px 12px; border-radius:10px; }
+      .card > .card-head { margin:-14px -12px 12px; padding:10px 12px; }
+      .el-dialog { width:96% !important; max-width:96% !important; }
+      .el-drawer { width:96% !important; }
+    }
+
     .copy-btn { position:relative; }
     .copy-btn::after { content:""; position:absolute; left:50%; top:50%;
                        width:44px; height:44px; transform:translate(-50%,-50%); }
