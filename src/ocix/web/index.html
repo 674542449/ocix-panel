@@ -2685,6 +2685,9 @@ createApp({
     }
 
     async function saveTgSettings() {
+      if (tgSettings.bot_token && tgSettings.chat_id && !tgSettings.has_token) {
+        tgSettings.enabled = true;
+      }
       tgSaving.value = true;
       try {
         await axios.post('/api/system/telegram', {
@@ -2692,7 +2695,7 @@ createApp({
           bot_token: tgSettings.bot_token,
           chat_id: tgSettings.chat_id,
         });
-        ElMessage.success('Telegram 配置保存成功');
+        ElMessage.success('Telegram 配置保存成功并已启用');
         loadTgSettings();
       } catch (e) {
         ElMessage.error(e.response?.data?.detail || '保存失败');
@@ -3321,6 +3324,7 @@ createApp({
         await axios.post('/api/provision/instances/terminate', {
           profile: row.profile || currentProfile.value,
           instance_id: row.id,
+          display_name: row.display_name,
           preserve_boot_volume: false,
         });
         ElMessage.success(`${row.display_name} 已终止`);

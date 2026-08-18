@@ -262,6 +262,7 @@ class TerminateInstanceRequest(BaseModel):
     profile: str
     instance_id: str
     preserve_boot_volume: bool = False
+    display_name: str | None = None
 
 
 class DeleteVolumeRequest(BaseModel):

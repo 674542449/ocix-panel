@@ -350,6 +350,7 @@ def terminate(
     notifier.notify_instance_terminated(
         profile=req.profile,
         instance_id=req.instance_id,
+        display_name=req.display_name,
         preserve_boot_volume=req.preserve_boot_volume,
         user=user,
         ip=ip,

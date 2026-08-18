@@ -78,9 +78,12 @@ def init_db():
 
 # ---- 通用键值设置 ----
 def get_setting(key: str, default=None):
-    with get_conn() as conn:
-        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    return row["value"] if row else default
+    try:
+        with get_conn() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+    except sqlite3.OperationalError:
+        return default
 
 
 def set_setting(key: str, value: str):

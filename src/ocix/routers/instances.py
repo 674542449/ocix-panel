@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from .. import security
+from .. import notifier, security
 from ..cloudinit import ROOT_PW_TAG
 from ..common import OCIError, gather
 from ..db import audit
@@ -93,9 +93,26 @@ def do_action(
     except OCIError as e:
         audit(user, "instance-action", profile=req.profile, target=req.instance_id,
               detail=f"{req.action} -> {e.message}", result="fail", ip=ip)
+        notifier.notify_instance_action(
+            profile=req.profile,
+            instance_id=req.instance_id,
+            action=req.action,
+            success=False,
+            error_msg=e.message,
+            user=user,
+            ip=ip,
+        )
         raise HTTPException(status_code=400, detail=e.message)
     audit(user, "instance-action", profile=req.profile, target=req.instance_id,
           detail=req.action, result="ok", ip=ip)
+    notifier.notify_instance_action(
+        profile=req.profile,
+        instance_id=req.instance_id,
+        action=req.action,
+        success=True,
+        user=user,
+        ip=ip,
+    )
     return {
         "ok": True,
         "state": data.get("lifecycle-state") or data.get("lifecycle_state"),
