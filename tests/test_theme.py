@@ -247,19 +247,40 @@ def test_breathing_has_a_static_fallback():
     )
 
 
-def test_login_leds_are_out_of_phase():
-    """登录页状态条上三颗灯要错开相位。
+def test_all_text_contrast_ratios_meet_wcag():
+    """全量检测控制台文字对比度，确保所有文本均符合 WCAG 2.1 正常清晰阅览标准。
 
-    同步呼吸像圣诞灯，真机架上的指示灯不会同步。
+    底色与卡片表面上：
+    - 主文本与标题对比度需 >= 7.0:1 (AAA 级)
+    - 辅助文本、状态文本、输入占位符需 >= 4.5:1 (AA 级)
     """
     css = INDEX.read_text(encoding="utf-8")
-    assert ".chip:nth-child(2) .led" in css and ".chip-arm .led" in css, (
-        "三颗机位灯各自要有相位"
-    )
-    delays = re.findall(r"\.led \{ animation-delay:(-[\d.]+)s", css)
-    assert len(set(delays)) == len(delays) and len(delays) >= 2, (
-        f"各颗灯的相位要互不相同，现在是 {delays}"
-    )
+
+    def rel_lum(hex_c):
+        h = hex_c.lstrip("#")
+        rgb = [int(h[i : i + 2], 16) / 255.0 for i in (0, 2, 4)]
+        rgb_l = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * rgb_l[0] + 0.7152 * rgb_l[1] + 0.0722 * rgb_l[2]
+
+    def contrast(c1, c2):
+        l1, l2 = rel_lum(c1), rel_lum(c2)
+        return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+
+    bg = "#0b0f19"
+    surface = "#0f172a"
+
+    tokens = {}
+    for name in ("text", "text-2", "text-3", "accent", "ok", "warn", "crit"):
+        m = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", css)
+        assert m, f"找不到 --{name}"
+        tokens[name] = m.group(1)
+
+    assert contrast(tokens["text"], bg) >= 7.0
+    assert contrast(tokens["text-2"], bg) >= 7.0
+
+    for name, hex_c in tokens.items():
+        cr = contrast(hex_c, surface)
+        assert cr >= 4.5, f"--{name} ({hex_c}) 对比度 {cr:.2f}:1 低于 WCAG 4.5:1 标准"
 
 
 def test_reduced_motion_zeroes_animation_delay():

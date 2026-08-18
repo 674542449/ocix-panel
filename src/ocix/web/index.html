@@ -22,16 +22,16 @@
       --text-3: #94a3b8;
       --hi: #ffffff;
 
-      /* 主色：现代科技电光蓝 (HSV 79.9%) */
-      --accent: #2b72d6;
-      --accent-dim: #93c5fd;
-      --on-accent: #ffffff;
+      /* 主色：现代高对比科技电光蓝 (HSV 77.4%，对比度 8.33:1 AAA 级) */
+      --accent: #38bdf8;
+      --accent-dim: #2b72d6;
+      --on-accent: #080c14;
 
       /* 状态色体系 (两两色相差 >= 40°，HSV 饱和度 <= 80%) */
       --ok: #289e6d;     /* 翡翠绿 155° (HSV 74.7%) */
       --warn: #af7d2b;   /* 琥珀金 37° (HSV 75.4%) */
-      --crit: #c73a4d;   /* 柔和玫瑰红 352° (HSV 70.9%) */
-      --idle: #64748b;   /* 黑曜灰 215° */
+      --crit: #e15263;   /* 高对比柔和玫瑰红 353° (HSV 63.5%) 对比度 5.1:1 */
+      --idle: #78879e;   /* 黑曜灰 215° */
 
       --panel: var(--surface);
       --panel-2: var(--surface-2);
@@ -56,7 +56,7 @@
       --el-text-color-primary: var(--text);
       --el-text-color-regular: var(--text-2);
       --el-text-color-secondary: var(--text-3);
-      --el-text-color-placeholder: #64748b;
+      --el-text-color-placeholder: #8592a6;
       --el-border-color: rgba(255, 255, 255, 0.1);
       --el-border-color-light: rgba(255, 255, 255, 0.08);
       --el-border-color-lighter: rgba(255, 255, 255, 0.05);
@@ -90,14 +90,14 @@
       --el-color-warning-light-9: #faf5ed;
       --el-color-warning-dark-2: #8c6320;
 
-      --el-color-danger: #c73a4d;
-      --el-color-error: #c73a4d;
-      --el-color-danger-light-3: #db6978;
-      --el-color-danger-light-5: #e898a4;
-      --el-color-danger-light-7: #f3c7cd;
-      --el-color-danger-light-8: #f8dde2;
-      --el-color-danger-light-9: #fdf2f4;
-      --el-color-danger-dark-2: #a12b3b;
+      --el-color-danger: #e15263;
+      --el-color-error: #e15263;
+      --el-color-danger-light-3: #e87582;
+      --el-color-danger-light-5: #f0a3ac;
+      --el-color-danger-light-7: #f7ced3;
+      --el-color-danger-light-8: #fbe2e5;
+      --el-color-danger-light-9: #fdf5f6;
+      --el-color-danger-dark-2: #b83c4b;
 
       --el-color-info: #64748b;
       --el-color-info-light-3: #94a3b8;
@@ -260,30 +260,12 @@
                                       border-radius:8px !important; box-shadow:none !important; padding:4px 12px !important; }
     .login-panel .el-input__wrapper.is-focus { border-color:#38bdf8 !important; box-shadow:0 0 0 3px rgba(43,114,214,.25) !important; }
     .login-panel .el-input__inner { color:#ffffff !important; font-size:14px; }
-    .login-panel .el-input__inner::placeholder { color:#64748b; }
+    .login-panel .el-input__inner::placeholder { color:#8592a6; }
     .login-panel .el-button--large { border-radius:8px; height:42px; font-size:14px; font-weight:700;
                                      background:#2b72d6; border-color:#2b72d6;
                                      box-shadow:0 4px 14px rgba(43,114,214,.35); transition:all .2s ease; }
     .login-panel .el-button--large:hover { background:#3b82f6; border-color:#3b82f6; transform:translateY(-1px); box-shadow:0 6px 18px rgba(43,114,214,.45); }
-
-    /* 卡片下方的极简微状态条 */
-    .login-hud-bottom { margin-top:20px; width:100%; display:flex; flex-direction:column; align-items:center; gap:8px; }
-    .hud-chips { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
-    .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 9px;
-            border:1px solid rgba(255,255,255,.08); border-radius:6px; background:rgba(15,23,42,.65);
-            font-size:11px; color:#cbd5e1; white-space:nowrap;
-            -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
-    .chip b { color:#ffffff; font-weight:600; }
-    .chip-spec { color:var(--text-3); }
-    .chip-arm { border-color:rgba(56,189,248,.25); background:rgba(15,23,42,.8); }
-    .led { flex:none; width:6px; height:6px; border-radius:50%; background:var(--ok);
-           animation:breathe 3.2s ease-in-out infinite; }
-    .chip:nth-child(2) .led { animation-delay:-1.3s; }
-    .chip-arm .led { animation-delay:-2.4s; }
-    .hud-meta { font-size:11px; color:var(--text-3); text-align:center; display:flex; align-items:center; justify-content:center; gap:8px; }
-    .hud-meta code { background:rgba(255,255,255,.06); color:#38bdf8; padding:1px 5px; border-radius:4px; font-size:10.5px; }
-    .hud-flow { color:#38bdf8; opacity:.85; }
-    .hud-flow .arrow { color:#64748b; margin:0 3px; }
+    .login-hint-bar { margin-top:20px; display:flex; align-items:center; justify-content:center; gap:6px; font-size:11.5px; color:var(--text-3); }
 
     .alloc-k { font-family:var(--mono); font-size:10px; letter-spacing:.12em;
                text-transform:uppercase; color:var(--text-3); }
@@ -573,19 +555,11 @@
           <el-button type="primary" size="large" style="width:100%; margin-top:8px;" @click="doLogin"
                      :loading="loading">登录控制台</el-button>
         </el-form>
+        <div class="login-hint-bar">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>自建私有控制台 · 数据与私钥仅存本地</span>
+        </div>
       </section>
-
-      <footer class="login-hud-bottom">
-        <div class="hud-chips" aria-label="Always Free 额度">
-          <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
-          <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
-          <span class="chip chip-arm"><i class="led" aria-hidden="true"></i><b>ARM Ampere A1</b><span class="chip-spec">4 OCPU · 24 GB</span></span>
-        </div>
-        <div class="hud-meta mono">
-          <span>200 GB 免费存储</span>
-          <span class="hud-flow" ref="loginFlow" aria-hidden="true"></span>
-        </div>
-      </footer>
     </main>
   </div>
 
