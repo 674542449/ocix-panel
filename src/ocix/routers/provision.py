@@ -11,6 +11,7 @@ from ..oci_helpers import (
     VPU_RANGE,
     add_ipv6_to_instance,
     add_port_rule,
+    attach_ips,
     boot_volume_backups,
     change_public_ip,
     clear_ingress_rules,
@@ -227,6 +228,20 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
             audit(user, "add-ipv6", profile=req.profile, target=instance_id,
                   detail=ipv6_addr, result="ok", ip=ip)
 
+    # 尝试获取新实例的公网 IPv4
+    public_ip = data.get("_public_ip")
+    if instance_id and not public_ip:
+        for _ in range(3):
+            try:
+                with_ip = attach_ips(req.profile, [data])
+                if with_ip and with_ip[0].get("_public_ip"):
+                    public_ip = with_ip[0].get("_public_ip")
+                    data["_public_ip"] = public_ip
+                    break
+            except Exception:
+                pass
+            time.sleep(2)
+
     job.step("完成")
     disp_name = data.get("display-name") or data.get("display_name") or req.display_name
     elapsed_time = round(time.time() - job.created, 1)
@@ -237,7 +252,7 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         ocpus=check["plan"]["ocpus"],
         memory_gb=check["plan"]["memory_gb"],
         boot_gb=check["plan"]["boot_gb"],
-        public_ip=data.get("_public_ip"),
+        public_ip=public_ip,
         ipv6=ipv6_addr,
         region=data.get("region"),
         success=True,
@@ -250,6 +265,7 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         "state": data.get("lifecycle-state") or data.get("lifecycle_state"),
         "preflight": check,
         "network_created": network_created,
+        "public_ip": public_ip,
         "ipv6": ipv6_addr,
         "ports_opened": req.open_all_ports,
         "root_password": req.root_password or None,
