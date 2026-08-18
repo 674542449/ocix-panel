@@ -1102,14 +1102,17 @@
 
                   <el-form-item label="SSH 公钥">
                     <div style="width:100%;">
-                      <el-input v-model="createForm.ssh_public_key" type="textarea" :rows="3" class="mono"
-                                placeholder="ssh-ed25519 AAAA... 或 ssh-rsa AAAA..." />
-                      <div style="margin-top:8px; display:flex; align-items:center; gap:10px;">
+                      <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
+                        <el-select v-model="selectedKeyId" placeholder="从公钥池快速选择" style="flex:1;" clearable @change="onSelectKeyFromVault">
+                          <el-option v-for="k in sshKeys" :key="k.id" :value="k.id" :label="k.name + ' (' + (k.key_type || 'SSH') + ')'" />
+                        </el-select>
                         <el-button size="small" @click="$refs.pubkeyInput.click()">从文件导入</el-button>
                         <input ref="pubkeyInput" type="file" accept=".pub,.txt,text/plain"
                                style="display:none;" @change="onPubKeyFile" />
-                        <span class="hint" v-if="pubKeyName">已导入 {{ pubKeyName }}</span>
                       </div>
+                      <el-input v-model="createForm.ssh_public_key" type="textarea" :rows="3" class="mono"
+                                placeholder="ssh-ed25519 AAAA... 或 ssh-rsa AAAA..." />
+                      <span class="hint" v-if="pubKeyName">已导入 {{ pubKeyName }}</span>
                     </div>
                   </el-form-item>
                 </el-form>
@@ -1765,6 +1768,11 @@
                   SSH 进不去时（防火墙关错、fstab 写坏、sshd 配置改崩）靠它救命，
                   走带外链路，不依赖实例的网络。
                 </p>
+                <div style="display:flex; gap:8px; margin-bottom:10px;">
+                  <el-select v-model="selectedConsoleKeyId" placeholder="从公钥池选择" style="flex:1;" clearable @change="onSelectConsoleKeyFromVault">
+                    <el-option v-for="k in sshKeys" :key="k.id" :value="k.id" :label="k.name + ' (' + (k.key_type || 'SSH') + ')'" />
+                  </el-select>
+                </div>
                 <div class="seg" role="group" aria-label="公钥提供方式" style="margin-bottom:10px;">
                   <button type="button" :class="{ on: consoleKeyMode === 'file' }"
                           @click="consoleKeyMode = 'file'">选择公钥文件</button>
@@ -1826,8 +1834,24 @@
                 原实例不受影响。新卷会占 200GB 额度。
               </p>
             </div>
+                  <!-- SSH 公钥添加/编辑模态框 -->
+        <el-dialog v-model="keyModalOpen" :title="keyModalTitle" width="540px">
+          <el-form label-position="top">
+            <el-form-item label="公钥备注名称">
+              <el-input v-model="keyForm.name" placeholder="例如 我的主力电脑 / MacBook Pro" />
+            </el-form-item>
+            <el-form-item label="公钥内容 (id_rsa.pub / id_ed25519.pub)">
+              <el-input v-model="keyForm.public_key" type="textarea" :rows="4" class="mono"
+                        placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... 或 ssh-rsa AAAA..." />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="keyModalOpen = false">取消</el-button>
+            <el-button type="primary" :loading="keySaving" @click="saveSshKey">保存公钥</el-button>
           </template>
-        </el-drawer>
+        </el-dialog>
+      </template>
+    </el-drawer>
 
         <!-- 网页终端 -->
         <el-dialog v-model="termOpen" :title="termTitle" width="min(1100px, 94vw)"
@@ -2099,6 +2123,84 @@
           </div>
         </section>
 
+        <!-- SSH 公钥池 -->
+        <section class="pane" v-show="activeTab === 'ssh_keys'">
+          <div class="card">
+            <div class="card-head">
+              <h2 class="card-title">SSH 公钥池</h2>
+              <el-button size="small" type="primary" @click="openCreateKeyModal">+ 添加 SSH 公钥</el-button>
+            </div>
+            <p class="hint" style="margin-top:-6px; margin-bottom:12px;">
+              集中管理你的 SSH 公钥。在新建实例或连接串口控制台时可直接下拉选用。
+            </p>
+            <div class="table-wrap" v-if="sshKeys.length">
+              <el-table :data="sshKeys" size="small" stripe border style="width:100%;">
+                <el-table-column prop="name" label="备注名称" min-width="150" />
+                <el-table-column prop="key_type" label="算法类型" width="110">
+                  <template #default="{row}">
+                    <el-tag size="small" type="success">{{ row.key_type || 'SSH' }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="fingerprint" label="SHA256 指纹" min-width="210">
+                  <template #default="{row}">
+                    <span class="mono" style="font-size:11.5px;">{{ row.fingerprint || '—' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="公钥预览" min-width="240">
+                  <template #default="{row}">
+                    <span class="mono" style="color:var(--text-3); font-size:11.5px;">
+                      {{ row.public_key.slice(0, 30) }}...{{ row.public_key.slice(-14) }}
+                    </span>
+                    <button class="copy-btn" @click="copy(row.public_key)" title="复制完整公钥">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                    </button>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="created_at" label="创建时间" width="150">
+                  <template #default="{row}"><span class="mono">{{ fmtDate(row.created_at) }}</span></template>
+                </el-table-column>
+                <el-table-column label="操作" width="140" fixed="right">
+                  <template #default="{row}">
+                    <el-button size="small" text type="primary" @click="openEditKeyModal(row)">编辑</el-button>
+                    <el-button size="small" text type="danger" @click="deleteSshKey(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div class="empty" v-else-if="!sshKeysLoading">
+              <b>公钥池还是空的</b>
+              点击右上角「+ 添加 SSH 公钥」保存你的第一把公钥。
+            </div>
+          </div>
+        </section>
+
+        <!-- Telegram 通知设置 -->
+        <section class="pane" v-show="activeTab === 'notification'">
+          <div class="card">
+            <div class="card-head">
+              <h2 class="card-title">Telegram 通知设置</h2>
+              <el-switch v-model="tgSettings.enabled" active-text="开启 TG 通知" />
+            </div>
+            <el-alert type="info" show-icon :closable="false" style="margin-bottom:16px;"
+                      title="通知范围说明"
+                      description="本功能仅在「创建实例成功/失败」和「删除/终止实例」时向 Telegram 发送通知，绝不发送多余垃圾信息。" />
+            <el-form label-position="top" style="max-width:600px;">
+              <el-form-item label="Telegram Bot Token">
+                <el-input v-model="tgSettings.bot_token" placeholder="例如 123456789:ABCdefGhIjKlMnOpQrStUvWxYz" class="mono" />
+                <p class="hint">从 @BotFather 创建机器人获取的 Token。</p>
+              </el-form-item>
+              <el-form-item label="接收通知的 Chat ID">
+                <el-input v-model="tgSettings.chat_id" placeholder="例如 123456789 或群组 -100123456789" class="mono" />
+                <p class="hint">你的个人 Telegram ID 或频道/群组 Chat ID（可向 @userinfobot 发送任意消息获取）。</p>
+              </el-form-item>
+              <div style="display:flex; gap:10px; margin-top:16px;">
+                <el-button type="primary" :loading="tgSaving" @click="saveTgSettings">保存配置</el-button>
+                <el-button :loading="tgTesting" @click="testTgConnection">发送测试消息</el-button>
+              </div>
+            </el-form>
+          </div>
+        </section>
+
         <!-- 密码 -->
         <section class="pane" v-show="activeTab === 'password'">
           <!-- Oracle 账号的密码策略放最前面：那条 120 天的强制改密就是它 -->
@@ -2256,6 +2358,7 @@ const NAV = [
     { name: 'create', label: '新建实例', icon: 'M12 5v14M5 12h14' },
     { name: 'storage', label: '存储', icon: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3' },
     { name: 'firewall', label: '防火墙', icon: 'M12 3l8 3v6c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V6z' },
+    { name: 'ssh_keys', label: 'SSH 公钥', icon: 'M15 7a2 2 0 0 1 2 2m4 0a6 6 0 0 1-7.743 5.743L11 17H9v2H7v2H4a1 1 0 0 1-1-1v-2.586a1 1 0 0 1 .293-.707l5.964-5.964A6 6 0 1 1 21 9z' },
   ]},
   { title: '观测', items: [
     { name: 'usage', label: '免费额度', icon: 'M20 12a8 8 0 1 0-8 8M12 12l4.5-3M12 20v.01' },
@@ -2265,6 +2368,7 @@ const NAV = [
   ]},
   { title: '设置', items: [
     { name: 'profile', label: '账户配置', icon: 'M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4' },
+    { name: 'notification', label: 'TG 通知', icon: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z' },
     { name: 'password', label: '密码', icon: 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3' },
     { name: 'update', label: '更新', icon: 'M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6' },
   ]},
@@ -2577,6 +2681,138 @@ createApp({
     watch(token, syncScene);
     onMounted(syncScene);
     onUnmounted(() => OcixScene.stop());
+
+    // ── SSH 公钥池与 Telegram 通知 ──
+    const sshKeys = ref([]);
+    const sshKeysLoading = ref(false);
+    const keyForm = reactive({ id: null, name: '', public_key: '' });
+    const keyModalOpen = ref(false);
+    const keySaving = ref(false);
+    const keyModalTitle = computed(() => keyForm.id ? '编辑 SSH 公钥' : '添加 SSH 公钥');
+    const selectedKeyId = ref(null);
+    const selectedConsoleKeyId = ref(null);
+
+    async function loadSshKeys() {
+      sshKeysLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/ssh-keys');
+        sshKeys.value = data.keys || [];
+      } catch (e) {
+        ElMessage.error(e.response?.data?.detail || '加载公钥列表失败');
+      } finally {
+        sshKeysLoading.value = false;
+      }
+    }
+
+    function openCreateKeyModal() {
+      keyForm.id = null;
+      keyForm.name = '';
+      keyForm.public_key = '';
+      keyModalOpen.value = true;
+    }
+
+    function openEditKeyModal(k) {
+      keyForm.id = k.id;
+      keyForm.name = k.name;
+      keyForm.public_key = k.public_key;
+      keyModalOpen.value = true;
+    }
+
+    async function saveSshKey() {
+      if (!keyForm.name.trim()) return ElMessage.warning('请输入公钥备注名称');
+      if (!keyForm.public_key.trim()) return ElMessage.warning('请输入公钥内容');
+      keySaving.value = true;
+      try {
+        if (keyForm.id) {
+          await axios.put(`/api/ssh-keys/${keyForm.id}`, { name: keyForm.name, public_key: keyForm.public_key });
+          ElMessage.success('公钥更新成功');
+        } else {
+          await axios.post('/api/ssh-keys', { name: keyForm.name, public_key: keyForm.public_key });
+          ElMessage.success('公钥添加成功');
+        }
+        keyModalOpen.value = false;
+        loadSshKeys();
+      } catch (e) {
+        ElMessage.error(e.response?.data?.detail || '保存公钥失败');
+      } finally {
+        keySaving.value = false;
+      }
+    }
+
+    async function deleteSshKey(k) {
+      try {
+        await ElMessageBox.confirm(`确认删除公钥「${k.name}」吗？`, '删除公钥', { type: 'warning' });
+        await axios.delete(`/api/ssh-keys/${k.id}`);
+        ElMessage.success('公钥已删除');
+        loadSshKeys();
+      } catch {}
+    }
+
+    function onSelectKeyFromVault(id) {
+      if (!id) return;
+      const hit = sshKeys.value.find(k => k.id === id);
+      if (hit) createForm.ssh_public_key = hit.public_key;
+    }
+
+    function onSelectConsoleKeyFromVault(id) {
+      if (!id) return;
+      const hit = sshKeys.value.find(k => k.id === id);
+      if (hit) consoleKey.value = hit.public_key;
+    }
+
+    const tgSettings = reactive({ enabled: false, bot_token: '', chat_id: '', has_token: false });
+    const tgLoading = ref(false);
+    const tgSaving = ref(false);
+    const tgTesting = ref(false);
+
+    async function loadTgSettings() {
+      tgLoading.value = true;
+      try {
+        const { data } = await axios.get('/api/system/telegram');
+        tgSettings.enabled = data.enabled || false;
+        tgSettings.bot_token = data.bot_token || '';
+        tgSettings.chat_id = data.chat_id || '';
+        tgSettings.has_token = data.has_token || false;
+      } catch (e) {
+        ElMessage.error(e.response?.data?.detail || '加载 Telegram 配置失败');
+      } finally {
+        tgLoading.value = false;
+      }
+    }
+
+    async function saveTgSettings() {
+      tgSaving.value = true;
+      try {
+        await axios.post('/api/system/telegram', {
+          enabled: tgSettings.enabled,
+          bot_token: tgSettings.bot_token,
+          chat_id: tgSettings.chat_id,
+        });
+        ElMessage.success('Telegram 配置保存成功');
+        loadTgSettings();
+      } catch (e) {
+        ElMessage.error(e.response?.data?.detail || '保存失败');
+      } finally {
+        tgSaving.value = false;
+      }
+    }
+
+    async function testTgConnection() {
+      if (!tgSettings.bot_token && !tgSettings.has_token) return ElMessage.warning('请填写 Bot Token');
+      if (!tgSettings.chat_id) return ElMessage.warning('请填写 Chat ID');
+      tgTesting.value = true;
+      try {
+        const { data } = await axios.post('/api/system/telegram/test', {
+          bot_token: tgSettings.bot_token,
+          chat_id: tgSettings.chat_id,
+        });
+        ElMessage.success(data.message || '测试消息发送成功！请检查 Telegram');
+      } catch (e) {
+        ElMessage.error(e.response?.data?.detail || '测试发送失败，请检查 Token 与 Chat ID');
+      } finally {
+        tgTesting.value = false;
+      }
+    }
 
     // ---- 数据 ----
     const instances = ref([]);
@@ -3433,6 +3669,8 @@ createApp({
     }
 
     function refreshActive() {
+      if (activeTab.value === 'ssh_keys') return loadSshKeys();
+      if (activeTab.value === 'notification') return loadTgSettings();
       if (activeTab.value === 'audit') return loadAudit(auditPage.value);
       if (activeTab.value === 'storage') return loadStorage();
       if (activeTab.value === 'update') return loadSystem(true);
@@ -3446,6 +3684,7 @@ createApp({
     async function bootData() {
       await loadProfiles();
       await loadCompartments();
+      await loadSshKeys();
       await loadSingle();
     }
 
@@ -4493,6 +4732,10 @@ createApp({
 
     return {
       loginCanvas, loginFlow,
+      // ── SSH 公钥池与 TG ──
+      sshKeys, sshKeysLoading, keyForm, keyModalOpen, keySaving, keyModalTitle, selectedKeyId, selectedConsoleKeyId,
+      loadSshKeys, openCreateKeyModal, openEditKeyModal, saveSshKey, deleteSshKey, onSelectKeyFromVault, onSelectConsoleKeyFromVault,
+      tgSettings, tgLoading, tgSaving, tgTesting, loadTgSettings, saveTgSettings, testTgConnection,
       currentTabLabel,
       instView, setInstView, bays, fleet,
       pwShown, rollRootPassword,

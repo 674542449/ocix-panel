@@ -19,6 +19,7 @@ from .routers import (
     monitor,
     profiles,
     provision,
+    ssh_keys,
     system,
     terminal,
 )
@@ -115,6 +116,7 @@ app.include_router(instances.router)
 app.include_router(monitor.router)
 app.include_router(provision.router)
 app.include_router(audit.router)
+app.include_router(ssh_keys.router)
 app.include_router(system.router)
 app.include_router(terminal.router)
 

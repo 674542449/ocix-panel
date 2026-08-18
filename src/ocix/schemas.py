@@ -302,3 +302,63 @@ class BatchActionRequest(BaseModel):
         if up not in VALID_ACTIONS:
             raise ValueError(f"不支持的操作，仅允许: {', '.join(VALID_ACTIONS)}")
         return up
+
+
+# ---- SSH 公钥池 ----
+class SSHKeyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    public_key: str
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        name = (v or "").strip()
+        if not name:
+            raise ValueError("公钥备注名称不能为空")
+        return name
+
+    @field_validator("public_key")
+    @classmethod
+    def _check_key(cls, v: str) -> str:
+        key = (v or "").strip()
+        if not key.startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-", "ssh-dss ")):
+            raise ValueError("SSH 公钥格式不对，应以 ssh-rsa / ssh-ed25519 / ecdsa-sha2- 开头")
+        if "PRIVATE KEY" in key:
+            raise ValueError("这是私钥，不要贴私钥——只需要 .pub 文件里的公钥")
+        return key
+
+
+class SSHKeyUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    public_key: str
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        name = (v or "").strip()
+        if not name:
+            raise ValueError("公钥备注名称不能为空")
+        return name
+
+    @field_validator("public_key")
+    @classmethod
+    def _check_key(cls, v: str) -> str:
+        key = (v or "").strip()
+        if not key.startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-", "ssh-dss ")):
+            raise ValueError("SSH 公钥格式不对，应以 ssh-rsa / ssh-ed25519 / ecdsa-sha2- 开头")
+        if "PRIVATE KEY" in key:
+            raise ValueError("这是私钥，不要贴私钥——只需要 .pub 文件里的公钥")
+        return key
+
+
+# ---- Telegram 通知设置 ----
+class TelegramSettingsRequest(BaseModel):
+    enabled: bool = False
+    bot_token: str = ""
+    chat_id: str = ""
+
+
+class TelegramTestRequest(BaseModel):
+    bot_token: str
+    chat_id: str
+

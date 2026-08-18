@@ -61,6 +61,17 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ssh_keys (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT UNIQUE NOT NULL,
+                public_key  TEXT NOT NULL,
+                fingerprint TEXT,
+                created_at  TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
         _ensure_column(conn, "audit_log", "ip", "TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC)")
 
@@ -79,6 +90,46 @@ def set_setting(key: str, value: str):
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, str(value)),
         )
+
+
+# ---- SSH 公钥池 ----
+def list_ssh_keys():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, name, public_key, fingerprint, created_at FROM ssh_keys ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_ssh_key(key_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, name, public_key, fingerprint, created_at FROM ssh_keys WHERE id=?",
+            (key_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def create_ssh_key(name: str, public_key: str, fingerprint: str = "") -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO ssh_keys (name, public_key, fingerprint) VALUES (?, ?, ?)",
+            (name.strip(), public_key.strip(), fingerprint.strip()),
+        )
+        return cur.lastrowid
+
+
+def update_ssh_key(key_id: int, name: str, public_key: str, fingerprint: str = "") -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE ssh_keys SET name=?, public_key=?, fingerprint=? WHERE id=?",
+            (name.strip(), public_key.strip(), fingerprint.strip(), key_id),
+        )
+
+
+def delete_ssh_key(key_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM ssh_keys WHERE id=?", (key_id,))
 
 
 # ---- 审计日志 ----

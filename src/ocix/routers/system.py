@@ -208,3 +208,81 @@ def trigger_update(request: Request, user: str = Depends(security.get_current_us
           detail=f"从 v{__version__} 请求更新", ip=ip)
     return {"ok": True, "state": "pending",
             "msg": "更新请求已提交，宿主机代理会在几秒内开始执行"}
+
+
+# ---- Telegram 通知设置 ----
+
+def _mask_token(token: str) -> str:
+    token = token.strip()
+    if not token:
+        return ""
+    if len(token) <= 8:
+        return "********"
+    return token[:4] + "*" * (len(token) - 8) + token[-4:]
+
+
+@router.get("/telegram")
+def get_telegram_settings(
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    from .. import db
+    enabled = db.get_setting("tg_enabled", "0") in ("1", "true", "True")
+    token = db.get_setting("tg_bot_token", "")
+    chat_id = db.get_setting("tg_chat_id", "")
+    return {
+        "enabled": enabled,
+        "bot_token": _mask_token(token),
+        "has_token": bool(token),
+        "chat_id": chat_id,
+    }
+
+
+@router.post("/telegram")
+def save_telegram_settings(
+    req: dict,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    ip = security.client_ip(request)
+    from .. import db
+    enabled = req.get("enabled", False)
+    bot_token = (req.get("bot_token") or "").strip()
+    chat_id = (req.get("chat_id") or "").strip()
+
+    db.set_setting("tg_enabled", "1" if enabled else "0")
+    if bot_token and not bot_token.startswith("****") and "*" not in bot_token:
+        db.set_setting("tg_bot_token", bot_token)
+    db.set_setting("tg_chat_id", chat_id)
+
+    audit(user, "update-telegram-settings", detail=f"enabled={enabled} chat_id={chat_id}", result="ok", ip=ip)
+    return {"ok": True}
+
+
+@router.post("/telegram/test")
+def test_telegram_connection(
+    req: dict,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    security.check_rate(request, security.API_RATE_LIMIT)
+    from .. import db, notifier
+    bot_token = (req.get("bot_token") or "").strip()
+    chat_id = (req.get("chat_id") or "").strip()
+
+    # 如果传进来的是脱敏后的 token，从库里读真实 token
+    if not bot_token or "*" in bot_token:
+        bot_token = db.get_setting("tg_bot_token", "")
+    if not chat_id:
+        chat_id = db.get_setting("tg_chat_id", "")
+
+    if not bot_token or not chat_id:
+        raise HTTPException(status_code=400, detail="请填写完整的 Bot Token 和 Chat ID")
+
+    ok, msg = notifier.test_telegram(bot_token, chat_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "message": msg}
+

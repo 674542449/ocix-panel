@@ -1,6 +1,8 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from .. import freetier, jobs, security
+from .. import freetier, jobs, notifier, security
 from ..cloudinit import ROOT_PW_TAG, root_password_cloud_config
 from ..common import OCIError, account_gate
 from ..db import audit
@@ -226,10 +228,25 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
                   detail=ipv6_addr, result="ok", ip=ip)
 
     job.step("完成")
+    disp_name = data.get("display-name") or data.get("display_name") or req.display_name
+    elapsed_time = round(time.time() - job.created, 1)
+    notifier.notify_instance_created(
+        profile=req.profile,
+        display_name=disp_name,
+        shape=req.shape,
+        ocpus=check["plan"]["ocpus"],
+        memory_gb=check["plan"]["memory_gb"],
+        boot_gb=check["plan"]["boot_gb"],
+        public_ip=data.get("_public_ip"),
+        ipv6=ipv6_addr,
+        region=data.get("region"),
+        success=True,
+        elapsed=elapsed_time,
+    )
     return {
         "ok": True,
         "instance_id": instance_id,
-        "display_name": data.get("display-name") or data.get("display_name"),
+        "display_name": disp_name,
         "state": data.get("lifecycle-state") or data.get("lifecycle_state"),
         "preflight": check,
         "network_created": network_created,
@@ -263,9 +280,24 @@ def create_instance(
     # 同一个账户 + 同一个实例名，正在跑就不再起第二个。
     # 用户手快点两下、或者被 524 吓到去重试，都不该变成两台机器。
     key = ("create-instance", req.profile, req.display_name)
+    def _do_work(j):
+        try:
+            return _run_create(j, req, params, user, ip)
+        except Exception as e:
+            err_msg = getattr(e, "detail", None) or getattr(e, "message", None) or str(e)
+            if isinstance(err_msg, dict):
+                err_msg = err_msg.get("message") or str(err_msg)
+            notifier.notify_instance_created(
+                profile=req.profile,
+                display_name=req.display_name,
+                shape=req.shape,
+                success=False,
+                error_msg=str(err_msg),
+            )
+            raise
+
     job, fresh = jobs.submit(
-        "create-instance", req.profile, key,
-        lambda j: _run_create(j, req, params, user, ip))
+        "create-instance", req.profile, key, _do_work)
     return {"job_id": job.id, "state": job.state, "started": fresh}
 
 
@@ -315,7 +347,15 @@ def terminate(
     audit(user, "terminate-instance", profile=req.profile, target=req.instance_id,
           detail="保留引导卷" if req.preserve_boot_volume else "同时删除引导卷",
           result="ok", ip=ip)
+    notifier.notify_instance_terminated(
+        profile=req.profile,
+        instance_id=req.instance_id,
+        preserve_boot_volume=req.preserve_boot_volume,
+        user=user,
+        ip=ip,
+    )
     return {"ok": True, "preserved_boot_volume": req.preserve_boot_volume}
+
 
 
 @router.get("/storage")
