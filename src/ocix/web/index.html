@@ -231,8 +231,9 @@
     .login-canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
     .login-veil { position:absolute; inset:0; pointer-events:none;
                   background:
-                    radial-gradient(circle at 50% 45%, rgba(43,114,214,0.14), transparent 65%),
-                    radial-gradient(80% 70% at 50% 50%, rgba(8,12,20,.72), rgba(8,12,20,.95) 85%); }
+                    radial-gradient(circle at 50% 45%, rgba(56,189,248,0.10), transparent 55%),
+                    radial-gradient(circle at 70% 60%, rgba(43,114,214,0.08), transparent 50%),
+                    radial-gradient(80% 70% at 50% 50%, rgba(8,12,20,.55), rgba(8,12,20,.88) 85%); }
 
     .login-stage { position:relative; width:100%; max-width:410px; padding:0 20px; z-index:10;
                    display:flex; flex-direction:column; align-items:center; }
@@ -2196,91 +2197,114 @@ const OcixScene = (() => {
     }
     nodes = REGIONS.map(([name, lat, lon]) => ({ name, v: toVec(lat, lon) }));
     flights = [];
-    for (let i = 0; i < (w < 700 ? 7 : 13); i++) flights.push(newFlight(Math.random()));
+    for (let i = 0; i < (w < 700 ? 10 : 18); i++) flights.push(newFlight(Math.random()));
   }
 
   function newFlight(t0) {
     let i = (Math.random() * nodes.length) | 0, j = (Math.random() * nodes.length) | 0;
     while (j === i) j = (Math.random() * nodes.length) | 0;
-    // 原来一趟要飞 4~10 秒，太拖。现在 2~4 秒穿一次，才像在传数据。
-    return { i, j, t: t0 || 0, speed: 0.24 + Math.random() * 0.26, announced: false };
+    return { i, j, t: t0 || 0, speed: 0.28 + Math.random() * 0.30, announced: false };
   }
 
   function draw(dt) {
     const L = layout();
     ctx.clearRect(0, 0, w, h);
 
-    // 球体本身：一层极淡的辉光，让球有体积感而不是一堆浮点
-    const g = ctx.createRadialGradient(L.cx, L.cy, L.R * 0.1, L.cx, L.cy, L.R * 1.25);
-    g.addColorStop(0, 'rgba(176,79,45,0.10)');
-    g.addColorStop(0.55, 'rgba(176,79,45,0.04)');
-    g.addColorStop(1, 'rgba(176,79,45,0)');
+    // 球体辉光：双层渐变——核心亮蓝 + 外围淡青，有体积感和深度
+    const g = ctx.createRadialGradient(L.cx, L.cy, L.R * 0.05, L.cx, L.cy, L.R * 1.35);
+    g.addColorStop(0, 'rgba(56,189,248,0.14)');
+    g.addColorStop(0.35, 'rgba(43,114,214,0.08)');
+    g.addColorStop(0.7, 'rgba(43,114,214,0.03)');
+    g.addColorStop(1, 'rgba(43,114,214,0)');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(L.cx, L.cy, L.R * 1.25, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(L.cx, L.cy, L.R * 1.35, 0, Math.PI * 2); ctx.fill();
 
-    // 点阵。背面的点压暗但不删——留着才有「透过球看到另一面」的感觉
+    // 赤道光晕环：淡环带凸显球体轮廓
+    ctx.strokeStyle = 'rgba(56,189,248,0.06)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(L.cx, L.cy, L.R * 1.02, L.R * 0.28, 0, 0, Math.PI * 2); ctx.stroke();
+
+    // 点阵：前面的点明亮青蓝，背面的压暗但保留半透明
     for (let k = 0; k < dots.length; k++) {
       const pt = project(rotY(dots[k], spin), L);
       const front = pt.z > 0;
-      const a = front ? 0.24 + pt.z * 0.55 : 0.07 + (1 + pt.z) * 0.08;
-      ctx.fillStyle = 'rgba(143,138,125,' + a.toFixed(3) + ')';
-      const r = (front ? 1.15 : 0.8) * pt.s * 0.62;
+      const a = front ? 0.32 + pt.z * 0.52 : 0.06 + (1 + pt.z) * 0.06;
+      ctx.fillStyle = front
+        ? 'rgba(148,194,220,' + a.toFixed(3) + ')'
+        : 'rgba(100,116,139,' + a.toFixed(3) + ')';
+      const r = (front ? 1.2 : 0.7) * pt.s * 0.65;
       ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2); ctx.fill();
     }
 
-    // 链路与数据包
+    // 链路弧线与数据包
     for (const f of flights) {
       const A = rotY(nodes[f.i].v, spin), B = rotY(nodes[f.j].v, spin);
-      const STEPS = 34;
-      // 弧线抬离球面，中间最高——两点越远抬得越高，跟真实的大圆航线一个道理
-      const lift = (t) => 1 + 0.30 * Math.sin(Math.PI * t);
+      const STEPS = 38;
+      const lift = (t) => 1 + 0.28 * Math.sin(Math.PI * t);
+
       ctx.beginPath();
       let started = false;
       for (let k = 0; k <= STEPS; k++) {
         const t = k / STEPS, m = slerp(A, B, t), lf = lift(t);
         const pt = project([m[0] * lf, m[1] * lf, m[2] * lf], L);
-        if (m[2] < -0.15) { started = false; continue; }   // 绕到球背面就断开
+        if (m[2] < -0.15) { started = false; continue; }
         if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
         else ctx.lineTo(pt.x, pt.y);
       }
-      ctx.strokeStyle = 'rgba(176,79,45,0.26)';
+      ctx.strokeStyle = 'rgba(56,189,248,0.22)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // 包头 + 拖尾。拖尾就是把前面几个时刻的位置画成渐隐的点
-      for (let q = 0; q < 12; q++) {
-        const t = f.t - q * 0.019;
+      // 数据包头 + 拖尾光迹
+      for (let q = 0; q < 14; q++) {
+        const t = f.t - q * 0.016;
         if (t < 0 || t > 1) continue;
         const m = slerp(A, B, t), lf = lift(t);
         const pt = project([m[0] * lf, m[1] * lf, m[2] * lf], L);
         if (m[2] < -0.1) continue;
-        const fade = (1 - q / 12);
-        ctx.fillStyle = q === 0
-          ? 'rgba(59,57,49,' + (1 * fade).toFixed(3) + ')'
-          : 'rgba(201,106,69,' + (0.7 * fade * fade).toFixed(3) + ')';
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, (q === 0 ? 2.9 : 1.8) * pt.s * 0.75, 0, Math.PI * 2);
-        ctx.fill();
+        const fade = (1 - q / 14);
+        if (q === 0) {
+          // 包头：明亮白芯 + 外层光晕
+          ctx.fillStyle = 'rgba(224,242,254,' + (0.95 * fade).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 2.6 * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(56,189,248,0.25)';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 5.5 * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
+        } else {
+          ctx.fillStyle = 'rgba(56,189,248,' + (0.6 * fade * fade).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 1.6 * pt.s * 0.75, 0, Math.PI * 2); ctx.fill();
+        }
       }
     }
 
-    // 区域节点：正面的画成小圈，背面的不画
+    // 区域节点：正面高亮，带脉冲扩散环
     for (const nd of nodes) {
       const v = rotY(nd.v, spin);
       if (v[2] <= 0.02) continue;
       const pt = project(v, L);
       const fl = nd.flash || 0;
-      const a = Math.min(1, 0.34 + v[2] * 0.55 + fl * 0.5);
+      const a = Math.min(1, 0.45 + v[2] * 0.5 + fl * 0.5);
+
+      // 节点核心
       ctx.fillStyle = fl > 0.02
-        ? 'rgba(' + (95 + 130 * fl).toFixed(0) + ',' + (168 + 70 * fl).toFixed(0) + ',' +
-          (181 + 60 * fl).toFixed(0) + ',' + a.toFixed(3) + ')'
-        : 'rgba(176,79,45,' + a.toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, (1.9 + fl * 1.6) * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
-      // 抵达时向外扩一圈，扩完就没——和状态点的脉冲同一个语汇
-      ctx.strokeStyle = 'rgba(176,79,45,' + (a * (0.32 + fl * 0.5)).toFixed(3) + ')';
+        ? 'rgba(' + (56 + 168 * fl).toFixed(0) + ',' + (189 + 50 * fl).toFixed(0) + ',248,' + a.toFixed(3) + ')'
+        : 'rgba(56,189,248,' + a.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, (2.2 + fl * 2) * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
+
+      // 常驻外环
+      ctx.strokeStyle = 'rgba(56,189,248,' + (a * (0.28 + fl * 0.55)).toFixed(3) + ')';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, (5.2 + fl * 9) * pt.s * 0.8, 0, Math.PI * 2); ctx.stroke();
+      ctx.arc(pt.x, pt.y, (5.5 + fl * 12) * pt.s * 0.8, 0, Math.PI * 2); ctx.stroke();
+
+      // 抵达脉冲光晕
+      if (fl > 0.1) {
+        ctx.fillStyle = 'rgba(56,189,248,' + (fl * 0.12).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, (8 + fl * 18) * pt.s * 0.8, 0, Math.PI * 2); ctx.fill();
+      }
     }
   }
 
