@@ -23,8 +23,12 @@ for arg in "$@"; do
   esac
 done
 
+git config --global --add safe.directory "$REPO_ROOT" 2>/dev/null || true
+rm -f .git/index.lock .git/FETCH_HEAD.lock .git/refs/heads/*.lock 2>/dev/null || true
+
 git rev-parse --git-dir >/dev/null 2>&1 || die "${REPO_ROOT} 不是 git 仓库，没法自动更新。请重新 git clone 一份。"
 
+CURRENT="$(cat VERSION 2>/dev/null || echo unknown)"
 REMOTE_URL="$(git remote get-url origin 2>/dev/null || echo '未设置')"
 echo "当前版本 v${CURRENT} (远端: ${REMOTE_URL})"
 
