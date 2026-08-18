@@ -865,31 +865,6 @@
             </div>
             <p class="hint">被 Oracle 回收或停掉的免费实例不会自动重开，需要你手动点击「开机」——这是为了守住 Oracle 的回收策略，不做抢机。</p>
           </div>
-        </section> </template>
-                </el-table-column>
-                <el-table-column label="创建于" width="100">
-                  <template #default="{row}"><span class="mono">{{ fmtDate(row.time_created) }}</span></template>
-                </el-table-column>
-                <el-table-column label="操作" width="316" fixed="right">
-                  <template #default="{row}">
-                    <div class="row-actions">
-                      <el-button size="small" type="primary" plain @click="openDetail(row)"
-                                 :loading="isBusy('detail:' + row.id)">详情</el-button>
-                      <el-button size="small" type="success" :disabled="!canStart(row)" @click="act(row,'START')">开机</el-button>
-                      <el-button size="small" :disabled="!canStop(row)" @click="act(row,'SOFTSTOP')">关机</el-button>
-                      <el-button size="small" type="warning" :disabled="!canReset(row)" @click="act(row,'SOFTRESET')">重启</el-button>
-                      <el-button size="small" text class="term-btn" @click="terminate(row)">终止</el-button>
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-            <div class="empty" v-else-if="!loading">
-              <b>这个账户下没有实例</b>
-              换个 compartment，或勾选「含子 compartment」再查一次。
-            </div>
-            <p class="hint">被 Oracle 回收或停掉的免费实例不会自动重开，需要你手动点击「开机」——这是为了守住 Oracle 的回收策略，不做抢机。</p>
-          </div>
         </section>
 
         <!-- 新建实例 -->
