@@ -10,6 +10,36 @@ from . import db
 
 logger = logging.getLogger("ocix.notifier")
 
+_SERVER_IP_CACHE: str | None = None
+_SERVER_IP_CACHE_TIME: float = 0.0
+
+
+def get_server_public_ip() -> str:
+    """获取面板宿主机公网 IP（带 1 小时内存缓存）。"""
+    global _SERVER_IP_CACHE, _SERVER_IP_CACHE_TIME
+    now = datetime.now().timestamp()
+    if _SERVER_IP_CACHE and (now - _SERVER_IP_CACHE_TIME < 3600):
+        return _SERVER_IP_CACHE
+
+    services = [
+        "https://api64.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com",
+    ]
+    for url in services:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                ip = resp.read().decode("utf-8").strip()
+                if ip and len(ip) <= 45:
+                    _SERVER_IP_CACHE = ip
+                    _SERVER_IP_CACHE_TIME = now
+                    return ip
+        except Exception:
+            continue
+
+    return _SERVER_IP_CACHE or "未知"
+
 
 def _post_telegram(bot_token: str, chat_id: str, text: str, parse_mode: str = "HTML") -> tuple[bool, str]:
     """同步发送 Telegram 消息。返回 (是否成功, 提示信息)。"""
@@ -70,12 +100,14 @@ def send_telegram_async(text: str, bot_token: str | None = None, chat_id: str | 
 
 def test_telegram(bot_token: str, chat_id: str) -> tuple[bool, str]:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    server_ip = get_server_public_ip()
     msg = (
         "🤖 <b>【OCIX 控制台】Telegram 通知测试</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"• 状态: <b>连接成功</b>\n"
-        f"• 时间: {now_str}\n"
-        "• 说明: 实例开机、关机、创建与删除通知已就绪。"
+        f"• <b>状态</b>: <b>连接成功</b>\n"
+        f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
+        f"• <b>时间</b>: {now_str}\n"
+        "• <b>说明</b>: 实例开机、关机、创建与删除通知已就绪。"
     )
     return _post_telegram(bot_token, chat_id, msg)
 
@@ -96,6 +128,7 @@ def notify_instance_created(
 ) -> None:
     """通知实例创建（开机）成功或失败。"""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    server_ip = get_server_public_ip()
     region_info = f" ({html.escape(region)})" if region else ""
     p_safe = html.escape(str(profile))
     n_safe = html.escape(str(display_name))
@@ -120,6 +153,7 @@ def notify_instance_created(
         if ipv6:
             text += f"• <b>IPv6</b>: <code>{html.escape(str(ipv6))}</code>\n"
         text += (
+            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
             f"• <b>耗时</b>: {elapsed:.1f}s\n"
             f"• <b>时间</b>: {now_str}"
         )
@@ -132,6 +166,7 @@ def notify_instance_created(
             f"• <b>实例名</b>: <code>{n_safe}</code>\n"
             f"• <b>规格</b>: {s_safe}\n"
             f"• <b>原因</b>: <i>{err_safe}</i>\n"
+            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
             f"• <b>时间</b>: {now_str}"
         )
 
@@ -148,6 +183,7 @@ def notify_instance_terminated(
 ) -> None:
     """通知实例终止/删机。"""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    server_ip = get_server_public_ip()
     p_safe = html.escape(str(profile))
     id_safe = html.escape(str(instance_id))
     name_str = f"<code>{html.escape(str(display_name))}</code>\n• <b>OCID</b>: " if display_name else ""
@@ -161,6 +197,7 @@ def notify_instance_terminated(
         f"• <b>账户</b>: <code>{p_safe}</code>\n"
         f"• <b>实例</b>: {name_str}<code>{id_safe}</code>\n"
         f"• <b>存储处理</b>: {boot_action}\n"
+        f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
         f"• <b>操作人</b>: <code>{actor_safe}</code>\n"
         f"• <b>时间</b>: {now_str}"
     )
@@ -188,6 +225,7 @@ def notify_instance_action(
     }
     title, desc = action_map.get(action.upper(), (f"⚡ 实例操作 ({action})", action))
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    server_ip = get_server_public_ip()
     p_safe = html.escape(str(profile))
     id_safe = html.escape(str(instance_id))
     name_str = f"<code>{html.escape(str(display_name))}</code>\n• <b>OCID</b>: " if display_name else ""
@@ -201,6 +239,7 @@ def notify_instance_action(
             f"• <b>账户</b>: <code>{p_safe}</code>\n"
             f"• <b>实例</b>: {name_str}<code>{id_safe}</code>\n"
             f"• <b>状态</b>: {desc}\n"
+            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
             f"• <b>操作人</b>: <code>{actor_safe}</code>\n"
             f"• <b>时间</b>: {now_str}"
         )
@@ -212,6 +251,7 @@ def notify_instance_action(
             f"• <b>账户</b>: <code>{p_safe}</code>\n"
             f"• <b>实例</b>: {name_str}<code>{id_safe}</code>\n"
             f"• <b>原因</b>: <i>{err_safe}</i>\n"
+            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
             f"• <b>操作人</b>: <code>{actor_safe}</code>\n"
             f"• <b>时间</b>: {now_str}"
         )
