@@ -156,27 +156,28 @@
               position:sticky; top:0; z-index:20; flex-wrap:wrap;
               box-shadow:0 4px 20px -2px rgba(0,0,0,0.4); }
     .brand { display:flex; align-items:center; gap:9px; white-space:nowrap; }
-    .brand .wordmark { font-family:var(--mono); font-weight:700; font-size:15px;
+    .brand .wordmark { font-family:var(--mono); font-size:18px; font-weight:700;
                        letter-spacing:.16em; color:#ffffff; }
     .brand .wordmark b { color:#38bdf8; font-weight:700; }
-    .brand small { display:block; font-weight:400; font-size:10px; color:var(--text-3);
-                   letter-spacing:0; }
+    .brand small { display:block; font-weight:400; font-size:10px; color:var(--text-3); letter-spacing:0; }
     .topbar-right { display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; }
     .who { color:var(--text-2); font-size:12.5px; }
 
     /* 左侧竖向导航 + 右侧内容 */
     .shell { display:flex; align-items:flex-start; min-height:calc(100vh - 57px); }
-    .rail { width:212px; flex:none; padding:var(--sp-4) var(--sp-3); align-self:stretch;
+    .rail { width:228px; flex:none; padding:var(--sp-4) var(--sp-3) var(--sp-3); align-self:stretch;
             border-right:1px solid rgba(255, 255, 255, 0.08);
             background:rgba(11, 15, 25, 0.65); -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px);
-            position:sticky; top:57px; max-height:calc(100vh - 57px); overflow-y:auto; }
+            position:sticky; top:57px; height:calc(100vh - 57px);
+            display:flex; flex-direction:column; justify-content:space-between; box-sizing:border-box; }
+    .rail nav { flex:1; overflow-y:auto; min-height:0; }
     .rail-group + .rail-group { margin-top:var(--sp-4); }
     .rail-title { font-size:10px; letter-spacing:.14em; text-transform:uppercase;
                   color:var(--text-3); padding:0 10px var(--sp-2); font-weight:600; }
     .rail-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
-                 background:none; border:0; color:var(--text-2); font-family:var(--sans);
-                 font-size:13.5px; padding:9px 12px; border-radius:8px; cursor:pointer;
-                 transition:background .18s ease, color .18s ease, transform .15s ease; position:relative; }
+                  background:none; border:0; color:var(--text-2); font-family:var(--sans);
+                  font-size:13.5px; padding:9px 12px; border-radius:8px; cursor:pointer;
+                  transition:background .18s ease, color .18s ease, transform .15s ease; position:relative; }
     .rail-item svg { width:16px; height:16px; flex:none; opacity:.8; }
     .rail-item:hover { background:rgba(255, 255, 255, 0.06); color:#ffffff; }
     .rail-item.on { background:linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0.04));
@@ -185,8 +186,12 @@
     .rail-item.on::before { content:""; position:absolute; left:0; top:8px; bottom:8px;
                             width:3px; border-radius:0 3px 3px 0;
                             background:#38bdf8; box-shadow:0 0 8px #38bdf8; }
-    .rail-item em { margin-left:auto; font-style:normal; font-size:11px; font-weight:600;
-                    background:var(--crit); color:#ffffff; border-radius:9px; padding:1px 6px; }
+    .rail-foot { margin-top:auto; padding:14px 8px 4px; border-top:1px solid rgba(255, 255, 255, 0.08);
+                 display:flex; align-items:center; justify-content:space-between; gap:12px; flex:none; box-sizing:border-box; }
+    .rail-foot .ver { font-family:var(--mono); font-size:11px; color:var(--text-3); white-space:nowrap; flex:none; }
+    .rail-foot .svc { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--text-2); white-space:nowrap; flex:none; }
+    .rail-foot .dot { margin-right:2px; }
+
     .main { flex:1; min-width:0; padding:var(--sp-5); max-width:1440px; }
     .pane { display:block; }
     .pane > .card + .card { margin-top:var(--sp-4); }
@@ -226,11 +231,12 @@
     .login-canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
     .login-veil { position:absolute; inset:0; pointer-events:none;
                   background:
-                    radial-gradient(circle at 50% 50%, rgba(43,114,214,0.12), transparent 70%),
-                    radial-gradient(80% 70% at 50% 50%, rgba(8,12,20,.75), rgba(8,12,20,.95) 85%); }
+                    radial-gradient(circle at 50% 45%, rgba(43,114,214,0.14), transparent 65%),
+                    radial-gradient(80% 70% at 50% 50%, rgba(8,12,20,.72), rgba(8,12,20,.95) 85%); }
 
-    .login-stage { position:relative; width:100%; max-width:400px; padding:0 20px; z-index:10; }
-    .login-panel { width:100%; padding:38px 32px 30px;
+    .login-stage { position:relative; width:100%; max-width:410px; padding:0 20px; z-index:10;
+                   display:flex; flex-direction:column; align-items:center; }
+    .login-panel { width:100%; padding:36px 32px 32px;
                    background:rgba(15, 23, 42, 0.78); border:1px solid rgba(255,255,255,.09);
                    border-radius:18px;
                    box-shadow:0 24px 64px -12px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.1);
@@ -260,15 +266,16 @@
                                      box-shadow:0 4px 14px rgba(43,114,214,.35); transition:all .2s ease; }
     .login-panel .el-button--large:hover { background:#3b82f6; border-color:#3b82f6; transform:translateY(-1px); box-shadow:0 6px 18px rgba(43,114,214,.45); }
 
-    /* 卡片底部的微状态芯片条 */
-    .login-footer-micro { margin-top:24px; padding-top:18px; border-top:1px solid rgba(255,255,255,.07); }
-    .hud-chips { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:10px; }
-    .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 8px;
-            border:1px solid rgba(255,255,255,.08); border-radius:6px; background:rgba(30,41,59,.45);
-            font-size:11px; color:#cbd5e1; white-space:nowrap; }
+    /* 卡片下方的极简微状态条 */
+    .login-hud-bottom { margin-top:20px; width:100%; display:flex; flex-direction:column; align-items:center; gap:8px; }
+    .hud-chips { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+    .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 9px;
+            border:1px solid rgba(255,255,255,.08); border-radius:6px; background:rgba(15,23,42,.65);
+            font-size:11px; color:#cbd5e1; white-space:nowrap;
+            -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
     .chip b { color:#ffffff; font-weight:600; }
     .chip-spec { color:var(--text-3); }
-    .chip-arm { border-color:rgba(56,189,248,.25); background:rgba(15,23,42,.6); }
+    .chip-arm { border-color:rgba(56,189,248,.25); background:rgba(15,23,42,.8); }
     .led { flex:none; width:6px; height:6px; border-radius:50%; background:var(--ok);
            animation:breathe 3.2s ease-in-out infinite; }
     .chip:nth-child(2) .led { animation-delay:-1.3s; }
@@ -277,12 +284,6 @@
     .hud-meta code { background:rgba(255,255,255,.06); color:#38bdf8; padding:1px 5px; border-radius:4px; font-size:10.5px; }
     .hud-flow { color:#38bdf8; opacity:.85; }
     .hud-flow .arrow { color:#64748b; margin:0 3px; }
-    }
-
-    .rail-foot { margin-top:var(--sp-5); padding:var(--sp-3) 10px 0; border-top:1px solid rgba(255, 255, 255, 0.08);
-                 display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
-    .rail-foot .ver { font-family:var(--mono); font-size:11px; color:var(--text-3); }
-    .rail-foot .svc { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--text-2); }
 
     .alloc-k { font-family:var(--mono); font-size:10px; letter-spacing:.12em;
                text-transform:uppercase; color:var(--text-3); }
@@ -572,19 +573,19 @@
           <el-button type="primary" size="large" style="width:100%; margin-top:8px;" @click="doLogin"
                      :loading="loading">登录控制台</el-button>
         </el-form>
-
-        <div class="login-footer-micro">
-          <div class="hud-chips" aria-label="Always Free 额度">
-            <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
-            <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
-            <span class="chip chip-arm"><i class="led" aria-hidden="true"></i><b>ARM Ampere A1</b><span class="chip-spec">4 OCPU · 24 GB</span></span>
-          </div>
-          <div class="hud-meta mono">
-            <span>200 GB 存储</span>
-            <span class="hud-flow" ref="loginFlow" aria-hidden="true"></span>
-          </div>
-        </div>
       </section>
+
+      <footer class="login-hud-bottom">
+        <div class="hud-chips" aria-label="Always Free 额度">
+          <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
+          <span class="chip"><i class="led" aria-hidden="true"></i><b>AMD Micro</b><span class="chip-spec">1 OCPU · 1 GB</span></span>
+          <span class="chip chip-arm"><i class="led" aria-hidden="true"></i><b>ARM Ampere A1</b><span class="chip-spec">4 OCPU · 24 GB</span></span>
+        </div>
+        <div class="hud-meta mono">
+          <span>200 GB 免费存储</span>
+          <span class="hud-flow" ref="loginFlow" aria-hidden="true"></span>
+        </div>
+      </footer>
     </main>
   </div>
 
