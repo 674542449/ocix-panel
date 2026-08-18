@@ -1324,15 +1324,16 @@
                 <h2 class="card-title">新增入站规则</h2>
               </div>
               <div class="rule-form">
-                <el-select v-model="ruleForm.protocol" style="width:104px;" size="default">
-                  <el-option v-for="p in ['TCP','UDP','ICMP','ALL']" :key="p" :value="p" :label="p" />
+                <el-select v-model="ruleForm.protocol" style="width:116px;" size="default">
+                  <el-option v-for="p in ['ALL','TCP','UDP','ICMP','ICMPv6']" :key="p" :value="p"
+                             :label="p === 'ALL' ? '全部协议' : p" />
                 </el-select>
                 <el-input-number v-model="ruleForm.port_from" :min="1" :max="65535"
-                                 :disabled="ruleForm.protocol === 'ICMP' || ruleForm.protocol === 'ALL'"
+                                 :disabled="ruleForm.protocol === 'ICMP' || ruleForm.protocol === 'ICMPv6' || ruleForm.protocol === 'ALL'"
                                  controls-position="right" style="width:118px;" />
                 <span class="rule-sep">至</span>
                 <el-input-number v-model="ruleForm.port_to" :min="1" :max="65535"
-                                 :disabled="ruleForm.protocol === 'ICMP' || ruleForm.protocol === 'ALL'"
+                                 :disabled="ruleForm.protocol === 'ICMP' || ruleForm.protocol === 'ICMPv6' || ruleForm.protocol === 'ALL'"
                                  controls-position="right" style="width:118px;" />
                 <el-select v-model="ruleForm.source" style="width:158px;" filterable allow-create>
                   <el-option value="0.0.0.0/0" label="0.0.0.0/0（任意 IPv4）" />

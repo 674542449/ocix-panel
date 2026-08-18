@@ -123,10 +123,11 @@ def test_open_all_replaces_existing_rules(fw):
     assert all(r["protocol"] == "all" for r in fw.ingress_rules)
 
 
-def test_open_all_skips_ipv6_when_subnet_has_none(fw):
+def test_open_all_skips_ipv6_when_disabled(fw):
     fw.subnet = {"security_list_ids": ["sl1"]}
-    H.open_all_ports_on_subnet("P", "sub1", include_ipv6=True)
+    H.open_all_ports_on_subnet("P", "sub1", include_ipv6=False)
     assert [r["source"] for r in fw.ingress_rules] == ["0.0.0.0/0"]
+    assert all(r["protocol"] == "all" for r in fw.ingress_rules)
 
 
 def test_add_single_port_rule(fw):

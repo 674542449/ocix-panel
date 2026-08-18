@@ -783,10 +783,10 @@ def _ensure_ipv6_route(profile: str, vcn_id: str, compartment_id: str, route_tab
 
 
 def _ensure_ipv6_ingress(profile: str, subnet_id: str) -> None:
-    """放行 ::/0 的 SSH 入站。
+    """放行 ::/0 的入站。
 
-    OCI 默认安全列表只写了 IPv4 的规则，不补这一条的话 IPv6 地址分下来也连不上，
-    看起来就像「IPv6 不好使」。
+    若现有安全列表已是全放行状态（0.0.0.0/0 全部协议），则为 IPv6 同步放行全部协议；
+    否则补一条 IPv6 SSH (22) 入站规则。
     """
     sub = _b().get_subnet(profile, subnet_id)
     sl_ids = _get(sub, "security-list-ids", "security_list_ids", default=[]) or []
@@ -794,13 +794,21 @@ def _ensure_ipv6_ingress(profile: str, subnet_id: str) -> None:
         return
     sid = sl_ids[0]
     rules = _raw_ingress(profile, sid)
-    if any(r.get("source") == _ALL_V6 for r in rules):
+    if any(r.get("source") == _ALL_V6 and r.get("protocol") in ("all", "6") for r in rules):
         return
-    rules.append({
-        "protocol": "6", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
-        "isStateless": False, "description": "ocix: ssh over ipv6",
-        "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}},
-    })
+
+    has_all_v4 = any(r.get("source") == _ALL_V4 and r.get("protocol") == "all" for r in rules)
+    if has_all_v4:
+        rules.append({
+            "protocol": "all", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
+            "isStateless": False, "description": "ocix: allow all (IPv6)",
+        })
+    else:
+        rules.append({
+            "protocol": "6", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
+            "isStateless": False, "description": "ocix: ssh over ipv6",
+            "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}},
+        })
     _set_ingress(profile, sid, rules)
 
 
@@ -1053,17 +1061,17 @@ def _subnet_security(profile: str, subnet_id: str) -> tuple:
 
 
 def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = True) -> dict:
-    """清空子网安全列表的入站规则，只保留全放行。
+    """清空子网安全列表的入站规则，只保留 IPv4 + IPv6 全部协议全放行。
 
     先删除 Oracle 预置的默认规则（仅 22 端口 + ICMP）再写入，
     避免与全放行规则重复叠加，规则列表也更容易看懂。
     """
-    sid, ipv6_ready = _subnet_security(profile, subnet_id)
+    sid, _ = _subnet_security(profile, subnet_id)
     before = len(_raw_ingress(profile, sid))
 
     rules = [{"protocol": "all", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
               "isStateless": False, "description": "ocix: allow all (IPv4)"}]
-    if include_ipv6 and ipv6_ready:
+    if include_ipv6:
         rules.append({"protocol": "all", "source": _ALL_V6, "sourceType": "CIDR_BLOCK",
                       "isStateless": False, "description": "ocix: allow all (IPv6)"})
 
