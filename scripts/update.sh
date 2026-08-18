@@ -33,10 +33,10 @@ REMOTE_URL="$(git remote get-url origin 2>/dev/null || echo '未设置')"
 echo "当前版本 v${CURRENT} (远端: ${REMOTE_URL})"
 
 echo "检查远端…"
-if ! git fetch --tags origin; then
+if ! git fetch --tags --force origin; then
   echo ""
   warn "直接拉取失败，尝试设置 10 秒超时重试…"
-  if ! git -c http.timeout=15 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=10 fetch --tags origin; then
+  if ! git -c http.timeout=15 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=10 fetch --tags --force origin; then
     die "拉取远端失败！请检查：\n  1. 服务器到 GitHub 的网络连通性\n  2. 远端地址是否正确 (当前: ${REMOTE_URL})\n  可尝试在服务器上执行： git remote set-url origin https://github.com/674542449/ocix-panel.git"
   fi
 fi
