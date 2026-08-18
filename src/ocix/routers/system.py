@@ -248,17 +248,35 @@ def save_telegram_settings(
     security.check_rate(request, security.API_RATE_LIMIT)
     ip = security.client_ip(request)
     from .. import db
-    enabled = req.get("enabled", False)
+    enabled = req.get("enabled", True)
     bot_token = (req.get("bot_token") or "").strip()
     chat_id = (req.get("chat_id") or "").strip()
 
-    db.set_setting("tg_enabled", "1" if enabled else "0")
     if bot_token and not bot_token.startswith("****") and "*" not in bot_token:
         db.set_setting("tg_bot_token", bot_token)
-    db.set_setting("tg_chat_id", chat_id)
+    if chat_id:
+        db.set_setting("tg_chat_id", chat_id)
 
-    audit(user, "update-telegram-settings", detail=f"enabled={enabled} chat_id={chat_id}", result="ok", ip=ip)
-    return {"ok": True}
+    stored_token = db.get_setting("tg_bot_token", "")
+    stored_cid = db.get_setting("tg_chat_id", "")
+    if stored_token and stored_cid and enabled:
+        db.set_setting("tg_enabled", "1")
+    else:
+        db.set_setting("tg_enabled", "1" if enabled else "0")
+
+    audit(
+        user,
+        "update-telegram-settings",
+        detail=f"enabled={enabled} chat_id={stored_cid}",
+        result="ok",
+        ip=ip,
+    )
+    return {
+        "ok": True,
+        "enabled": db.get_setting("tg_enabled", "0") in ("1", "true", "True"),
+        "has_token": bool(stored_token),
+        "chat_id": stored_cid,
+    }
 
 
 @router.post("/telegram/test")

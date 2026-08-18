@@ -1738,14 +1738,17 @@
                 原实例不受影响。新卷会占 200GB 额度。
               </p>
             </div>
-                  <!-- SSH 公钥添加/编辑模态框 -->
-        <el-dialog v-model="keyModalOpen" :title="keyModalTitle" width="540px">
+          </template>
+        </el-drawer>
+
+        <!-- SSH 公钥添加/编辑模态框 -->
+        <el-dialog v-model="keyModalOpen" :title="keyModalTitle" width="540px" append-to-body>
           <el-form label-position="top">
             <el-form-item label="公钥备注名称">
               <el-input v-model="keyForm.name" placeholder="例如 我的主力电脑 / MacBook Pro" />
             </el-form-item>
             <el-form-item label="公钥内容 (id_rsa.pub / id_ed25519.pub)">
-              <el-input v-model="keyForm.public_key" type="textarea" :rows="4" class="mono"
+              <el-input v-model="keyForm.public_key" type="textarea" :rows="5" class="mono"
                         placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... 或 ssh-rsa AAAA..." />
             </el-form-item>
           </el-form>
@@ -1754,8 +1757,6 @@
             <el-button type="primary" :loading="keySaving" @click="saveSshKey">保存公钥</el-button>
           </template>
         </el-dialog>
-      </template>
-    </el-drawer>
 
         <!-- 网页终端 -->
         <el-dialog v-model="termOpen" :title="termTitle" width="min(1100px, 94vw)"
@@ -2091,7 +2092,10 @@
             <el-form label-position="top" style="max-width:600px;">
               <el-form-item label="Telegram Bot Token">
                 <el-input v-model="tgSettings.bot_token" placeholder="例如 123456789:ABCdefGhIjKlMnOpQrStUvWxYz" class="mono" />
-                <p class="hint">从 @BotFather 创建机器人获取的 Token。</p>
+                <p class="hint" v-if="tgSettings.has_token" style="color:var(--ok); font-weight:500;">
+                  ✓ 已保存有效 Token（如无需更换可保持不变）。
+                </p>
+                <p class="hint" v-else>从 @BotFather 创建机器人获取的 Token。</p>
               </el-form-item>
               <el-form-item label="接收通知的 Chat ID">
                 <el-input v-model="tgSettings.chat_id" placeholder="例如 123456789 或群组 -100123456789" class="mono" />
