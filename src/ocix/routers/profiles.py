@@ -20,8 +20,11 @@ from ..config import KEYS_DIR, OCI_CONFIG_PATH
 from ..db import (
     audit,
     delete_profile_db,
+    get_account_tier,
+    get_all_account_tiers,
     get_setting,
     list_profiles_db,
+    set_account_tier,
     set_setting,
     upsert_profile,
 )
@@ -175,6 +178,7 @@ def _parse_config_text(text: str) -> configparser.ConfigParser:
 def get_profiles(user: str = Depends(security.get_current_user)):
     file_profiles = list_profiles_from_config()
     db_by_name = {p["name"]: p for p in list_profiles_db()}
+    db_tiers = get_all_account_tiers()
     merged = []
     for name in file_profiles:
         meta = db_by_name.get(name, {})
@@ -192,6 +196,7 @@ def get_profiles(user: str = Depends(security.get_current_user)):
             "key_file": key_file,
             "key_exists": bool(key_file) and Path(key_file).expanduser().exists(),
             "validated": bool(meta),
+            "tier": db_tiers.get(name),
             "created_at": meta.get("created_at"),
         })
     return {"profiles": merged}
@@ -300,9 +305,24 @@ async def import_profile(
     _save_main_config(cp)
     invalidate_compartment_cache(name)
 
-    # ---- 立刻用 oci iam user get 验证密钥可用性 ----
+    # ---- 立刻用 oci iam user get 验证密钥可用性（带重试抗抖动） ----
     try:
-        get_user(name)
+        last_err = None
+        for attempt in range(3):
+            try:
+                invalidate_compartment_cache(name)
+                get_user(name)
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    import time
+                    time.sleep(0.4)
+                    continue
+        if last_err is not None:
+            raise last_err
+
         cfg = read_profile_config(name)
         upsert_profile(
             name,
@@ -472,19 +492,27 @@ def profile_tier(
     name: str,
     request: Request,
     limits: bool = Query(True, description="是否附带服务限额（列表页不需要，可关掉少一次请求）"),
+    refresh: bool = Query(False, description="是否强制重新检测"),
     user: str = Depends(security.get_current_user),
 ):
     """账户等级：免费号还是已升级。
 
     Oracle 没有给普通租户一个直白的等级标志位，
     这里综合订阅信息与服务限额来判断，并把依据一并返回。
+    检测结果持久化存储，无需每次刷新重复请求。
     """
     security.check_rate(request, security.API_RATE_LIMIT)
     _check_name(name)
+    if not refresh:
+        saved = get_account_tier(name)
+        if saved:
+            return saved
     try:
         # 跨账户串行：多个号同时打 OCI 容易被对方限流
         with account_gate(name):
-            return account_tier(name, with_limits=limits)
+            res = account_tier(name, with_limits=limits)
+            set_account_tier(name, res)
+            return res
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
 

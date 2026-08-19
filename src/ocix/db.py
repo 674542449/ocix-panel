@@ -68,12 +68,53 @@ def init_db():
                 name        TEXT UNIQUE NOT NULL,
                 public_key  TEXT NOT NULL,
                 fingerprint TEXT,
+                tier_data   TEXT,
                 created_at  TEXT DEFAULT (datetime('now'))
             )
             """
         )
+        _ensure_column(conn, "profiles", "tier_data", "TEXT")
         _ensure_column(conn, "audit_log", "ip", "TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC)")
+
+
+# ---- 账户等级持久化 ----
+def set_account_tier(profile: str, tier_info: dict):
+    import json
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE profiles SET tier_data=? WHERE name=?",
+            (json.dumps(tier_info, ensure_ascii=False), profile),
+        )
+
+
+def get_account_tier(profile: str) -> dict | None:
+    import json
+    try:
+        with get_conn() as conn:
+            row = conn.execute("SELECT tier_data FROM profiles WHERE name=?", (profile,)).fetchone()
+            if row and row["tier_data"]:
+                return json.loads(row["tier_data"])
+    except Exception:
+        pass
+    return None
+
+
+def get_all_account_tiers() -> dict[str, dict]:
+    import json
+    res = {}
+    try:
+        with get_conn() as conn:
+            rows = conn.execute("SELECT name, tier_data FROM profiles WHERE tier_data IS NOT NULL").fetchall()
+            for r in rows:
+                if r["tier_data"]:
+                    try:
+                        res[r["name"]] = json.loads(r["tier_data"])
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return res
 
 
 # ---- 通用键值设置 ----

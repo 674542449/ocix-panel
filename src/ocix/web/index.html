@@ -3228,6 +3228,12 @@ createApp({
         const { data } = await axios.get('/api/profiles');
         profiles.value = data.profiles;
         const names = profiles.value.map(p => p.name);
+        // 读取后端持久化存储的账户等级
+        const initialTiers = {};
+        for (const p of (data.profiles || [])) {
+          if (p.tier) initialTiers[p.name] = p.tier;
+        }
+        tiers.value = { ...initialTiers, ...tiers.value };
         // 锁定的账户优先。必须等账户列表回来之后再定值：
         // 提前设的话下拉框里还没有对应选项，框会显示成空的，
         // 明明用着 DEFAULT 却看不出来。
@@ -3235,6 +3241,9 @@ createApp({
           currentProfile.value = lockedProfile.value;
         } else if (!names.includes(currentProfile.value)) {
           currentProfile.value = names[0] || '';
+        }
+        if (currentProfile.value && tiers.value[currentProfile.value]) {
+          tier.value = tiers.value[currentProfile.value];
         }
       } catch (e) {
         ElMessage.error(errMsg(e, '账户列表加载失败'));
@@ -3815,8 +3824,8 @@ createApp({
       compartmentId.value = '';
       metricInstance.value = ''; metrics.value = []; usage.value = null;
       storage.value = null; preflight.value = null;
-      // 等级是按账户算的，换账户必须清掉，否则会把上一个账户的结论安在新账户头上
-      tier.value = {};
+      // 等级若已有持久化记录则直接使用，无需重新检测
+      tier.value = tiers.value[currentProfile.value] || {};
       egress.value = {}; cost.value = {}; invoices.value = {};
       consolePolicy.value = { supported: false, policies: [] };
       firewall.value = null; fwInstance.value = '';
@@ -4074,10 +4083,11 @@ createApp({
       }
       await withBusy('tier:' + name, async () => {
         try {
-          // 列表只显示一个标签，不要限额明细，省一次请求
+          // 列表只显示一个标签，不要限额明细，省一次请求；点击时强制重新检测并持久化
           const { data } = await axios.get(
-            `/api/profiles/${encodeURIComponent(name)}/tier`, { params: { limits: false } });
+            `/api/profiles/${encodeURIComponent(name)}/tier`, { params: { limits: false, refresh: true } });
           tiers.value = { ...tiers.value, [name]: data };
+          if (name === currentProfile.value) tier.value = data;
           // 接口判不出来时返回的是 200 + tier:unknown，不是报错。
           // 这种情况必须用警告色——弹一个绿色的「成功：无法确定」很荒唐。
           const label = data.label || TIER_SHORT[data.tier] || '未知';
@@ -4111,8 +4121,9 @@ createApp({
           try {
             // 列表只显示一个标签，不要限额，省一次请求
             const { data } = await axios.get(
-              `/api/profiles/${encodeURIComponent(name)}/tier`, { params: { limits: false } });
+              `/api/profiles/${encodeURIComponent(name)}/tier`, { params: { limits: false, refresh: !!force } });
             tiers.value = { ...tiers.value, [name]: data };
+            if (name === currentProfile.value) tier.value = data;
           } catch (e) {
             // 单个账户失败不影响其它账户，把失败原因留在悬浮提示里
             tiers.value = { ...tiers.value, [name]: {
@@ -4629,8 +4640,11 @@ createApp({
       tierLoading.value = true;
       try {
         const { data } = await axios.get(
-          `/api/profiles/${encodeURIComponent(currentProfile.value)}/tier`);
+          `/api/profiles/${encodeURIComponent(currentProfile.value)}/tier`,
+          { params: { limits: true, refresh: !!force } }
+        );
         tier.value = data;
+        tiers.value = { ...tiers.value, [currentProfile.value]: data };
       } catch (e) {
         tier.value = {};
         ElMessage.error(errMsg(e, '账户等级检测失败'));
