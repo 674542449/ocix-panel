@@ -981,15 +981,18 @@
                   <el-form-item label="可用域 (AD 域)">
                     <div style="width:100%;">
                       <el-select v-model="createForm.availability_domain" style="width:100%;"
-                                 filterable allow-create default-first-option
-                                 placeholder="选择或直接输入可用域 (如 ...-AD-1)">
+                                 filterable
+                                 placeholder="选择可用域">
                         <el-option v-for="ad in opts.availability_domains" :key="ad" :value="ad" :label="ad" />
                       </el-select>
-                      <div style="margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                        <span style="font-size:11.5px; color:var(--text-3);">快速切换 AD：</span>
-                        <el-button size="small" text bg @click="switchAdNumber('1')">AD-1</el-button>
-                        <el-button size="small" text bg @click="switchAdNumber('2')">AD-2</el-button>
-                        <el-button size="small" text bg @click="switchAdNumber('3')">AD-3</el-button>
+                      <div v-if="opts.availability_domains && opts.availability_domains.length > 1"
+                           style="margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <span style="font-size:11.5px; color:var(--text-3);">切换可用域：</span>
+                        <el-button v-for="it in opts.availability_domains" :key="it" size="small"
+                                   :type="createForm.availability_domain === it ? 'primary' : 'default'"
+                                   text bg @click="createForm.availability_domain = it">
+                          {{ it.split('-').slice(-2).join('-') || it }}
+                        </el-button>
                       </div>
                     </div>
                   </el-form-item>
@@ -2924,19 +2927,6 @@ createApp({
       ElMessage.info(`已切换至新建实例，并自动选中可用域 ${ad}`);
     }
 
-    function switchAdNumber(num) {
-      const cur = createForm.availability_domain || (opts.value.availability_domains && opts.value.availability_domains[0]) || '';
-      if (!cur) {
-        createForm.availability_domain = `AD-${num}`;
-        return;
-      }
-      if (/AD-\d+/i.test(cur)) {
-        createForm.availability_domain = cur.replace(/AD-\d+/i, `AD-${num}`);
-      } else {
-        createForm.availability_domain = `${cur}-AD-${num}`;
-      }
-    }
-
     function rollName() { createForm.display_name = randomName(); }
 
     function onPubKeyFile(e) {
@@ -4783,7 +4773,7 @@ createApp({
       auditLogs, auditTotal, auditActions, auditPage, auditSize, auditLoading, auditFilter,
       opts, optsLoading, createForm, isArm, canCreate, creating,
       preflight, preflightLoading, storage, storageLoading,
-      radarForm, radarLoading, radarData, setRadarSpec, scanRadar, jumpToCreateWithAd, switchAdNumber,
+      radarForm, radarLoading, radarData, setRadarSpec, scanRadar, jumpToCreateWithAd,
       doLogin, logout, refreshActive, loadMetrics, loadAudit,
       onProfileChange, onTabChange, act, batchAct, clearInstSelection,
       canStart, canStop, canReset, stateTone, stateText, specText,
