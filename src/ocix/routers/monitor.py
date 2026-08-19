@@ -1,13 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from .. import security
 from ..common import OCIError, account_gate, gather, list_profiles_from_config
 from ..oci_helpers import (
     egress_usage,
+    export_cost_csv,
+    export_invoices_csv,
     free_tier_usage,
     get_metrics,
+    get_payment_methods,
     list_invoices,
     month_cost,
+    period_cost,
 )
 
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
@@ -114,5 +118,79 @@ def cost(
     try:
         with account_gate(profile):
             return month_cost(profile)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.get("/cost/period")
+def cost_period(
+    profile: str,
+    period: str = Query("current_month", pattern="^(current_month|last_month|last_3_months|last_6_months)$"),
+    request: Request = None,
+    user: str = Depends(security.get_current_user),
+):
+    """指定期间的成本与消费分析（本月/上月/近3月/近6月）。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        with account_gate(profile):
+            return period_cost(profile, period)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.get("/payment-methods")
+def payment_methods(
+    profile: str,
+    request: Request = None,
+    user: str = Depends(security.get_current_user),
+):
+    """获取绑定的支付方式与结算周期（脱敏展示）。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        with account_gate(profile):
+            return get_payment_methods(profile)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.get("/invoices/download")
+def download_invoices_csv(
+    profile: str,
+    request: Request = None,
+    user: str = Depends(security.get_current_user),
+):
+    """导出账单列表为 CSV 报表文件。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        with account_gate(profile):
+            content = export_invoices_csv(profile)
+            filename = f"oci-invoices-{profile}.csv"
+            return Response(
+                content=content,
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            )
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.get("/cost/export")
+def download_cost_csv(
+    profile: str,
+    period: str = Query("current_month", pattern="^(current_month|last_month|last_3_months|last_6_months)$"),
+    request: Request = None,
+    user: str = Depends(security.get_current_user),
+):
+    """导出期间成本分析为 CSV 报表文件。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        with account_gate(profile):
+            content = export_cost_csv(profile, period)
+            filename = f"oci-cost-{profile}-{period}.csv"
+            return Response(
+                content=content,
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            )
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)

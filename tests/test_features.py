@@ -577,6 +577,25 @@ def test_billing_endpoints(app_client, live_backend):
     assert cost.status_code == 200
     assert cost.json()["total"] == 1.0
 
+    period = app_client.get("/api/monitor/cost/period?profile=EXISTING&period=current_month")
+    assert period.status_code == 200
+    assert period.json()["total"] == 1.0
+    assert period.json()["period"] == "current_month"
+
+    pm = app_client.get("/api/monitor/payment-methods?profile=EXISTING")
+    assert pm.status_code == 200
+    assert pm.json()["total"] >= 1
+
+    inv_dl = app_client.get("/api/monitor/invoices/download?profile=EXISTING")
+    assert inv_dl.status_code == 200
+    assert "text/csv" in inv_dl.headers["content-type"]
+    assert "账单编号" in inv_dl.text
+
+    cost_dl = app_client.get("/api/monitor/cost/export?profile=EXISTING&period=current_month")
+    assert cost_dl.status_code == 200
+    assert "text/csv" in cost_dl.headers["content-type"]
+    assert "云服务名称" in cost_dl.text
+
     eg = app_client.get("/api/monitor/egress?profile=EXISTING")
     assert eg.status_code == 200
     assert eg.json()["limit_gb"] == 10 * 1024

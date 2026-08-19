@@ -245,6 +245,9 @@ class Backend(ABC):
                       limit: int) -> list: ...
 
     @abstractmethod
+    def list_payment_methods(self, profile: str, tenancy_id: str, home_region: str = None) -> list: ...
+
+    @abstractmethod
     def summarize_usage(self, profile: str, tenant_id: str, start, end,
                         granularity: str, group_by: list) -> list: ...
 

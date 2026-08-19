@@ -501,6 +501,25 @@
     .el-pagination .el-pager li.is-active { background:#38bdf8 !important; color:#080c14 !important; font-weight:700; border-color:#38bdf8 !important; }
     .el-pagination .el-pagination__total { color:#cbd5e1 !important; font-weight:600; font-size:13px; }
 
+    /* ── 企业级财务中心 (Financial Center) ── */
+    .fin-grid { display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-4); margin-bottom:var(--sp-4); }
+    @media (max-width:1000px) { .fin-grid { grid-template-columns:1fr; } }
+    .pay-card { background:linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9));
+                border:1px solid rgba(255, 255, 255, 0.1); border-radius:12px; padding:18px 20px;
+                position:relative; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+    .pay-card::after { content:""; position:absolute; right:-20px; bottom:-20px; width:120px; height:120px;
+                       background:radial-gradient(circle, rgba(56, 189, 248, 0.15), transparent 70%); pointer-events:none; }
+    .pay-card-brand { font-size:13px; font-weight:700; color:#38bdf8; letter-spacing:.05em; text-transform:uppercase; margin-bottom:12px; }
+    .pay-card-num { font-family:var(--mono); font-size:19px; font-weight:700; letter-spacing:.12em; color:#ffffff; margin-bottom:14px; }
+    .pay-card-foot { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-3); }
+    .cost-bar-wrap { margin-bottom:12px; }
+    .cost-bar-head { display:flex; align-items:center; justify-content:space-between; font-size:12.5px; margin-bottom:5px; }
+    .cost-bar-track { height:8px; background:rgba(255, 255, 255, 0.08); border-radius:4px; overflow:hidden; }
+    .cost-bar-fill { height:100%; border-radius:4px; transition:width .3s ease; }
+    .fin-tier-banner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+                       background:rgba(30, 41, 59, 0.5); border:1px solid rgba(255, 255, 255, 0.1);
+                       border-radius:10px; padding:14px 18px; margin-bottom:var(--sp-4); }
+
     /* ── Element Plus 深度暗黑重写 ── */
     .el-table { background:transparent !important; color:var(--text) !important; }
     .el-table th.el-table__cell { background:rgba(30, 41, 59, 0.7) !important; color:var(--text-2) !important; border-bottom:1px solid rgba(255, 255, 255, 0.08) !important; font-weight:600; }
@@ -1904,49 +1923,121 @@
           <div class="term-wrap"><div ref="termEl" style="height:100%;"></div></div>
         </el-dialog>
 
-        <!-- 账单 -->
+        <!-- 财务中心 (Financial Center) -->
         <section class="pane" v-show="activeTab === 'billing'">
-          <div class="card">
-            <div class="card-head">
-              <h2 class="card-title">当月消费</h2>
-              <el-button size="small" @click="loadBilling(true)" :loading="billingLoading">刷新</el-button>
+          <!-- 账户类型与说明横幅 -->
+          <div class="fin-tier-banner">
+            <div>
+              <b style="font-size:14px; color:#ffffff;">Oracle Cloud 财务与成本中心</b>
+              <div style="font-size:12px; color:var(--text-3); margin-top:3px;">
+                Always Free（免费层）账户享受永久免费配额，无账单扣费；升级号（按量付费/付费订阅）提供全方位成本监控、期间对账与账单导出。
+              </div>
             </div>
-            <template v-if="cost.total !== undefined">
-              <div class="stats" style="margin-bottom:14px;">
-                <div class="stat"><div class="v">{{ cost.currency || '' }} {{ cost.total }}</div><div class="k">本月至今</div></div>
-                <div class="stat"><div class="v">{{ (cost.by_service || []).length }}</div><div class="k">计费服务</div></div>
-              </div>
-              <div class="table-wrap" v-if="(cost.by_service || []).length">
-                <el-table :data="cost.by_service" size="small" stripe border>
-                  <el-table-column prop="service" label="服务" min-width="200" />
-                  <el-table-column label="金额" width="140">
-                    <template #default="{row}">
-                      <span class="mono">{{ cost.currency }} {{ row.amount }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-              <p class="hint" v-if="cost.error" style="color:var(--crit);">{{ cost.error }}</p>
-            </template>
-            <div class="empty" v-else-if="!billingLoading">
-              <b>暂无消费数据</b>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <el-button size="small" @click="loadBilling(true)" :loading="billingLoading">刷新财务数据</el-button>
             </div>
           </div>
 
+          <!-- 支付方式与成本概览两栏布局 -->
+          <div class="fin-grid">
+            <!-- 支付方式 -->
+            <div class="card" style="margin-bottom:0;">
+              <div class="card-head">
+                <h2 class="card-title">支付方式与结算</h2>
+                <span class="who">安全只读</span>
+              </div>
+              <div v-for="pm in (paymentMethods.methods || [])" :key="pm.subscription_id" class="pay-card" style="margin-bottom:12px;">
+                <div class="pay-card-brand">{{ pm.card_brand }} · {{ pm.plan_type }}</div>
+                <div class="pay-card-num">{{ pm.masked_card }}</div>
+                <div class="pay-card-foot">
+                  <span>结算币种：<b style="color:#ffffff;">{{ pm.currency }}</b></span>
+                  <span>{{ pm.billing_cycle }}</span>
+                  <span class="state"><i class="dot ok"></i><span class="state-label">{{ pm.status }}</span></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 期间成本与预测分析 -->
+            <div class="card" style="margin-bottom:0;">
+              <div class="card-head">
+                <h2 class="card-title">成本分析与预测</h2>
+                <el-button size="small" text bg @click="downloadCostCsv">导出成本明细 (CSV)</el-button>
+              </div>
+              <div style="margin-bottom:14px;">
+                <el-radio-group v-model="selectedPeriod" size="small" @change="loadPeriodCost">
+                  <el-radio-button value="current_month">本月至今</el-radio-button>
+                  <el-radio-button value="last_month">上月整月</el-radio-button>
+                  <el-radio-button value="last_3_months">近 3 个月</el-radio-button>
+                  <el-radio-button value="last_6_months">近 6 个月</el-radio-button>
+                </el-radio-group>
+              </div>
+              <div class="stats" style="margin-bottom:16px;">
+                <div class="stat">
+                  <div class="v" style="color:#38bdf8;">{{ periodCost.currency || 'USD' }} {{ periodCost.total || '0.00' }}</div>
+                  <div class="k">期间实际消费</div>
+                </div>
+                <div class="stat" v-if="selectedPeriod === 'current_month'">
+                  <div class="v" style="color:#fde047;">{{ periodCost.currency || 'USD' }} {{ periodCost.forecast_total || '0.00' }}</div>
+                  <div class="k">本月预估总消费</div>
+                </div>
+                <div class="stat">
+                  <div class="v">{{ (periodCost.by_service || []).length }}</div>
+                  <div class="k">涉及计费服务</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 各云服务消费明细与占比 -->
           <div class="card">
             <div class="card-head">
-              <h2 class="card-title">账单记录</h2>
-              <span class="who" v-if="invoices.summary && invoices.summary.total">
-                共 {{ invoices.summary.total }} 张
+              <h2 class="card-title">云服务消费分布与排行</h2>
+              <span class="who" v-if="periodCost.start_date">
+                {{ periodCost.start_date }} 至 {{ periodCost.end_date }}
               </span>
             </div>
+            <div v-if="(periodCost.by_service || []).length">
+              <div v-for="it in periodCost.by_service" :key="it.service" class="cost-bar-wrap">
+                <div class="cost-bar-head">
+                  <span style="font-weight:600; color:#f8fafc;">{{ it.service }}</span>
+                  <span class="mono" style="font-weight:600; color:#38bdf8;">
+                    {{ periodCost.currency || 'USD' }} {{ it.amount }}
+                    <small style="color:var(--text-3); font-weight:400; margin-left:6px;">
+                      ({{ (periodCost.total > 0 ? (it.amount / periodCost.total * 100).toFixed(1) : '0.0') }}%)
+                    </small>
+                  </span>
+                </div>
+                <div class="cost-bar-track">
+                  <div class="cost-bar-fill" :style="{ width: Math.min(100, Math.max(2, (periodCost.total > 0 ? (it.amount / periodCost.total * 100) : 0))) + '%', background: '#38bdf8' }"></div>
+                </div>
+              </div>
+            </div>
+            <div class="empty" v-else-if="!billingLoading">
+              <b>当前期间无计费服务消费</b>
+              <span>{{ periodCost.note || 'Always Free 免费配额内零费用运行' }}</span>
+            </div>
+          </div>
+
+          <!-- 账单记录与在线下载 -->
+          <div class="card">
+            <div class="card-head">
+              <h2 class="card-title">账单开具记录与对账</h2>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="who" v-if="invoices.summary && invoices.summary.total">
+                  共 {{ invoices.summary.total }} 张账单
+                </span>
+                <el-button size="small" text bg @click="downloadInvoicesCsv" :disabled="!invoices.invoices || !invoices.invoices.length">
+                  导出账单报表 (CSV)
+                </el-button>
+              </div>
+            </div>
             <template v-if="invoices.invoices">
-              <div class="stats" style="margin-bottom:14px;" v-if="invoices.summary.total">
+              <div class="stats" style="margin-bottom:14px;" v-if="invoices.summary && invoices.summary.total">
                 <div class="stat crit" v-if="invoices.summary.overdue">
                   <div class="v">{{ invoices.summary.overdue }}</div><div class="k">已逾期</div>
                 </div>
-                <div class="stat"><div class="v">{{ invoices.summary.unpaid }}</div><div class="k">待支付</div></div>
-                <div class="stat ok"><div class="v">{{ invoices.summary.paid }}</div><div class="k">已支付</div></div>
+                <div class="stat"><div class="v">{{ invoices.summary.unpaid || 0 }}</div><div class="k">待支付</div></div>
+                <div class="stat ok"><div class="v">{{ invoices.summary.paid || 0 }}</div><div class="k">已支付</div></div>
               </div>
               <div class="table-wrap" v-if="invoices.invoices.length">
                 <el-table :data="invoices.invoices" size="small" stripe border>
@@ -1954,33 +2045,36 @@
                     <template #default="{row}">
                       <span class="state">
                         <i :class="['dot', invoiceDot(row.state)]"></i>
-                        <span class="state-label">{{ invoiceText(row.state) }}</span>
+                        <span class="state-label" style="font-weight:600;">{{ invoiceText(row.state) }}</span>
                       </span>
                     </template>
                   </el-table-column>
-                  <el-table-column prop="number" label="账单号" min-width="140" show-overflow-tooltip />
-                  <el-table-column label="账单日期" width="120">
-                    <template #default="{row}"><span class="mono">{{ fmtDay(row.time_invoice) }}</span></template>
+                  <el-table-column label="账单号" min-width="160" show-overflow-tooltip>
+                    <template #default="{row}"><b style="color:#ffffff;">{{ row.number || row.invoice_id || '—' }}</b></template>
+                  </el-table-column>
+                  <el-table-column label="开票日期" width="120">
+                    <template #default="{row}"><span class="mono" style="color:#e2e8f0;">{{ fmtDay(row.time_invoice) }}</span></template>
                   </el-table-column>
                   <el-table-column label="到期日" width="120">
-                    <template #default="{row}"><span class="mono">{{ fmtDay(row.time_due) }}</span></template>
+                    <template #default="{row}"><span class="mono" style="color:#e2e8f0;">{{ fmtDay(row.time_due) }}</span></template>
                   </el-table-column>
-                  <el-table-column label="金额" width="130">
+                  <el-table-column label="开票金额" width="130">
                     <template #default="{row}">
-                      <span class="mono">{{ row.currency }} {{ row.amount ?? '—' }}</span>
+                      <span class="mono" style="color:#38bdf8; font-weight:700;">{{ row.currency }} {{ row.amount ?? '—' }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="待付" width="130">
+                  <el-table-column label="待付金额" width="130">
                     <template #default="{row}">
-                      <span class="mono" :style="row.state !== 'paid' && row.amount_due ? 'color:var(--warn);' : ''">
+                      <span class="mono" :style="row.state !== 'paid' && row.amount_due ? 'color:#fda4af; font-weight:700;' : 'color:#cbd5e1;'">
                         {{ row.amount_due ?? '—' }}
                       </span>
                     </template>
                   </el-table-column>
                 </el-table>
               </div>
-              <div class="empty" v-else>
-                <b>暂无账单记录</b>
+              <div class="empty" v-else-if="!billingLoading">
+                <b>暂无计费账单</b>
+                <span>Always Free 免费号不产生官方计费账单。</span>
               </div>
             </template>
           </div>
@@ -2339,7 +2433,7 @@ const NAV = [
     { name: 'radar', label: '容量雷达', icon: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z' },
     { name: 'usage', label: '免费额度', icon: 'M21.21 15.89A10 10 0 1 1 8 2.83M22 12A10 10 0 0 0 12 2v10z' },
     { name: 'metrics', label: '监控', icon: 'M3 3v18h18M19 9l-5 5-4-4-3 3' },
-    { name: 'billing', label: '账单', icon: 'M2 5h20v14H2zM2 10h20' },
+    { name: 'billing', label: '财务中心', icon: 'M2 5h20v14H2zM2 10h20' },
     { name: 'audit', label: '审计', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8' },
   ]},
   { title: '设置', items: [
@@ -2877,6 +2971,9 @@ createApp({
     const egressLoading = ref(false);
     const cost = ref({});
     const invoices = ref({});
+    const periodCost = ref({});
+    const selectedPeriod = ref('current_month');
+    const paymentMethods = ref({ methods: [], total: 0 });
     const billingLoading = ref(false);
     const tier = ref({});
     const tierLoading = ref(false);
@@ -4098,19 +4195,41 @@ createApp({
       } finally { egressLoading.value = false; }
     }
 
+    async function loadPeriodCost() {
+      if (!currentProfile.value) return;
+      try {
+        const { data } = await axios.get('/api/monitor/cost/period', {
+          params: { profile: currentProfile.value, period: selectedPeriod.value },
+        });
+        periodCost.value = data;
+      } catch (e) {
+        periodCost.value = {};
+      }
+    }
+
     async function loadBilling(force) {
       if (!currentProfile.value) return;
-      if (cost.value.total !== undefined && !force) return;
+      if (periodCost.value.total !== undefined && !force) return;
       billingLoading.value = true;
       try {
-        // 串起来查，不并发：这两个都打 OCI
-        const c = await axios.get('/api/monitor/cost', { params: { profile: currentProfile.value } });
-        cost.value = c.data;
+        await loadPeriodCost();
         const inv = await axios.get('/api/monitor/invoices', { params: { profile: currentProfile.value } });
         invoices.value = inv.data;
+        const pm = await axios.get('/api/monitor/payment-methods', { params: { profile: currentProfile.value } });
+        paymentMethods.value = pm.data;
       } catch (e) {
-        ElMessage.error(errMsg(e, '账单查询失败'));
+        ElMessage.error(errMsg(e, '财务数据查询失败'));
       } finally { billingLoading.value = false; }
+    }
+
+    function downloadInvoicesCsv() {
+      if (!currentProfile.value) return;
+      window.open('/api/monitor/invoices/download?profile=' + encodeURIComponent(currentProfile.value), '_blank');
+    }
+
+    function downloadCostCsv() {
+      if (!currentProfile.value) return;
+      window.open('/api/monitor/cost/export?profile=' + encodeURIComponent(currentProfile.value) + '&period=' + encodeURIComponent(selectedPeriod.value), '_blank');
     }
 
     async function openDetail(row) {
@@ -4798,7 +4917,7 @@ createApp({
       termConnecting, termConnected, termEl, termTitle,
       openTerm, closeTerm, termConnect, onPrivateKeyFile,
       egress, egressLoading, loadEgress, fmtGb, fmtDay,
-      cost, invoices, billingLoading, loadBilling, invoiceDot, invoiceText,
+      cost, invoices, periodCost, selectedPeriod, paymentMethods, billingLoading, loadBilling, loadPeriodCost, downloadInvoicesCsv, downloadCostCsv, invoiceDot, invoiceText,
       tierDot, tierText, tierTitle, tierDotOf,
       sys, sysLoading, loadSystem,
       changeIp, changePerformance,

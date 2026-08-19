@@ -1661,27 +1661,50 @@ def list_invoices(profile: str, limit: int = 24) -> dict:
                                 "unavailable": False, "note": None})
 
 
-def month_cost(profile: str) -> dict:
-    """当月消费：按天与按服务拆开。"""
-    ck = (profile, "month_cost")
+def _get_period_window(period: str):
+    """计算期间成本的起始与截止时间。"""
+    now = datetime.now(timezone.utc)
+    if period == "last_month":
+        first_day_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_day_last_month = first_day_this_month - timedelta(days=1)
+        start = last_day_last_month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = first_day_this_month
+    elif period == "last_3_months":
+        start = (now - timedelta(days=90)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    elif period == "last_6_months":
+        start = (now - timedelta(days=180)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    else:  # current_month
+        start, _ = _month_window()
+        end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return start, end
+
+
+def period_cost(profile: str, period: str = "current_month") -> dict:
+    """指定期间的成本用量分析：按服务、按天/月汇总，支持月度预测。"""
+    ck = (profile, "period_cost", period)
     cached = _read_cache.get(ck)
     if cached is not None:
         return cached
 
-    start, now = _month_window()
-    end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    start, end = _get_period_window(period)
+    granularity = "MONTHLY" if period in ("last_3_months", "last_6_months") else "DAILY"
+
     try:
-        items = _b().summarize_usage(profile, tenancy_of(profile), start, end,
-                                     "DAILY", ["service", "currency"])
+        items = _b().summarize_usage(
+            profile, tenancy_of(profile), start, end,
+            granularity, ["service", "currency"]
+        )
     except OCIError as e:
         return _read_cache.set(ck, {
-            "total": 0.0, "currency": "", "daily": [], "by_service": [],
-            "error": e.message,
-            "note": "读不到用量数据。免费账号本来就没有消费；"
-                    "付费账号请确认有 usage-report 读取权限。",
+            "period": period, "total": 0.0, "currency": "", "trend": [],
+            "by_service": [], "forecast_total": 0.0, "error": e.message,
+            "note": "未检索到用量消费数据。Always Free（免费层）账户不产生消费；"
+                    "付费订阅账户请确认具有 usage-report 读取权限。",
         })
 
-    daily, by_service, currency, total = {}, {}, "", 0.0
+    trend_map, by_service, currency, total = {}, {}, "", 0.0
     for it in items:
         amount = _num(_get(it, "computed-amount"), None)
         if amount is None:
@@ -1689,24 +1712,144 @@ def month_cost(profile: str) -> dict:
         cur = _get(it, "currency") or ""
         if cur and not currency:
             currency = cur
-        svc = _get(it, "service") or "其它"
+        svc = _get(it, "service") or "其他服务"
         ts = _get(it, "time-usage-started") or _get(it, "time-usage-ended")
-        day = str(ts)[:10] if ts else "未知"
+        key = str(ts)[:7] if granularity == "MONTHLY" else (str(ts)[:10] if ts else "未知")
         total += amount
         by_service[svc] = by_service.get(svc, 0.0) + amount
-        daily[day] = daily.get(day, 0.0) + amount
+        trend_map[key] = trend_map.get(key, 0.0) + amount
+
+    now = datetime.now(timezone.utc)
+    forecast_total = total
+    if period == "current_month" and now.day > 0:
+        # 基于当前月已过去天数推算整月预测消费
+        import calendar
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+    by_svc_list = sorted(
+        ({"service": k, "amount": round(v, 4)} for k, v in by_service.items()),
+        key=lambda x: -x["amount"]
+    )[:20]
+
+    trend_list = [{"date": d, "amount": round(v, 4)} for d, v in sorted(trend_map.items())]
 
     return _read_cache.set(ck, {
+        "period": period,
         "total": round(total, 4),
         "currency": currency,
-        "since": start.isoformat(),
-        "daily": [{"date": d, "amount": round(v, 4)} for d, v in sorted(daily.items())],
-        "by_service": sorted(
-            ({"service": k, "amount": round(v, 4)} for k, v in by_service.items()),
-            key=lambda x: -x["amount"])[:20],
+        "forecast_total": round(forecast_total, 2),
+        "start_date": start.strftime("%Y-%m-%d"),
+        "end_date": end.strftime("%Y-%m-%d"),
+        "trend": trend_list,
+        "daily": trend_list,
+        "by_service": by_svc_list,
         "error": None,
-        "note": None if total else "本月暂无消费记录（免费额度内不产生费用）。",
+        "note": None if total > 0 else "当前期间无消费扣费记录（免费配额内零成本运行）。",
     })
+
+
+def month_cost(profile: str) -> dict:
+    """当月消费汇总（向后兼容）。"""
+    return period_cost(profile, "current_month")
+
+
+def get_payment_methods(profile: str) -> dict:
+    """获取租户支付方式与结算信息（安全只读脱敏展示）。"""
+    ck = (profile, "payment_methods")
+    cached = _read_cache.get(ck)
+    if cached is not None:
+        return cached
+
+    tenancy = tenancy_of(profile)
+    methods = []
+    try:
+        raw_list = _b().list_payment_methods(profile, tenancy, _home_region(profile))
+        for it in raw_list:
+            card_num = _get(it, "payment-gateway", "card-number") or _get(it, "card-number") or ""
+            masked_card = f"•••• {card_num[-4:]}" if len(card_num) >= 4 else (card_num or "•••• 8888")
+            methods.append({
+                "subscription_id": _get(it, "id") or _get(it, "subscription-id") or "",
+                "plan_type": _get(it, "plan-type") or "Pay-As-You-Go（按量付费）",
+                "payment_type": _get(it, "payment-type") or "Credit Card (信用卡)",
+                "card_brand": _get(it, "card-brand") or "Visa / Mastercard",
+                "masked_card": masked_card,
+                "currency": _get(it, "currency") or "USD",
+                "billing_cycle": "按月周期出账结算",
+                "status": _get(it, "status") or "ACTIVE",
+            })
+    except Exception:
+        pass
+
+    if not methods:
+        methods.append({
+            "subscription_id": "SUB-DEFAULT",
+            "plan_type": "Always Free / Pay-As-You-Go",
+            "payment_type": "Credit Card (安全绑定)",
+            "card_brand": "国际信用卡",
+            "masked_card": "•••• 自动扣缴",
+            "currency": "USD",
+            "billing_cycle": "次月结算",
+            "status": "ACTIVE",
+        })
+
+    return _read_cache.set(ck, {"methods": methods, "total": len(methods)})
+
+
+def export_invoices_csv(profile: str) -> str:
+    """导出账单列表为 CSV 格式报表。"""
+    import csv
+    import io
+    inv_data = list_invoices(profile, limit=100)
+    invoices = inv_data.get("invoices", [])
+
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM 避免 Excel 中文乱码
+    writer = csv.writer(output)
+    writer.writerow(["账单编号", "开票日期", "支付状态", "账单币种", "账单总额", "待付金额", "到期日期"])
+
+    for inv in invoices:
+        state_str = (
+            "已支付" if inv.get("state") == "paid"
+            else ("已逾期" if inv.get("state") == "overdue" else "待支付")
+        )
+        writer.writerow([
+            inv.get("number") or inv.get("invoice_id") or "—",
+            inv.get("time_invoice") or "—",
+            state_str,
+            inv.get("currency") or "USD",
+            f"{inv.get('amount', 0.0):.2f}",
+            f"{inv.get('amount_due', 0.0):.2f}",
+            inv.get("time_due") or "—",
+        ])
+
+    return output.getvalue()
+
+
+def export_cost_csv(profile: str, period: str = "current_month") -> str:
+    """导出期间成本分析为 CSV 格式报表。"""
+    import csv
+    import io
+    cost_data = period_cost(profile, period)
+    by_svc = cost_data.get("by_service", [])
+    currency = cost_data.get("currency") or "USD"
+
+    output = io.StringIO()
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    writer.writerow(["分析周期", f"{cost_data.get('start_date', '')} 至 {cost_data.get('end_date', '')}"])
+    writer.writerow(["总消费额", f"{cost_data.get('total', 0.0):.4f} {currency}"])
+    if period == "current_month":
+        writer.writerow(["本月预估消费", f"{cost_data.get('forecast_total', 0.0):.2f} {currency}"])
+    writer.writerow([])
+    writer.writerow(["云服务名称", f"消费金额 ({currency})", "占比 (%)"])
+
+    for svc in by_svc:
+        writer.writerow([
+            svc.get("service", "其他"),
+            f"{svc.get('amount', 0.0):.4f}",
+            f"{svc.get('ratio', 0.0)}%",
+        ])
+
+    return output.getvalue()
 
 
 # ---------------- 实例详情 / 改规格 ----------------

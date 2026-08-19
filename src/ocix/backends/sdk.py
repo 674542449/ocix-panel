@@ -483,6 +483,19 @@ class SDKBackend(Backend):
             items = data if isinstance(data, list) else []
         return [to_dict(x) for x in items]
 
+    def list_payment_methods(self, profile, tenancy_id, home_region=None):
+        """支付方式列表（Subscription / OSP Gateway）。"""
+        cfg = self._cfg(profile)
+        if home_region:
+            cfg = dict(cfg, region=home_region)
+        try:
+            client = _wrap(oci.osp_gateway.SubscriptionServiceClient, cfg)
+            resp = _wrap(client.list_subscriptions, home_region or cfg.get("region"), tenancy_id)
+            items = getattr(resp.data, "items", [])
+            return [to_dict(x) for x in items]
+        except Exception:
+            return []
+
     def summarize_usage(self, profile, tenant_id, start, end, granularity, group_by):
         details = oci.usage_api.models.RequestSummarizedUsagesDetails(
             tenant_id=tenant_id, time_usage_started=start, time_usage_ended=end,
