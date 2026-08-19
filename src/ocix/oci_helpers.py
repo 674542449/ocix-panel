@@ -2155,7 +2155,15 @@ def scan_capacity_radar(profile: str, compartment_id: str = None,
 def is_capacity_available(profile: str, compartment_id: str, availability_domain: str,
                           shape: str, ocpus: float, memory_in_gbs: float,
                           fault_domain: str = None, region: str = None) -> tuple[bool, str | None]:
-    """快速单点容量预检。返回 (是否可用, 推荐的可用 Fault Domain)。"""
+    """快速单点容量预检。返回 (是否可用, 推荐的可用 Fault Domain)。
+
+    注意：OCI ComputeCapacityReport 官方接口主要针对 Flex 弹性规格（如 A1.Flex / E4.Flex），
+    对早期固定规格（如 E2.1.Micro）常返回 OUT_OF_HOST_CAPACITY 但实际有库存可直接开机。
+    因此对于非 Flex 规格默认放行，避免误拦截。
+    """
+    if "flex" not in (shape or "").lower():
+        return True, fault_domain
+
     try:
         probe = probe_single_ad_capacity(
             profile, compartment_id, availability_domain,
