@@ -140,48 +140,83 @@ def notify_instance_created(
     region: str | None = None,
     root_password: str | None = None,
     vpus_per_gb: int | None = None,
+    instance_id: str | None = None,
+    compartment_id: str | None = None,
     success: bool = True,
     error_msg: str | None = None,
     elapsed: float = 0.0,
 ) -> None:
-    """通知实例创建（开机）成功或失败。"""
-    p_safe = html.escape(str(profile))
-    s_safe = html.escape(str(shape))
-    r_safe = html.escape(str(region or "默认区域"))
-    arch = _detect_arch(shape)
+    """通知实例创建（开机）成功或失败。在后台等待直到获取到公网 IP 再发送通知。"""
+    token = db.get_setting("tg_bot_token", "").strip()
+    cid = db.get_setting("tg_chat_id", "").strip()
+    enabled_raw = db.get_setting("tg_enabled", "1")
+    enabled = enabled_raw not in ("0", "false", "False", "")
 
-    if success:
-        c_val = float(ocpus or 1.0)
-        m_val = float(memory_gb or 1.0)
-        b_val = int(boot_gb or 50)
-        vpu_str = f"({vpus_per_gb}VPUs)" if vpus_per_gb else ""
-        cfg_str = f"{c_val:.1f}C / {m_val:.1f}GB / {b_val}GB{vpu_str}"
+    if not token or not cid or not enabled:
+        return
 
-        lines = [
-            "🎉 <b>实例创建成功！（1/1）</b>\n",
-            f"👤 <b>租户</b>：{p_safe}",
-            f"🌍 <b>区域</b>：{r_safe}",
-            f"⚙️ <b>架构</b>：{arch}",
-            f"💻 <b>Shape</b>：{s_safe}",
-            f"📊 <b>配置</b>：{cfg_str}",
-            f"🌐 <b>公网IP</b>：<code>{html.escape(public_ip or '分配中/未获取')}</code>",
-        ]
-        if ipv6:
-            lines.append(f"🌐 <b>IPv6</b>：<code>{html.escape(str(ipv6))}</code>")
-        if root_password:
-            lines.append(f"🔑 <b>密码</b>：<code>{html.escape(root_password)}</code>")
-        text = "\n".join(lines)
-    else:
-        err_safe = html.escape(str(error_msg or '未知错误'))
-        text = (
-            "⚠️ <b>实例创建失败</b>\n\n"
-            f"👤 <b>租户</b>：{p_safe}\n"
-            f"🌍 <b>区域</b>：{r_safe}\n"
-            f"💻 <b>Shape</b>：{s_safe}\n\n"
-            f"❌ <b>原因</b>：<i>{err_safe}</i>"
-        )
+    def _notify_task():
+        nonlocal public_ip, ipv6
+        # 如果当前尚未拿到公网 IP，在后台等待直到 OCI 分配完成
+        if success and not public_ip and instance_id:
+            import time
 
-    send_telegram_async(text)
+            from .oci_helpers import attach_ips
+            for _ in range(12):
+                try:
+                    res = attach_ips(profile, [{"id": instance_id, "compartment_id": compartment_id}])
+                    if res and res[0].get("_public_ip"):
+                        public_ip = res[0].get("_public_ip")
+                        if not ipv6 and res[0].get("_ipv6"):
+                            ipv6 = res[0].get("_ipv6")
+                        break
+                except Exception:
+                    pass
+                time.sleep(2.5)
+
+        p_safe = html.escape(str(profile))
+        s_safe = html.escape(str(shape))
+        r_safe = html.escape(str(region or "默认区域"))
+        arch = _detect_arch(shape)
+
+        if success:
+            c_val = float(ocpus or 1.0)
+            m_val = float(memory_gb or 1.0)
+            b_val = int(boot_gb or 50)
+            vpu_str = f"({vpus_per_gb}VPUs)" if vpus_per_gb else ""
+            cfg_str = f"{c_val:.1f}C / {m_val:.1f}GB / {b_val}GB{vpu_str}"
+
+            lines = [
+                "🎉 <b>实例创建成功！（1/1）</b>\n",
+                f"👤 <b>租户</b>：{p_safe}",
+                f"🌍 <b>区域</b>：{r_safe}",
+                f"⚙️ <b>架构</b>：{arch}",
+                f"💻 <b>Shape</b>：{s_safe}",
+                f"📊 <b>配置</b>：{cfg_str}",
+                f"🌐 <b>公网IP</b>：<code>{html.escape(public_ip or '已分配/查看控制台')}</code>",
+            ]
+            if ipv6:
+                lines.append(f"🌐 <b>IPv6</b>：<code>{html.escape(str(ipv6))}</code>")
+            if root_password:
+                lines.append(f"🔑 <b>密码</b>：<code>{html.escape(root_password)}</code>")
+            text = "\n".join(lines)
+        else:
+            err_safe = html.escape(str(error_msg or '未知错误'))
+            text = (
+                "⚠️ <b>实例创建失败</b>\n\n"
+                f"👤 <b>租户</b>：{p_safe}\n"
+                f"🌍 <b>区域</b>：{r_safe}\n"
+                f"💻 <b>Shape</b>：{s_safe}\n\n"
+                f"❌ <b>原因</b>：<i>{err_safe}</i>"
+            )
+        try:
+            ok, msg = _post_telegram(token, cid, text)
+            if not ok:
+                logger.warning("Telegram 通知发送失败: %s", msg)
+        except Exception as e:
+            logger.warning("Telegram 后台发送异常: %s", e)
+
+    threading.Thread(target=_notify_task, daemon=True, name="ocix-tg-create-notify").start()
 
 
 def notify_instance_terminated(

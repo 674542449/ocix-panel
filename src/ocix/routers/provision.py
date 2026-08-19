@@ -318,19 +318,17 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
             audit(user, "add-ipv6", profile=req.profile, target=instance_id,
                   detail=ipv6_addr, result="ok", ip=ip)
 
-    # 尝试获取新实例的公网 IPv4
+    # 尝试获取新实例的公网 IPv4（TG 通知会在后台持续轮询直到获取完毕）
     public_ip = data.get("_public_ip")
     if instance_id and not public_ip:
-        for _ in range(3):
-            try:
-                with_ip = attach_ips(req.profile, [data])
-                if with_ip and with_ip[0].get("_public_ip"):
-                    public_ip = with_ip[0].get("_public_ip")
-                    data["_public_ip"] = public_ip
-                    break
-            except Exception:
-                pass
-            time.sleep(2)
+        try:
+            target = {"id": instance_id, "compartment_id": req.compartment_id}
+            with_ip = attach_ips(req.profile, [target])
+            if with_ip and with_ip[0].get("_public_ip"):
+                public_ip = with_ip[0].get("_public_ip")
+                data["_public_ip"] = public_ip
+        except Exception:
+            pass
 
     job.step("完成")
     disp_name = data.get("display-name") or data.get("display_name") or req.display_name
@@ -347,6 +345,8 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         region=data.get("region"),
         root_password=req.root_password or None,
         vpus_per_gb=getattr(req, "vpu", None),
+        instance_id=instance_id,
+        compartment_id=req.compartment_id,
         success=True,
         elapsed=elapsed_time,
     )
