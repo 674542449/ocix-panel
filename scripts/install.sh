@@ -84,16 +84,41 @@ REPO_ROOT="$SRC_ROOT"
 DEPLOY_DIR="$REPO_ROOT/deploy"
 ENV_FILE="$REPO_ROOT/.env"
 
-# ---------- 依赖检查 ----------
-command -v docker >/dev/null 2>&1 || die "没装 docker。Ubuntu/Debian 可执行: curl -fsSL https://get.docker.com | sh"
+# ---------- 依赖与发行版检测 ----------
+OS_ID=""
+if [[ -f /etc/os-release ]]; then
+  # shellcheck source=/dev/null
+  . /etc/os-release
+  OS_ID="${ID:-}"
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  if [[ "$OS_ID" == "alpine" ]]; then
+    die "未检测到 docker。Alpine 请执行: apk add --no-cache docker docker-cli-compose bash curl openssl && rc-update add docker default && service docker start"
+  else
+    die "未检测到 docker。Ubuntu / Debian 可执行: curl -fsSL https://get.docker.com | sh"
+  fi
+fi
+
 if docker compose version >/dev/null 2>&1; then
   DC="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
   DC="docker-compose"
 else
-  die "没装 docker compose 插件。请执行: sudo apt-get install -y docker-compose-plugin"
+  if [[ "$OS_ID" == "alpine" ]]; then
+    die "未检测到 docker compose 插件。Alpine 请执行: apk add --no-cache docker-cli-compose"
+  else
+    die "未检测到 docker compose 插件。Ubuntu / Debian 请执行: sudo apt-get install -y docker-compose-plugin"
+  fi
 fi
-docker info >/dev/null 2>&1 || die "docker 守护进程没跑起来，或当前用户没权限（试试 sudo，或把自己加进 docker 组）"
+
+if ! docker info >/dev/null 2>&1; then
+  if [[ "$OS_ID" == "alpine" ]]; then
+    warn "Docker 服务未运行。正在尝试启动 Docker 服务..."
+    service docker start 2>/dev/null || rc-service docker start 2>/dev/null || true
+  fi
+fi
+docker info >/dev/null 2>&1 || die "docker 守护进程未运行或当前用户无权限（可尝试 sudo，或将当前用户加入 docker 用户组）"
 
 rand_hex() {
   if command -v openssl >/dev/null 2>&1; then openssl rand -hex "$1"
@@ -155,6 +180,7 @@ if [[ "$MODE" == "domain" ]]; then
     resolved="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR==1{print $1}')"
   fi
   [[ -z "$resolved" ]] && command -v dig >/dev/null 2>&1 && resolved="$(dig +short A "$DOMAIN" | head -1)"
+  [[ -z "$resolved" ]] && command -v nslookup >/dev/null 2>&1 && resolved="$(nslookup "$DOMAIN" 2>/dev/null | awk '/^Address: / { print $2 }' | tail -1)"
   public_ip="$(curl -fsS --max-time 8 https://api.ipify.org 2>/dev/null || true)"
 
   if [[ -z "$resolved" ]]; then
@@ -168,7 +194,13 @@ if [[ "$MODE" == "domain" ]]; then
   fi
 
   for p in 80 443; do
-    if command -v ss >/dev/null 2>&1 && ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$"; then
+    is_busy=0
+    if command -v ss >/dev/null 2>&1; then
+      ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$" && is_busy=1
+    elif command -v netstat >/dev/null 2>&1; then
+      netstat -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$" && is_busy=1
+    fi
+    if [[ $is_busy -eq 1 ]]; then
       warn "${p} 端口已被别的程序占用，Caddy 起不来。请先停掉占用的服务（nginx/apache 等）。"
     fi
   done

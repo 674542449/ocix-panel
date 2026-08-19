@@ -46,31 +46,37 @@ def generate_password(length: int = 20) -> str:
 def root_password_cloud_config(password: str) -> str:
     """生成开启 root + 密码登录的 cloud-config。
 
-    Ubuntu 云镜像有两处会把密码登录关掉，只改一处是不够的：
-      * /etc/ssh/sshd_config 里的 PasswordAuthentication
-      * /etc/ssh/sshd_config.d/60-cloudimg-settings.conf 这个**后加载的**
-        drop-in，它会把上面那条又覆盖回 no
-    所以这里自己写一个 99- 开头的 drop-in（字典序最后，最终生效），
-    而不是去改主配置文件。
+    全面兼容 Alpine / Ubuntu / Debian / RHEL / CentOS 等多种 Linux 发行版：
+      * Ubuntu/Debian: 写入 99-ocix.conf drop-in 并移除 60-cloudimg-settings.conf
+      * Alpine/其他: 确保 /etc/ssh/sshd_config 写入 PermitRootLogin 与 PasswordAuthentication
+      * 兼容 systemd、OpenRC (Alpine) 与 SysVinit
     """
     if not password:
         raise ValueError("密码不能为空")
-    # cloud-config 是 YAML，密码用单引号包起来并转义单引号，
-    # 避免 # : @ 这类字符把结构带歪
     drop_in = "/etc/ssh/sshd_config.d/99-ocix.conf"
     lines = "PermitRootLogin yes\\nPasswordAuthentication yes\\n"
     cmds = [
-        # 自己写一个 99- 开头的 drop-in（字典序最后，最终生效）
+        "mkdir -p /etc/ssh/sshd_config.d",
+        # 写入 99- 开头的 drop-in（字典序最后，针对 Ubuntu/Debian 云镜像）
         f"printf '{lines}' > {drop_in}",
-        # Ubuntu 云镜像用这个 drop-in 把密码登录关掉，不删它上面那条就白写
+        # Ubuntu 云镜像用 60- 这个 drop-in 把密码登录关掉，不删它上面那条就白写
         "rm -f /etc/ssh/sshd_config.d/60-cloudimg-settings.conf",
-        "systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true",
-        # 把落盘的那份 user-data 抹掉，别让密码留在磁盘上。
-        # （元数据服务里的那份删不掉，见模块开头的说明）
-        "shred -u /var/lib/cloud/instance/user-data.txt* 2>/dev/null"
-        " || rm -f /var/lib/cloud/instance/user-data.txt*",
+        # 兼容 Alpine / 不支持 sshd_config.d 的系统，直接确保主配置文件开启
+        "grep -q 'PermitRootLogin yes' /etc/ssh/sshd_config 2>/dev/null "
+        "|| echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config",
+        "grep -q 'PasswordAuthentication yes' /etc/ssh/sshd_config 2>/dev/null "
+        "|| echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config",
+        # 重启 ssh 服务：兼容 systemd、OpenRC (Alpine)、service 与 init.d
+        "systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null "
+        "|| rc-service sshd restart 2>/dev/null || service ssh restart 2>/dev/null "
+        "|| service sshd restart 2>/dev/null || /etc/init.d/ssh restart 2>/dev/null "
+        "|| /etc/init.d/sshd restart 2>/dev/null || true",
+        # 把落盘的那份 user-data 抹掉，别让密码留在磁盘上
+        "shred -u /var/lib/cloud/instance/user-data.txt* 2>/dev/null "
+        "|| rm -f /var/lib/cloud/instance/user-data.txt*",
     ]
-    runcmd = "\n".join(f'  - [ bash, -c, "{c}" ]' for c in cmds)
+    # 使用通用的 sh -c 执行，兼容 Alpine（默认无 bash）和 Debian/Ubuntu
+    runcmd = "\n".join(f'  - [ sh, -c, "{c}" ]' for c in cmds)
     return f"""#cloud-config
 disable_root: false
 ssh_pwauth: true

@@ -16,7 +16,7 @@
 
 ## 一键搭建
 
-在一台 Ubuntu / Debian 服务器上执行（需要 Docker）：
+全面原生兼容 **Ubuntu / Debian / Alpine Linux** 等主流 Linux 系统（需要 Docker）：
 
 ```bash
 sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && sudo bash scripts/install.sh
@@ -46,7 +46,9 @@ sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/
 
 > 从别的目录跑也行，脚本会自动把项目搬到 `/opt/ocix` 再继续；加 `--dir /其他/路径` 可改位置，`--here` 则就地安装。
 
-没装 Docker 的话先跑：`curl -fsSL https://get.docker.com | sh`
+**安装依赖环境（未安装 Docker 时）：**
+- **Ubuntu / Debian**：`curl -fsSL https://get.docker.com | sh`
+- **Alpine Linux**：`apk add --no-cache git bash curl docker docker-cli-compose openssl && rc-update add docker default && service docker start`
 
 ---
 
