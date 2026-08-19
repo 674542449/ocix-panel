@@ -25,10 +25,12 @@ die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_off" >&2; exit 1; }
 
 CHECK_ONLY=0
 ASSUME_YES=0
+FORCE=0
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=1 ;;
     -y|--yes) ASSUME_YES=1 ;;
+    -f|--force) FORCE=1 ;;
   esac
 done
 
@@ -45,7 +47,7 @@ echo "检查远端…"
 if ! git fetch --tags --force origin; then
   echo ""
   warn "直接拉取失败，尝试设置 10 秒超时重试…"
-  if ! git -c http.timeout=15 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=10 fetch --tags --force origin; then
+  if ! git -c http.timeout=15 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=1 fetch --tags --force origin; then
     die "拉取远端失败！请检查：\n  1. 服务器到 GitHub 的网络连通性\n  2. 远端地址是否正确 (当前: ${REMOTE_URL})\n  可尝试在服务器上执行： git remote set-url origin https://github.com/674542449/ocix-panel.git"
   fi
 fi
@@ -54,15 +56,18 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 LATEST="$(git show "origin/${BRANCH}:VERSION" 2>/dev/null | tr -d '[:space:]' || echo "")"
 BEHIND="$(git rev-list --count "HEAD..origin/${BRANCH}" 2>/dev/null || echo 0)"
 
-if [[ "$BEHIND" == "0" ]]; then
+if [[ "$BEHIND" == "0" && $FORCE -eq 0 ]]; then
   if [[ "${OCIX_UPDATE_REEXEC:-0}" == "1" ]]; then
     # 这是拉完代码后用新版脚本重跑的那一趟：代码当然已经是最新的，
     # 不能在这里退出，后面还要重建容器
     ok "代码已是 v${CURRENT}，继续完成部署"
   else
-    ok "已经是最新版了（v${CURRENT}）"
+    ok "已经是最新版了（v${CURRENT}）。如需强制重新构建容器，可加 --force 参数："
+    echo "  bash ${REPO_ROOT}/scripts/update.sh --force"
     exit 0
   fi
+elif [[ "$BEHIND" == "0" && $FORCE -eq 1 ]]; then
+  ok "当前版本已是 v${CURRENT}，正在强制重新构建与部署…"
 elif [[ $CHECK_ONLY -eq 0 ]]; then
   echo "远端版本 v${LATEST:-未知}，落后 ${BEHIND} 个提交"
 fi
