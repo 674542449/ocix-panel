@@ -135,9 +135,12 @@ def _agent_state() -> dict:
             "fix_command": f"sudo bash {INSTALL_DIR}/scripts/update.sh",
         }
     if age > _ALIVE_TIMEOUT:
-        return {"online": False, "last_seen": int(time.time() - age),
-                "hint": f"更新代理已 {int(age)} 秒没有心跳，检查： systemctl status ocix-updater",
-                "fix_command": "sudo systemctl restart ocix-updater"}
+        return {
+            "online": False,
+            "last_seen": int(time.time() - age),
+            "hint": f"更新代理已 {int(age)} 秒未检测到心跳（服务未启动或已停止）",
+            "fix_command": f"bash {INSTALL_DIR}/scripts/update.sh",
+        }
     return {"online": True, "last_seen": int(time.time() - age), "hint": None, "fix_command": None}
 
 

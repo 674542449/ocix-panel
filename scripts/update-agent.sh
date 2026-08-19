@@ -8,7 +8,15 @@
 # 不会以任何形式进入命令行。哪怕面板被攻破、请求文件被写成任意内容，
 # 攻击者能做的也仅仅是触发一次正常的更新。
 #
-# 由 systemd 常驻运行，见 deploy/ocix-updater.service。
+if [ -z "${BASH_VERSION:-}" ]; then
+  if command -v bash >/dev/null 2>&1; then
+    exec bash "$0" "$@"
+  elif command -v apk >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+    apk add --no-cache bash >/dev/null 2>&1 || true
+    command -v bash >/dev/null 2>&1 && exec bash "$0" "$@"
+  fi
+fi
+
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

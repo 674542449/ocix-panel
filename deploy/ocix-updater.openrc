@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+
+name="ocix-updater"
+description="OCIX Panel Host Updater Agent"
+
+command="/usr/bin/env"
+command_args="bash __OCIX_HOME__/scripts/update-agent.sh"
+command_user="root"
+command_background="yes"
+pidfile="/run/ocix-updater.pid"
+output_log="__OCIX_HOME__/var/control/agent.log"
+error_log="__OCIX_HOME__/var/control/agent.err"
+directory="__OCIX_HOME__"
+
+depend() {
+    need localmount
+    after docker
+}
