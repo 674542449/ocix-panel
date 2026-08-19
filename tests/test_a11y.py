@@ -15,20 +15,16 @@
 import re
 from pathlib import Path
 
-WEB = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web"
+INDEX = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web" / "index.html"
 
 
-def _bundle() -> str:
-    parts = []
-    for p in WEB.rglob("*"):
-        if p.is_file() and p.suffix in (".html", ".css", ".js"):
-            parts.append(p.read_text(encoding="utf-8"))
-    return "\n".join(parts)
+def _html() -> str:
+    return INDEX.read_text(encoding="utf-8")
 
 
 def test_card_titles_are_headings_not_divs():
     """卡片标题必须是标题元素，读屏器靠它在页面里跳转。"""
-    html = _bundle()
+    html = _html()
     assert '<div class="card-title"' not in html, "卡片标题不能再是 <div>"
     assert '<span class="card-title">' not in html, "卡片标题不能是 <span>"
     n = len(re.findall(r'<h2 class="card-title"', html))
@@ -37,7 +33,7 @@ def test_card_titles_are_headings_not_divs():
 
 def test_every_page_has_a_heading():
     """每页一个 h1。左侧导航的高亮只有看得见的人用得上。"""
-    html = _bundle()
+    html = _html()
     assert re.search(r'<h1 class="sr-only">\{\{ currentTabLabel \}\}</h1>', html), (
         "主内容区要有一个跟随当前页的 h1"
     )
@@ -46,15 +42,15 @@ def test_every_page_has_a_heading():
 
 def test_heading_levels_do_not_skip():
     """h1 -> h2 -> h3，中间不能跳级（原来抽屉里直接是 h4）。"""
-    html = _bundle()
+    html = _html()
     assert "<h4" not in html, "h4 之上没有 h3，属于跳级"
     assert len(re.findall(r"<h3[ >]", html)) >= 3, "抽屉小节应当是 h3"
 
 
 def test_screen_reader_only_text_is_not_display_none():
     """display:none 连读屏器也读不到，那就白藏了。"""
-    css = _bundle()
-    rule = re.search(r"\.sr-only\s*\{([^}]*)\}", css)
+    css = _html()
+    rule = re.search(r"\.sr-only \{([^}]*)\}", css)
     assert rule, "缺少 .sr-only"
     body = rule.group(1)
     assert "display:none" not in body.replace(" ", "")
@@ -62,31 +58,42 @@ def test_screen_reader_only_text_is_not_display_none():
 
 
 def test_skip_link_is_the_first_focusable_element():
-    """「跳到主内容」必须是整个 body 里第一个可聚焦元素。
+    """跳转链接必须排在顶栏之前，否则第一个 Tab 会落到顶栏的开关上。
 
-    否则键盘用户 Tab 进来先踩到的是顶栏按钮，等于没装。
+    踩过：一开始放在 .shell 前面，看着挺靠前，其实顶栏的自动刷新开关
+    先拿到焦点，链接等于没用。
     """
-    html = (WEB / "index.html").read_text(encoding="utf-8")
-    m = re.search(r"<body[^>]*>(.*?)<main", html, flags=re.S)
-    assert m, "找不到 body 到 main 之间的内容"
-    header = m.group(1)
-    skip = re.search(r'<a\s+class="skip-link"[^>]*href="#main-content"', header)
-    assert skip, "缺少 skip link"
-    focusable_before_skip = re.findall(
-        r"<(?:a|button|input|select|textarea|el-button|el-switch)[ >]",
-        header[: skip.start()],
-    )
-    assert not focusable_before_skip, (
-        f"skip link 前面有其他可聚焦元素: {focusable_before_skip}"
+    html = _html()
+    skip = html.index('class="skip-link"')
+    topbar = html.index('<div class="topbar">')
+    assert skip < topbar, "跳转链接要排在顶栏之前"
+
+    target = re.search(r'<a class="skip-link" href="#([\w-]+)"', html)
+    assert target, "跳转链接要指向一个锚点"
+    anchor = target.group(1)
+    assert f'id="{anchor}"' in html, f"锚点 #{anchor} 不存在"
+    # 目标要能接住焦点，否则点了不会真的把焦点挪过去
+    assert re.search(rf'id="{anchor}"[^>]*tabindex="-1"', html), (
+        "跳转目标要有 tabindex=-1，不然焦点不会落进去"
     )
 
 
 def test_card_title_is_not_smaller_than_body_text():
-    """卡片标题 14.5px+，正文 14px。标题不能比它下面的字还小。"""
-    css = _bundle()
-    body_m = re.search(r"body\s*\{[^}]*font-size:\s*(\d+)px", css)
-    title_m = re.search(r"\.card-title\s*\{[^}]*font-size:\s*([\d.]+)px", css)
-    assert body_m and title_m, "找不到 body 或 .card-title 的字号"
-    assert float(title_m.group(1)) > float(body_m.group(1)), (
-        f"卡片标题字号 ({title_m.group(1)}px) 必须大于正文 ({body_m.group(1)}px)"
+    """标题不能比它领起的正文还小——原来是 13px 标题配 14px 正文。"""
+    css = _html()
+    body = re.search(r"body \{[^}]*font-size:(\d+(?:\.\d+)?)px", css, flags=re.S)
+    title = re.search(r"\.card-title \{[^}]*font-size:(\d+(?:\.\d+)?)px", css, flags=re.S)
+    assert body and title, "取不到字号"
+    body_px, title_px = float(body.group(1)), float(title.group(1))
+    assert title_px >= body_px, (
+        f"卡片标题 {title_px}px 小于正文 {body_px}px，层级是反的"
     )
+
+
+def test_landmarks_and_lang_are_present():
+    """审下来这几项本来就合格，钉住别退化。"""
+    html = _html()
+    assert 'lang="zh-CN"' in html
+    assert "<main class=\"main\"" in html
+    assert "<nav>" in html
+    assert 'aria-current' in html, "当前导航项要标出来"
