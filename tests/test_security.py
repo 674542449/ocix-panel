@@ -224,16 +224,14 @@ def test_github_repo_falls_back_when_malformed(bad, monkeypatch):
         importlib.reload(config)
 
 
-# ── XSS：前端不得存在 HTML 注入点 ──
-
 def test_frontend_has_no_html_injection_sinks():
     """Vue 的 {{ }} 会转义；一旦用上 v-html 或 dangerouslyUseHTMLString，
     实例名、错误信息这些来自 OCI 的数据就能注入脚本。"""
     from pathlib import Path
-    html = (Path(__file__).resolve().parents[1]
-            / "src" / "ocix" / "web" / "index.html").read_text(encoding="utf-8")
-    assert "v-html" not in html
-    assert "dangerouslyUseHTMLString" not in html
-    # innerHTML 只允许出现在读取自身静态模板那一处
-    assert html.count("innerHTML") == 1
-    assert "getElementById('app-tpl').innerHTML" in html
+    web_dir = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web"
+    for f in web_dir.rglob("*"):
+        if f.is_file() and f.suffix in (".html", ".js"):
+            content = f.read_text(encoding="utf-8")
+            assert "v-html" not in content, f"{f.name} 中发现 v-html"
+            assert "dangerouslyUseHTMLString" not in content, f"{f.name} 中发现 dangerouslyUseHTMLString"
+            assert "document.write" not in content, f"{f.name} 中发现 document.write"

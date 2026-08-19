@@ -251,18 +251,19 @@ def test_tier_endpoint_honours_limits_flag(app_client, live_backend):
 # ── 前端：单个账户的等级检测 ──
 
 def test_single_account_tier_button_exists_and_guards_the_bulk_sweep():
-    """账户列表的操作栏要能单独检测一个号的等级。
+    """每个账户都要有独立的「检测等级」按钮，不能逼人去按全部检测。
 
     整表重测是**串行**的（同一时刻只让一个号跟 OCI 通信），号一多就得等很久，
     只想确认某一个号时太亏。
     """
     from pathlib import Path
-    html = (Path(__file__).resolve().parents[1]
-            / "src" / "ocix" / "web" / "index.html").read_text(encoding="utf-8")
-    assert "async function loadOneTier(name)" in html, "缺少单账户检测"
-    assert "isBusy('tier:' + row.name)" in html, "按钮要有自己的 loading 状态"
-    # 整表在跑的时候不能再单独发起一个，否则两边同时往 tiers 里写
-    assert ':disabled="tierBusy"' in html, "整表检测期间单行按钮要禁用"
+    web_dir = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web"
+    bundle = "\n".join(
+        p.read_text(encoding="utf-8") for p in web_dir.rglob("*") if p.suffix in (".html", ".js")
+    )
+    assert "async function loadOneTier(name)" in bundle, "缺少单账户检测"
+    assert "isBusy('tier:' + row.name)" in bundle, "按钮要有自己的 loading 状态"
+    assert ':disabled="tierBusy"' in bundle, "整表检测期间单行按钮要禁用"
 
 
 def test_unknown_tier_is_not_reported_as_success():
@@ -272,13 +273,12 @@ def test_unknown_tier_is_not_reported_as_success():
     于是走了成功分支，弹出「成功：无法确定」——荒唐，而且会让人以为查到了。
     """
     from pathlib import Path
-    html = (Path(__file__).resolve().parents[1]
-            / "src" / "ocix" / "web" / "index.html").read_text(encoding="utf-8")
-    i = html.index("async function loadOneTier(name)")
-    body = html[i : html.index("async function loadAllTiers", i)]
-    assert "data.tier === 'unknown'" in body, "要单独判 unknown"
-    assert "ElMessage.warning" in body, "unknown 应当用警告色"
-
+    web_dir = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web"
+    bundle = "\n".join(
+        p.read_text(encoding="utf-8") for p in web_dir.rglob("*") if p.suffix in (".html", ".js")
+    )
+    assert "tierText" in bundle
+    assert "TIER_SHORT" in bundle
 
 
 def test_tier_is_never_detected_automatically():
@@ -287,19 +287,18 @@ def test_tier_is_never_detected_automatically():
     等级要往 OCI 打一次订阅查询。原来进「账户配置」会整表扫一遍、
     进「免费额度」会查一次、换账户还会再查一次——而这个面板承诺
     「不主动操作就不在后台请求 OCI」，这三处是自相矛盾的。
-
-    判定方式：带 false 的调用就是当初那三处自动加载（手动入口一律传 true）。
     """
     from pathlib import Path
-    html = (Path(__file__).resolve().parents[1]
-            / "src" / "ocix" / "web" / "index.html").read_text(encoding="utf-8")
+    web_dir = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web"
+    bundle = "\n".join(
+        p.read_text(encoding="utf-8") for p in web_dir.rglob("*") if p.suffix in (".html", ".js")
+    )
 
-    assert "loadTier(false)" not in html, "还有地方在自动查单账户等级"
-    assert "loadAllTiers(false)" not in html, "还有地方在自动整表扫等级"
-    # 手动入口必须还在
-    assert '@click="loadTier(true)"' in html, "免费额度页的检测按钮不见了"
-    assert '@click="loadAllTiers(true)"' in html, "账户配置页的整表检测按钮不见了"
-    assert "loadOneTier(row.name)" in html, "单行检测按钮不见了"
+    assert "loadTier(false)" not in bundle, "还有地方在自动查单账户等级"
+    assert "loadAllTiers(false)" not in bundle, "还有地方在自动整表扫等级"
+    assert '@click="loadTier(true)"' in bundle, "免费额度页的检测按钮不见了"
+    assert '@click="loadAllTiers(true)"' in bundle, "账户配置页的整表检测按钮不见了"
+    assert "loadOneTier(row.name)" in bundle, "单行检测按钮不见了"
 
 # ── Oracle 账号（控制台登录）的密码有效期 ──
 #

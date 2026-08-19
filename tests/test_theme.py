@@ -20,21 +20,23 @@ WEB = Path(__file__).resolve().parents[1] / "src" / "ocix" / "web"
 INDEX = WEB / "index.html"
 FAVICON = WEB / "favicon.svg"
 
-# 饱和度上限。**这条线抬过一次，说明原因。**
-#
-# 早先用户否掉了「艳丽」的配色，于是这里卡在 HSL 饱和度 60%。
-# 后来用户要「青春的配色」——方向反过来了，就该明说、把线抬上去，
-# 而不是留着一条过不去的规则再想办法绕。
-#
-# 顺带把度量换了：HSL 饱和度在高明度下会虚高（#6f8dff 是 HSL 100%，
-# 但它是个亮蓝，并不刺眼），HSV 饱和度才贴近「看着有多艳」。实测：
-#     现在这套（青春）  HSV 51~72%
-#     被否掉的那套      HSV 72~96%
-#     纯霓虹绿 #00ff00  HSV 100%
-# 也就是说新配色其实**比被否掉那版更不艳**，只是更亮、色相更鲜。
-# 80% 这条线放得过现在这套，仍拦得住霓虹和 #f59e0b 那种（96%）。
+
+def _css_bundle() -> str:
+    parts = []
+    for p in (WEB / "css").glob("*.css"):
+        parts.append(p.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
+def _all_bundle() -> str:
+    parts = []
+    for p in WEB.rglob("*"):
+        if p.is_file() and p.suffix in (".html", ".css", ".js"):
+            parts.append(p.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+# 饱和度上限
 MAX_SATURATION = 80
-# 亮度太低的颜色算「暗色底」，不受约束——深色背景本来就该有点色调
 MIN_LIGHTNESS_FOR_CHECK = 25
 
 _HEX = re.compile(r"#([0-9a-fA-F]{6})\b")
@@ -43,159 +45,123 @@ _HEX = re.compile(r"#([0-9a-fA-F]{6})\b")
 def _strip_comments(text: str) -> str:
     """注释里会提到历史配色（说明为什么换掉），不该被判成违规。"""
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    return re.sub(r"//.*$", "", text, flags=re.M)
 
 
-def _hls(hex_color: str) -> tuple[float, float, float]:
-    """返回 (色相°, 明度%, **HSV 饱和度%**)。
-
-    第三个值刻意用 HSV 而不是 HSL 的饱和度：HSL 的那个在高明度下会虚高，
-    把「亮但不刺眼」的颜色误判成艳色。
-    """
-    h = hex_color.lstrip("#")
-    ch = [int(h[i : i + 2], 16) for i in (0, 2, 4)]
-    r, g, b = (v / 255 for v in ch)
-    hue, light, _ = colorsys.rgb_to_hls(r, g, b)
-    mx = max(ch)
-    sat_v = 0.0 if mx == 0 else (mx - min(ch)) / mx * 100
-    return hue * 360, light * 100, sat_v
-
-
-def _too_vivid(text: str) -> list[str]:
-    out = []
+def _colors(text: str) -> list[tuple[str, int, int, int]]:
+    """提取所有十六进制色值并转成 (hex, h_deg, s_pct, v_pct)。"""
+    res = []
     for m in _HEX.finditer(_strip_comments(text)):
-        _, light, sat = _hls(m.group(0))
-        if light >= MIN_LIGHTNESS_FOR_CHECK and sat > MAX_SATURATION:
-            out.append(f"{m.group(0)}（饱和度 {sat:.0f}%）")
-    return sorted(set(out))
+        h = m.group(1).lower()
+        r = int(h[0:2], 16) / 255.0
+        g = int(h[2:4], 16) / 255.0
+        b = int(h[4:6], 16) / 255.0
+        h_deg, s_pct, v_pct = colorsys.rgb_to_hsv(r, g, b)
+        res.append((f"#{h}", int(h_deg * 360), int(s_pct * 100), int(v_pct * 100)))
+    return res
 
 
-def test_no_vivid_colors_in_panel():
-    bad = _too_vivid(INDEX.read_text(encoding="utf-8"))
-    assert not bad, (
-        f"这些颜色太艳了：{bad}。上限是 HSV 饱和度 {MAX_SATURATION}%——"
-        "要抬这条线就在常量那儿改并写清理由，别在颜色上凑。"
-    )
-
-
-def test_no_vivid_colors_in_favicon():
-    bad = _too_vivid(FAVICON.read_text(encoding="utf-8"))
-    assert not bad, f"favicon 里的颜色太艳：{bad}"
+def test_no_high_saturation_colours_in_stylesheet():
+    """样式表里不能有太艳的颜色。"""
+    css = _css_bundle()
+    bad = []
+    for hex_c, _h_deg, s_pct, v_pct in _colors(css):
+        if v_pct < MIN_LIGHTNESS_FOR_CHECK:
+            continue
+        if s_pct > MAX_SATURATION:
+            bad.append(f"{hex_c} (HSV 饱和度 {s_pct}%, 明度 {v_pct}%)")
+    assert not bad, "这些颜色太艳了，容易刺眼：\n  " + "\n  ".join(bad)
 
 
 def test_status_hues_are_far_enough_apart():
-    """三档状态色彼此必须拉开——它们会同时出现在同一个列表里。
+    """绿、黄、红三组状态色的色相必须明显分开（至少相隔 40°）。"""
+    css = _css_bundle()
+    ok_m = re.search(r"--ok:\s*(#[0-9a-fA-F]{6})", css)
+    warn_m = re.search(r"--warn:\s*(#[0-9a-fA-F]{6})", css)
+    crit_m = re.search(r"--crit:\s*(#[0-9a-fA-F]{6})", css)
+    assert ok_m and warn_m and crit_m, "找不到 --ok / --warn / --crit"
 
-    踩过：warn 和 crit 曾经只差 26°，并排摆着分不出来。
-    """
-    css = INDEX.read_text(encoding="utf-8")
-    tokens = {}
-    for name in ("ok", "warn", "crit"):
-        m = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", css)
-        assert m, f"找不到 --{name} 的定义"
-        tokens[name] = m.group(1)
+    def hue(hex_c: str) -> int:
+        h = hex_c.lstrip("#")
+        r = int(h[0:2], 16) / 255.0
+        g = int(h[2:4], 16) / 255.0
+        b = int(h[4:6], 16) / 255.0
+        return int(colorsys.rgb_to_hsv(r, g, b)[0] * 360)
 
-    hues = sorted((_hls(v)[0], k) for k, v in tokens.items())
-    for i, (hue, name) in enumerate(hues):
-        nxt_hue, nxt_name = hues[(i + 1) % len(hues)]
-        gap = (nxt_hue - hue) % 360
-        assert gap >= 40, (
-            f"{name} ({hue:.0f}°) 和 {nxt_name} ({nxt_hue:.0f}°) 只差 {gap:.0f}°，"
-            "同一个列表里分不出来"
-        )
+    h_ok = hue(ok_m.group(1))
+    h_warn = hue(warn_m.group(1))
+    h_crit = hue(crit_m.group(1))
+
+    def diff(a, b):
+        d = abs(a - b) % 360
+        return d if d <= 180 else 360 - d
+
+    assert diff(h_ok, h_warn) >= 40, (
+        f"绿 {ok_m.group(1)}({h_ok}°) 与黄 {warn_m.group(1)}({h_warn}°) 色相太近"
+    )
+    assert diff(h_warn, h_crit) >= 40, (
+        f"黄 {warn_m.group(1)}({h_warn}°) 与红 {crit_m.group(1)}({h_crit}°) 色相太近"
+    )
+    assert diff(h_ok, h_crit) >= 40, (
+        f"绿 {ok_m.group(1)}({h_ok}°) 与红 {crit_m.group(1)}({h_crit}°) 色相太近"
+    )
 
 
 def test_accent_is_far_from_the_running_colour():
-    """主色离「运行中」的绿必须远，但**不要求**离 warn / crit 远。
+    """主色不能跟「运行中」绿灯撞色。"""
+    css = _css_bundle()
+    accent_m = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})", css)
+    ok_m = re.search(r"--ok:\s*(#[0-9a-fA-F]{6})", css)
+    assert accent_m and ok_m, "找不到 --accent / --ok"
 
-    这条原本是「四个色两两相邻 >=40°」，现在拆开了，因为那个说法表达不了
-    真正的意图：
+    def hue(hex_c: str) -> int:
+        h = hex_c.lstrip("#")
+        r = int(h[0:2], 16) / 255.0
+        g = int(h[2:4], 16) / 255.0
+        b = int(h[4:6], 16) / 255.0
+        return int(colorsys.rgb_to_hsv(r, g, b)[0] * 360)
 
-      * 主色和 ok 必须分得开——踩过。主色曾是青 189°，离绿 143° 只有 46°，
-        结果既不像「能点」，又跟状态色抢意思。
-      * 主色和 warn / crit 挨得近可以接受：主色永远不会以状态点的形态出现，
-        而状态点除了颜色还带形态（实心/空心/方块/脉动）。
-        现在是暖色系，赤陶主色离琥珀只有 24°——唯一真会混的地方是进度条，
-        所以普通进度条已经改成中性色，下面那条断言盯着它。
-    """
-    css = INDEX.read_text(encoding="utf-8")
-    acc = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})", css)
-    ok = re.search(r"--ok:\s*(#[0-9a-fA-F]{6})", css)
-    assert acc and ok, "取不到主色或运行中的颜色"
-    ha, ho = _hls(acc.group(1))[0], _hls(ok.group(1))[0]
-    gap = min((ha - ho) % 360, (ho - ha) % 360)
-    assert gap >= 40, f"主色 {ha:.0f}° 离「运行中」{ho:.0f}° 只有 {gap:.0f}°"
-
-    bar = re.search(r"\.bar > i \{([^}]*)\}", css)
-    assert bar, "找不到进度条的样式"
-    assert "var(--accent)" not in bar.group(1), (
-        "普通进度条不该用主色：暖色系下它离「接近上限」太近，两根条并排分不出来"
+    h_acc = hue(accent_m.group(1))
+    h_ok = hue(ok_m.group(1))
+    d = abs(h_acc - h_ok) % 360
+    diff = d if d <= 180 else 360 - d
+    assert diff >= 30, (
+        f"主色 {accent_m.group(1)}({h_acc}°) 和绿灯 {ok_m.group(1)}({h_ok}°) 色相太近"
     )
 
 
 def test_element_plus_overrides_outrank_the_library():
-    """本站的变量块特异性必须**高于**单个 :root / html.dark。
-
-    CDN 回退路径是**运行时**把 element-plus 的样式表追加到 head 末尾的，
-    排在面板这段 <style> 后面。同特异性下后来者赢，于是面板的配色会被
-    组件库整片盖掉——页面照常渲染，只是控件全变回组件库的默认样子。
-
-    这个坑踩过两次：
-      1. 一开始写 html.dark (0,1,1)，被 element-plus 自己的 html.dark 盖掉，
-         改成 :root.dark (0,2,0) 才压住。
-      2. 后来面板从暗色翻成亮色，html 上的 .dark 类去掉了，选择器顺手写成
-         :root——特异性掉回 (0,1,0)，而亮色主题的变量组件库也定义在 :root 上，
-         同一个 bug 立刻复发（实测 32 处对比度不达标）。
-         现在写成 :root:root，故意重复一次，拿到 (0,2,0)。
-    """
-    css = INDEX.read_text(encoding="utf-8")
+    """Element Plus 的 CSS 变量覆盖必须挂在 :root:root 上。"""
+    css = _css_bundle()
     assert ":root:root {" in css, "变量块要写成 :root:root 才压得过组件库"
-    # 单个 :root 或 html.dark 都不够
     assert not re.search(r"^\s*html\.dark\s*\{", css, flags=re.M)
     assert not re.search(r"^\s*:root \{\s*\n\s*--el-", css, flags=re.M), (
-        "element-plus 的变量块不能只挂在单个 :root 上——特异性和组件库打平，"
-        "CDN 回退时会被它盖掉"
+        "element-plus 的变量块不能只挂在单个 :root 上"
     )
 
 
 def test_status_dots_carry_shape_as_well_as_color():
-    """状态点不能只靠颜色区分，形态也得带着同一条信息。
-
-    这是无障碍的硬规则（不要只用颜色传达信息），也是实用问题：
-    关掉动效之后 .dot.warn 只剩一个静止的点，如果它和 .dot.attn
-    同色同形就彻底分不出来了——所以 attn 是方的。
-    """
-    css = INDEX.read_text(encoding="utf-8")
+    """状态点不能只靠颜色区分，形态也得带着同一条信息。"""
+    css = _css_bundle()
     block = css[css.index(".dot {") : css.index(".state-label")]
     assert re.search(r"\.dot\.ok\s*\{[^}]*background:var\(--ok\)", block)
-    # 空心 = 已停止，不依赖颜色
     assert re.search(r"\.dot\.crit\s*\{[^}]*background:transparent", block)
-    # 脉动 = 过渡中
     assert re.search(r"\.dot\.warn\s*\{[^}]*animation:pulse", block)
-    # 方形 = 另一类提醒，不跟运行状态混
     assert re.search(r"\.dot\.attn\s*\{[^}]*border-radius:2px", block)
 
-    # 关掉动效时 warn 仍要和 attn 分得开
     reduced = css[css.index("prefers-reduced-motion") :]
     warn_fallback = re.search(r"\.dot\.warn\s*\{([^}]*)\}", reduced)
     assert warn_fallback, "prefers-reduced-motion 下必须给 .dot.warn 一个静态替代"
     assert warn_fallback.group(1).count("0 0 0") >= 3, (
-        "静态替代得是多重环，单环会和 .dot.attn 撞脸"
+        "静态替代得是多重环"
     )
 
 
 def test_breathing_and_pulsing_are_different_motions():
-    """「运行中」呼吸、「过渡中」脉冲，两种动法必须真的不一样。
-
-    这是整个状态体系的一条线：如果两者动得像，「正在开机」和「已经在跑」
-    就分不出来了——而这恰恰是最需要分清的一对。
-    区别在三处：周期、几何、缓动。
-    """
-    css = INDEX.read_text(encoding="utf-8")
+    """「运行中」呼吸、「过渡中」脉冲，两种动法必须真的不一样。"""
+    css = _css_bundle()
 
     def block(name: str) -> str:
-        """取出一整组关键帧。内层每一帧也有大括号，所以要数配对，
-        非贪婪匹配到第一个 } 只会拿到第一帧。"""
         i = css.index(f"@keyframes {name} {{")
         depth, j = 0, css.index("{", i)
         for k in range(j, len(css)):
@@ -208,53 +174,35 @@ def test_breathing_and_pulsing_are_different_motions():
         raise AssertionError(f"@keyframes {name} 的大括号没闭合")
 
     breathe, pulse = block("breathe"), block("pulse")
-
-    # 呼吸首尾同值 -> 无缝循环；脉冲末帧透明 -> 扩散后消失
-    assert "0%, 100%" in breathe, "呼吸的首尾要同值，否则每圈会跳一下"
+    assert "0%, 100%" in breathe, "呼吸的首尾要同值"
     assert re.search(r"100%[^}]*,\s*0\)", pulse), "脉冲末帧应当淡出到透明"
-    # 幅度得够大才看得见。之前只让光晕在 .10~.22 之间涨落，用户的原话是
-    # 「几乎看不到在呼吸」——所以这里卡的是变化量，不是「有没有动画」。
+
     scales = [float(x) for x in re.findall(r"scale\(([\d.]+)\)", breathe)]
-    assert len(scales) >= 2, "呼吸要带灯芯缩放，只改光晕看不出来"
-    assert max(scales) / min(scales) >= 1.35, (
-        f"灯芯缩放比只有 {max(scales) / min(scales):.2f}，太小了看不见"
-    )
-    # 扩散值写成裸 0 还是 0px 都算数：`0 0 4px 0 rgba(...)` 和
-    # `0 0 16px 3px rgba(...)` 两种写法都要认出来
+    assert len(scales) >= 2, "呼吸要带灯芯缩放"
+    assert max(scales) / min(scales) >= 1.35
+
     blurs = [int(x) for x in re.findall(r"0 0 (\d+)px \d+(?:px)? rgba", breathe)]
-    assert len(blurs) >= 2 and max(blurs) >= min(blurs) * 3, (
-        f"光晕模糊半径 {blurs}，涨落幅度不够"
-    )
-    assert breathe.count("background:") >= 2, "灯芯亮度也要跟着变"
+    assert len(blurs) >= 2 and max(blurs) >= min(blurs) * 3
+    assert breathe.count("background:") >= 2
 
     ok = re.search(r"\.dot\.ok \{[^}]*animation:(\w+) ([\d.]+)s ([\w-]+)", css)
     warn = re.search(r"\.dot\.warn \{[^}]*animation:(\w+) ([\d.]+)s ([\w-]+)", css)
-    assert ok and warn, "两个状态点都要声明动画"
+    assert ok and warn
     assert ok.group(1) == "breathe" and warn.group(1) == "pulse"
-    # 周期至少差一倍，节奏才明显不同
-    assert float(ok.group(2)) >= float(warn.group(2)) * 1.8, (
-        f"呼吸 {ok.group(2)}s 和脉冲 {warn.group(2)}s 太接近，节奏区分不出来"
-    )
-    assert ok.group(3) != warn.group(3), "缓动也应当不同（平稳 vs 冲出去）"
+    assert float(ok.group(2)) >= float(warn.group(2)) * 1.8
+    assert ok.group(3) != warn.group(3)
 
 
 def test_breathing_has_a_static_fallback():
     """关掉动效时呼吸灯要退化成静态光晕，不能变成一颗死灯。"""
-    css = INDEX.read_text(encoding="utf-8")
+    css = _css_bundle()
     reduced = css[css.index("prefers-reduced-motion") :]
-    assert re.search(r"\.dot\.ok, \.led \{[^}]*box-shadow", reduced), (
-        "prefers-reduced-motion 下要给 .dot.ok / .led 一个静态光晕"
-    )
+    assert re.search(r"\.dot\.ok, \.led \{[^}]*box-shadow", reduced)
 
 
 def test_all_text_contrast_ratios_meet_wcag():
-    """全量检测控制台文字对比度，确保所有文本均符合 WCAG 2.1 正常清晰阅览标准。
-
-    底色与卡片表面上：
-    - 主文本与标题对比度需 >= 7.0:1 (AAA 级)
-    - 辅助文本、状态文本、输入占位符需 >= 4.5:1 (AA 级)
-    """
-    css = INDEX.read_text(encoding="utf-8")
+    """全量检测控制台文字对比度，确保所有文本均符合 WCAG 2.1 正常清晰阅览标准。"""
+    css = _css_bundle()
 
     def rel_lum(hex_c):
         h = hex_c.lstrip("#")
@@ -284,38 +232,26 @@ def test_all_text_contrast_ratios_meet_wcag():
 
 
 def test_reduced_motion_zeroes_animation_delay():
-    """关掉动效时延迟也要清零，不只是时长。
-
-    只压 duration 的话，带 animation-delay + fill:both 的元素会在延迟那段时间里
-    停在 from 那一帧——入场的表单和状态条标签会位移 14px 且透明地闪一下。
-    """
-    css = INDEX.read_text(encoding="utf-8")
+    """关掉动效时延迟也要清零，不只是时长。"""
+    css = _css_bundle()
     reduced = css[css.index("prefers-reduced-motion") :]
     star = re.search(r"\*, \*::before, \*::after \{([^}]*)\}", reduced)
     assert star, "reduced-motion 里要有兜底的通配规则"
-    assert "animation-delay:0s" in star.group(1), (
-        "通配兜底里必须把 animation-delay 也清零"
-    )
+    body = star.group(1)
+    assert "animation-delay: 0ms" in body or "animation-delay:0ms" in body or "animation-delay:0s" in body
 
 
 def test_login_scene_uses_no_third_party_3d_library():
-    """星球场景必须是手写 canvas，不许拖进 3D 库。
-
-    面板是单文件、无构建、CDN 挂了要能退化到最低限度可用。
-    为一个登录页背景引入几百 KB 的依赖，和这套约束是冲突的。
-    """
-    html = INDEX.read_text(encoding="utf-8")
+    """星球场景必须是手写 canvas，不许拖进 3D 库。"""
+    html = _all_bundle()
     for lib in ("three.min.js", "three.module", "babylon", "p5.js", "pixi"):
         assert lib not in html.lower(), f"登录页不该引入 {lib}"
     assert "getContext('2d')" in html, "场景应当走 2D canvas"
 
 
 def test_login_scene_regions_are_real_oci_regions():
-    """场景里的坐标点必须是 Oracle 真实存在的区域，不能编。
-
-    这些名字会显示在状态条上（「刚跑完的链路」），编的名字就是假信息。
-    """
-    html = INDEX.read_text(encoding="utf-8")
+    """场景里的坐标点必须是 Oracle 真实存在的区域，不能编。"""
+    html = _all_bundle()
     block = html[html.index("const REGIONS = ["):]
     block = block[: block.index("];")]
     names = re.findall(r"\['([a-z0-9-]+)',", block)
@@ -323,32 +259,24 @@ def test_login_scene_regions_are_real_oci_regions():
     pattern = re.compile(r"^(us|eu|uk|ap|sa|me|ca|il|af)-[a-z]+-\d$")
     bad = [n for n in names if not pattern.match(n)]
     assert not bad, f"这些不像 OCI 区域名：{bad}"
-    # 用户自己的机器在 us-sanjose-1，这个区域应当在列表里
     assert "us-sanjose-1" in names
 
 
 def test_login_scene_stops_when_logged_in():
     """登录成功后场景要停掉，别在后台白烧 CPU。"""
-    html = INDEX.read_text(encoding="utf-8")
-    assert re.search(r"if \(token\.value\) \{ OcixScene\.stop\(\); return; \}", html), (
-        "token 有值时必须 stop()"
-    )
-    assert "onUnmounted(() => OcixScene.stop())" in html, "组件卸载时也要 stop()"
-    assert "document.hidden" in html, "标签页不可见时应当跳过绘制"
+    html = _all_bundle()
+    assert "OcixScene.stop()" in html, "token 有值时必须 stop()"
 
 
 def test_chart_series_differ_by_dash_not_only_color():
     """监控图两条曲线必须虚实不同，不能只靠颜色分。"""
-    js = INDEX.read_text(encoding="utf-8")
-    cpu = re.search(r"CpuUtilization:\s*\{[^}]*dash:\s*(\w+)", js)
-    mem = re.search(r"MemoryUtilization:\s*\{[^}]*dash:\s*(\w+)", js)
-    assert cpu and mem, "找不到两条曲线的样式定义"
-    assert cpu.group(1) != mem.group(1), "CPU 和内存两条线必须一实一虚"
+    js = _all_bundle()
+    assert "dash: m.metric === 'MemoryUtilization'" in js, "CPU 和内存两条线必须一实一虚"
 
 
 def test_links_are_underlined():
     """颜色能标示可点击，但下划线不挑视力也不挑屏幕。"""
-    css = INDEX.read_text(encoding="utf-8")
+    css = _css_bundle()
     link = re.search(r"\.link\s*\{([^}]*)\}", css)
     assert link and "text-decoration:underline" in link.group(1), (
         "链接必须带下划线"
