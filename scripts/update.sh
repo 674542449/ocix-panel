@@ -150,7 +150,7 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 echo "重新构建并重启…"
-bash "$REPO_ROOT/scripts/ocix.sh" up -d --build
+bash "$REPO_ROOT/scripts/ocix.sh" up -d --build --force-recreate
 
 printf '等待后端就绪'
 for _ in $(seq 1 60); do

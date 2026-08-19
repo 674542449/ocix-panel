@@ -182,7 +182,10 @@ if FRONTEND_DIR.exists():
         if "." in PurePosixPath(full_path).name:
             raise HTTPException(status_code=404, detail="Not Found")
 
-        return FileResponse(str(_ROOT / "index.html"))
+        return FileResponse(
+            str(_ROOT / "index.html"),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+        )
 
 
 if __name__ == "__main__":
