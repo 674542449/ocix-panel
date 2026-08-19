@@ -236,7 +236,7 @@ def get_telegram_settings(
     chat_id = db.get_setting("tg_chat_id", "")
     return {
         "enabled": enabled,
-        "bot_token": _mask_token(token),
+        "bot_token": token,
         "has_token": bool(token),
         "chat_id": chat_id,
     }

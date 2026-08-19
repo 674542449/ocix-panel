@@ -19,13 +19,13 @@ def test_telegram_settings_crud(app_client):
     assert r.status_code == 200
     assert r.json()["ok"] is True
 
-    # 3. 再次查询设置，token 被脱敏
+    # 3. 再次查询设置，完整回显保留的配置
     r = app_client.get("/api/system/telegram")
     assert r.status_code == 200
     data = r.json()
     assert data["enabled"] is True
     assert data["has_token"] is True
-    assert "*" in data["bot_token"]
+    assert data["bot_token"] == "123456789:ABCdefGhIjKlMnOpQrStUvWxYz"
     assert data["chat_id"] == "-100123456789"
 
 

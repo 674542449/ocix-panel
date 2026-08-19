@@ -2234,14 +2234,20 @@
           <div class="card">
             <div class="card-head">
               <h2 class="card-title">Telegram 通知设置</h2>
-              <el-switch v-model="tgSettings.enabled" active-text="开启 TG 通知" />
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span class="state" v-if="tgSettings.bot_token && tgSettings.chat_id">
+                  <i :class="['dot', tgSettings.enabled ? 'ok' : 'attn']"></i>
+                  <span class="state-label" style="font-weight:600;">{{ tgSettings.enabled ? '通知已生效' : '已暂停通知' }}</span>
+                </span>
+                <el-switch v-model="tgSettings.enabled" active-text="开启 TG 通知" />
+              </div>
             </div>
             <el-form label-position="top" style="max-width:600px;">
               <el-form-item label="Telegram Bot Token">
-                <el-input v-model="tgSettings.bot_token" placeholder="例如 123456789:ABCdefGhIjKlMnOpQrStUvWxYz" class="mono" />
+                <el-input v-model="tgSettings.bot_token" placeholder="例如 123456789:ABCdefGhIjKlMnOpQrStUvWxYz" class="mono" clearable show-password />
               </el-form-item>
               <el-form-item label="接收通知的 Chat ID">
-                <el-input v-model="tgSettings.chat_id" placeholder="例如 123456789 或群组 -100123456789" class="mono" />
+                <el-input v-model="tgSettings.chat_id" placeholder="例如 123456789 或群组 -100123456789" class="mono" clearable />
               </el-form-item>
               <div style="display:flex; gap:10px; margin-top:16px;">
                 <el-button type="primary" :loading="tgSaving" @click="saveTgSettings">保存配置</el-button>
@@ -3800,6 +3806,7 @@ createApp({
       await loadProfiles();
       await loadCompartments();
       await loadSshKeys();
+      await loadTgSettings();
       await loadSingle();
     }
 
@@ -3842,6 +3849,7 @@ createApp({
       } else {
         watchUpdate(false);
       }
+      if (name === 'notification') loadTgSettings();
       if (name === 'password') loadConsolePolicy(false);
       if (name === 'usage') loadEgress(false);
       if (name === 'billing') loadBilling(false);
