@@ -345,6 +345,8 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         public_ip=public_ip,
         ipv6=ipv6_addr,
         region=data.get("region"),
+        root_password=req.root_password or None,
+        vpus_per_gb=getattr(req, "vpu", None),
         success=True,
         elapsed=elapsed_time,
     )

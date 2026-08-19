@@ -119,6 +119,15 @@ def test_telegram(bot_token: str, chat_id: str) -> tuple[bool, str]:
     return _post_telegram(bot_token, chat_id, msg)
 
 
+def _detect_arch(shape: str) -> str:
+    s = (shape or "").lower()
+    if "a1" in s or "arm" in s or "aarch64" in s:
+        return "ARM"
+    if "intel" in s or "standard3" in s or "optimized3" in s:
+        return "Intel"
+    return "AMD"
+
+
 def notify_instance_created(
     profile: str,
     display_name: str,
@@ -129,45 +138,47 @@ def notify_instance_created(
     public_ip: str | None = None,
     ipv6: str | None = None,
     region: str | None = None,
+    root_password: str | None = None,
+    vpus_per_gb: int | None = None,
     success: bool = True,
     error_msg: str | None = None,
     elapsed: float = 0.0,
 ) -> None:
     """通知实例创建（开机）成功或失败。"""
-    now_str = beijing_now_str()
-    region_info = f" ({html.escape(region)})" if region else ""
     p_safe = html.escape(str(profile))
-    n_safe = html.escape(str(display_name))
     s_safe = html.escape(str(shape))
+    r_safe = html.escape(str(region or "默认区域"))
+    arch = _detect_arch(shape)
 
     if success:
-        spec_parts = [s_safe]
-        if ocpus or memory_gb:
-            spec_parts.append(f"{ocpus or 1}C / {memory_gb or 1}G")
-        if boot_gb:
-            spec_parts.append(f"{boot_gb}G 引导卷")
-        spec_str = " · ".join(spec_parts)
+        c_val = float(ocpus or 1.0)
+        m_val = float(memory_gb or 1.0)
+        b_val = int(boot_gb or 50)
+        vpu_str = f"({vpus_per_gb}VPUs)" if vpus_per_gb else ""
+        cfg_str = f"{c_val:.1f}C / {m_val:.1f}GB / {b_val}GB{vpu_str}"
 
         lines = [
-            "<b>OCIX · 实例创建成功</b>\n",
-            f"<b>账户</b>: <code>{p_safe}</code>{region_info}",
-            f"<b>实例</b>: <code>{n_safe}</code>",
-            f"<b>配置</b>: {spec_str}\n",
-            f"<b>公网 IPv4</b>: <code>{html.escape(public_ip or '分配中/未获取')}</code>",
+            "🎉 <b>实例创建成功！（1/1）</b>\n",
+            f"👤 <b>租户</b>：{p_safe}",
+            f"🌍 <b>区域</b>：{r_safe}",
+            f"⚙️ <b>架构</b>：{arch}",
+            f"💻 <b>Shape</b>：{s_safe}",
+            f"📊 <b>配置</b>：{cfg_str}",
+            f"🌐 <b>公网IP</b>：<code>{html.escape(public_ip or '分配中/未获取')}</code>",
         ]
         if ipv6:
-            lines.append(f"<b>IPv6</b>: <code>{html.escape(str(ipv6))}</code>")
-        lines.append(f"\n<b>时间</b>: {now_str} (耗时 {elapsed:.1f}s)")
+            lines.append(f"🌐 <b>IPv6</b>：<code>{html.escape(str(ipv6))}</code>")
+        if root_password:
+            lines.append(f"🔑 <b>密码</b>：<code>{html.escape(root_password)}</code>")
         text = "\n".join(lines)
     else:
         err_safe = html.escape(str(error_msg or '未知错误'))
         text = (
-            "<b>OCIX · 实例创建失败</b>\n\n"
-            f"<b>账户</b>: <code>{p_safe}</code>{region_info}\n"
-            f"<b>实例</b>: <code>{n_safe}</code>\n"
-            f"<b>规格</b>: {s_safe}\n\n"
-            f"<b>原因</b>: <i>{err_safe}</i>\n"
-            f"<b>时间</b>: {now_str}"
+            "⚠️ <b>实例创建失败</b>\n\n"
+            f"👤 <b>租户</b>：{p_safe}\n"
+            f"🌍 <b>区域</b>：{r_safe}\n"
+            f"💻 <b>Shape</b>：{s_safe}\n\n"
+            f"❌ <b>原因</b>：<i>{err_safe}</i>"
         )
 
     send_telegram_async(text)
@@ -182,7 +193,6 @@ def notify_instance_terminated(
     ip: str = "",
 ) -> None:
     """通知实例终止/删机。"""
-    now_str = beijing_now_str()
     p_safe = html.escape(str(profile))
     n_safe = html.escape(str(display_name or instance_id))
     boot_action = "保留引导卷" if preserve_boot_volume else "引导卷已一并删除"
@@ -190,12 +200,11 @@ def notify_instance_terminated(
     actor_safe = html.escape(str(actor or "admin"))
 
     text = (
-        "<b>OCIX · 实例已终止</b>\n\n"
-        f"<b>账户</b>: <code>{p_safe}</code>\n"
-        f"<b>实例</b>: <code>{n_safe}</code>\n"
-        f"<b>存储</b>: {boot_action}\n"
-        f"<b>操作人</b>: <code>{actor_safe}</code>\n\n"
-        f"<b>时间</b>: {now_str}"
+        "🗑️ <b>实例已终止 / 删除</b>\n\n"
+        f"👤 <b>租户</b>：{p_safe}\n"
+        f"💻 <b>实例</b>：{n_safe}\n"
+        f"💾 <b>存储</b>：{boot_action}\n"
+        f"👤 <b>操作人</b>：{actor_safe}"
     )
 
     send_telegram_async(text)
@@ -213,14 +222,13 @@ def notify_instance_action(
 ) -> None:
     """通知实例生命周期操作（开机/关机/重启）。"""
     action_map = {
-        "START": "实例已开机",
-        "STOP": "实例已强行停止",
-        "SOFTSTOP": "实例已关机",
-        "RESET": "实例已重启",
-        "SOFTRESET": "实例已软重启",
+        "START": ("🚀", "实例已开机"),
+        "STOP": ("🛑", "实例已强行停止"),
+        "SOFTSTOP": ("⏸️", "实例已关机"),
+        "RESET": ("🔄", "实例已重启"),
+        "SOFTRESET": ("🔄", "实例已软重启"),
     }
-    title = action_map.get(action.upper(), f"实例操作 ({action})")
-    now_str = beijing_now_str()
+    icon, title = action_map.get(action.upper(), ("⚡", f"实例操作 ({action})"))
     p_safe = html.escape(str(profile))
     n_safe = html.escape(str(display_name or instance_id))
     actor = f"{user} ({ip})" if ip else user
@@ -228,21 +236,19 @@ def notify_instance_action(
 
     if success:
         text = (
-            f"<b>OCIX · {title}</b>\n\n"
-            f"<b>账户</b>: <code>{p_safe}</code>\n"
-            f"<b>实例</b>: <code>{n_safe}</code>\n"
-            f"<b>操作人</b>: <code>{actor_safe}</code>\n\n"
-            f"<b>时间</b>: {now_str}"
+            f"{icon} <b>{title}</b>\n\n"
+            f"👤 <b>租户</b>：{p_safe}\n"
+            f"💻 <b>实例</b>：{n_safe}\n"
+            f"👤 <b>操作人</b>：{actor_safe}"
         )
     else:
         err_safe = html.escape(str(error_msg or "操作失败"))
         text = (
-            f"<b>OCIX · {title} 失败</b>\n\n"
-            f"<b>账户</b>: <code>{p_safe}</code>\n"
-            f"<b>实例</b>: <code>{n_safe}</code>\n"
-            f"<b>原因</b>: <i>{err_safe}</i>\n"
-            f"<b>操作人</b>: <code>{actor_safe}</code>\n\n"
-            f"<b>时间</b>: {now_str}"
+            f"❌ <b>{title} 失败</b>\n\n"
+            f"👤 <b>租户</b>：{p_safe}\n"
+            f"💻 <b>实例</b>：{n_safe}\n"
+            f"❌ <b>原因</b>：<i>{err_safe}</i>\n"
+            f"👤 <b>操作人</b>：{actor_safe}"
         )
 
     send_telegram_async(text)
