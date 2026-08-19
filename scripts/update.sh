@@ -126,27 +126,23 @@ fi
 if [[ $EUID -eq 0 ]]; then
   mkdir -p "${REPO_ROOT}/var/control"
   if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
-    if ! systemctl is-active --quiet ocix-updater.service; then
-      echo "安装/启动更新代理（systemd）…"
-      sed "s|__OCIX_HOME__|${REPO_ROOT}|g" "${REPO_ROOT}/deploy/ocix-updater.service" > /etc/systemd/system/ocix-updater.service
-      systemctl daemon-reload
-      systemctl enable --now ocix-updater.service >/dev/null 2>&1 || true
-      systemctl is-active --quiet ocix-updater.service \
-        && ok "更新代理已就绪，之后可以直接在网页上点「立即更新」" \
-        || warn "更新代理未正常启动： systemctl status ocix-updater"
-    fi
+    sed "s|__OCIX_HOME__|${REPO_ROOT}|g" "${REPO_ROOT}/deploy/ocix-updater.service" > /etc/systemd/system/ocix-updater.service
+    systemctl daemon-reload
+    systemctl enable --now ocix-updater.service >/dev/null 2>&1 || true
   elif [[ -d /etc/init.d ]]; then
-    echo "安装/启动更新代理（OpenRC / Alpine）…"
     sed "s|__OCIX_HOME__|${REPO_ROOT}|g" "${REPO_ROOT}/deploy/ocix-updater.openrc" > /etc/init.d/ocix-updater
     chmod +x /etc/init.d/ocix-updater
     rc-update add ocix-updater default >/dev/null 2>&1 || true
     service ocix-updater restart >/dev/null 2>&1 || /etc/init.d/ocix-updater restart >/dev/null 2>&1 || true
-    ok "更新代理已就绪（OpenRC / Alpine），之后可以直接在网页上点「立即更新」"
-  else
-    pkill -f "update-agent.sh" 2>/dev/null || true
-    nohup bash "${REPO_ROOT}/scripts/update-agent.sh" >/dev/null 2>&1 &
-    ok "更新代理已在后台启动，之后可以直接在网页上点「立即更新」"
   fi
+
+  # 双重保障：若服务管理系统未拉起进程，直接由 nohup 常驻启动
+  if ! pgrep -f "update-agent.sh" >/dev/null 2>&1; then
+    nohup bash "${REPO_ROOT}/scripts/update-agent.sh" >>"${REPO_ROOT}/var/control/agent.log" 2>&1 &
+    sleep 1
+  fi
+  touch "${REPO_ROOT}/var/control/agent.alive" 2>/dev/null || true
+  ok "更新代理已就绪，之后可以直接在网页上点「立即更新」"
 fi
 
 echo "重新构建并重启…"

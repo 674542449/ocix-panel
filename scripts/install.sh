@@ -311,22 +311,19 @@ if [[ $EUID -eq 0 ]]; then
     sed "s|__OCIX_HOME__|${REPO_ROOT}|g" "${REPO_ROOT}/deploy/ocix-updater.service" > /etc/systemd/system/ocix-updater.service
     systemctl daemon-reload
     systemctl enable --now ocix-updater.service >/dev/null 2>&1 || true
-    if systemctl is-active --quiet ocix-updater.service; then
-      ok "更新代理已启动（systemd），之后可直接在网页上点「立即更新」"
-    else
-      warn "更新代理未正常启动： systemctl status ocix-updater"
-    fi
   elif [[ -d /etc/init.d ]]; then
     sed "s|__OCIX_HOME__|${REPO_ROOT}|g" "${REPO_ROOT}/deploy/ocix-updater.openrc" > /etc/init.d/ocix-updater
     chmod +x /etc/init.d/ocix-updater
     rc-update add ocix-updater default >/dev/null 2>&1 || true
     service ocix-updater restart >/dev/null 2>&1 || /etc/init.d/ocix-updater restart >/dev/null 2>&1 || true
-    ok "更新代理已启动（OpenRC / Alpine），之后可直接在网页上点「立即更新」"
-  else
-    pkill -f "update-agent.sh" 2>/dev/null || true
-    nohup bash "${REPO_ROOT}/scripts/update-agent.sh" >/dev/null 2>&1 &
-    ok "更新代理已在后台启动，之后可直接在网页上点「立即更新」"
   fi
+
+  if ! pgrep -f "update-agent.sh" >/dev/null 2>&1; then
+    nohup bash "${REPO_ROOT}/scripts/update-agent.sh" >>"${REPO_ROOT}/var/control/agent.log" 2>&1 &
+    sleep 1
+  fi
+  touch "${REPO_ROOT}/var/control/agent.alive" 2>/dev/null || true
+  ok "更新代理已启动，之后可直接在网页上点「立即更新」"
 else
   warn "非 root 权限，跳过系统服务注册；网页端一键更新需要 root 权限。"
 fi
