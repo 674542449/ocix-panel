@@ -111,12 +111,10 @@ def test_telegram(bot_token: str, chat_id: str) -> tuple[bool, str]:
     now_str = beijing_now_str()
     server_ip = get_server_public_ip()
     msg = (
-        "🤖 <b>【OCIX 控制台】Telegram 通知测试</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"• <b>状态</b>: <b>连接成功</b>\n"
-        f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
-        f"• <b>时间</b>: {now_str} (北京时间)\n"
-        "• <b>说明</b>: 实例开机、关机、创建与删除通知已就绪。"
+        "<b>OCIX · Telegram 通知测试</b>\n\n"
+        "<b>状态</b>: 连接成功\n"
+        f"<b>服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n\n"
+        f"<b>时间</b>: {now_str}"
     )
     return _post_telegram(bot_token, chat_id, msg)
 
@@ -137,7 +135,6 @@ def notify_instance_created(
 ) -> None:
     """通知实例创建（开机）成功或失败。"""
     now_str = beijing_now_str()
-    server_ip = get_server_public_ip()
     region_info = f" ({html.escape(region)})" if region else ""
     p_safe = html.escape(str(profile))
     n_safe = html.escape(str(display_name))
@@ -148,35 +145,29 @@ def notify_instance_created(
         if ocpus or memory_gb:
             spec_parts.append(f"{ocpus or 1}C / {memory_gb or 1}G")
         if boot_gb:
-            spec_parts.append(f"引导卷 {boot_gb}G")
+            spec_parts.append(f"{boot_gb}G 引导卷")
         spec_str = " · ".join(spec_parts)
 
-        text = (
-            "🟢 <b>【OCIX】实例创建 / 开机成功</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            f"• <b>账户</b>: <code>{p_safe}</code>{region_info}\n"
-            f"• <b>实例名</b>: <code>{n_safe}</code>\n"
-            f"• <b>配置</b>: {spec_str}\n"
-            f"• <b>公网 IPv4</b>: <code>{html.escape(public_ip or '分配中/未获取')}</code>\n"
-        )
+        lines = [
+            "<b>OCIX · 实例创建成功</b>\n",
+            f"<b>账户</b>: <code>{p_safe}</code>{region_info}",
+            f"<b>实例</b>: <code>{n_safe}</code>",
+            f"<b>配置</b>: {spec_str}\n",
+            f"<b>公网 IPv4</b>: <code>{html.escape(public_ip or '分配中/未获取')}</code>",
+        ]
         if ipv6:
-            text += f"• <b>IPv6</b>: <code>{html.escape(str(ipv6))}</code>\n"
-        text += (
-            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
-            f"• <b>耗时</b>: {elapsed:.1f}s\n"
-            f"• <b>时间</b>: {now_str} (北京时间)"
-        )
+            lines.append(f"<b>IPv6</b>: <code>{html.escape(str(ipv6))}</code>")
+        lines.append(f"\n<b>时间</b>: {now_str} (耗时 {elapsed:.1f}s)")
+        text = "\n".join(lines)
     else:
         err_safe = html.escape(str(error_msg or '未知错误'))
         text = (
-            "🔴 <b>【OCIX】实例创建失败</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            f"• <b>账户</b>: <code>{p_safe}</code>{region_info}\n"
-            f"• <b>实例名</b>: <code>{n_safe}</code>\n"
-            f"• <b>规格</b>: {s_safe}\n"
-            f"• <b>原因</b>: <i>{err_safe}</i>\n"
-            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
-            f"• <b>时间</b>: {now_str} (北京时间)"
+            "<b>OCIX · 实例创建失败</b>\n\n"
+            f"<b>账户</b>: <code>{p_safe}</code>{region_info}\n"
+            f"<b>实例</b>: <code>{n_safe}</code>\n"
+            f"<b>规格</b>: {s_safe}\n\n"
+            f"<b>原因</b>: <i>{err_safe}</i>\n"
+            f"<b>时间</b>: {now_str}"
         )
 
     send_telegram_async(text)
@@ -192,23 +183,19 @@ def notify_instance_terminated(
 ) -> None:
     """通知实例终止/删机。"""
     now_str = beijing_now_str()
-    server_ip = get_server_public_ip()
     p_safe = html.escape(str(profile))
-    id_safe = html.escape(str(instance_id))
-    name_str = f"<code>{html.escape(str(display_name))}</code>\n• <b>OCID</b>: " if display_name else ""
-    boot_action = "保留引导卷" if preserve_boot_volume else "已连同引导卷一并删除"
+    n_safe = html.escape(str(display_name or instance_id))
+    boot_action = "保留引导卷" if preserve_boot_volume else "引导卷已一并删除"
     actor = f"{user} ({ip})" if ip else user
     actor_safe = html.escape(str(actor or "admin"))
 
     text = (
-        "🗑️ <b>【OCIX】实例已终止 / 删除</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"• <b>账户</b>: <code>{p_safe}</code>\n"
-        f"• <b>实例</b>: {name_str}<code>{id_safe}</code>\n"
-        f"• <b>存储处理</b>: {boot_action}\n"
-        f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
-        f"• <b>操作人</b>: <code>{actor_safe}</code>\n"
-        f"• <b>时间</b>: {now_str} (北京时间)"
+        "<b>OCIX · 实例已终止</b>\n\n"
+        f"<b>账户</b>: <code>{p_safe}</code>\n"
+        f"<b>实例</b>: <code>{n_safe}</code>\n"
+        f"<b>存储</b>: {boot_action}\n"
+        f"<b>操作人</b>: <code>{actor_safe}</code>\n\n"
+        f"<b>时间</b>: {now_str}"
     )
 
     send_telegram_async(text)
@@ -226,43 +213,36 @@ def notify_instance_action(
 ) -> None:
     """通知实例生命周期操作（开机/关机/重启）。"""
     action_map = {
-        "START": ("🚀 实例开机", "🟢 已发送开机指令"),
-        "STOP": ("🛑 实例停止 (强行关机)", "🔴 已发送停止指令"),
-        "SOFTSTOP": ("⏸️ 实例关机", "🟡 已发送关机指令"),
-        "RESET": ("🔄 实例重启", "🟡 已发送重启指令"),
-        "SOFTRESET": ("🔄 实例软重启", "🟡 已发送软重启指令"),
+        "START": "实例已开机",
+        "STOP": "实例已强行停止",
+        "SOFTSTOP": "实例已关机",
+        "RESET": "实例已重启",
+        "SOFTRESET": "实例已软重启",
     }
-    title, desc = action_map.get(action.upper(), (f"⚡ 实例操作 ({action})", action))
+    title = action_map.get(action.upper(), f"实例操作 ({action})")
     now_str = beijing_now_str()
-    server_ip = get_server_public_ip()
     p_safe = html.escape(str(profile))
-    id_safe = html.escape(str(instance_id))
-    name_str = f"<code>{html.escape(str(display_name))}</code>\n• <b>OCID</b>: " if display_name else ""
+    n_safe = html.escape(str(display_name or instance_id))
     actor = f"{user} ({ip})" if ip else user
     actor_safe = html.escape(str(actor or "admin"))
 
     if success:
         text = (
-            f"<b>【OCIX】{title}</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            f"• <b>账户</b>: <code>{p_safe}</code>\n"
-            f"• <b>实例</b>: {name_str}<code>{id_safe}</code>\n"
-            f"• <b>状态</b>: {desc}\n"
-            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
-            f"• <b>操作人</b>: <code>{actor_safe}</code>\n"
-            f"• <b>时间</b>: {now_str} (北京时间)"
+            f"<b>OCIX · {title}</b>\n\n"
+            f"<b>账户</b>: <code>{p_safe}</code>\n"
+            f"<b>实例</b>: <code>{n_safe}</code>\n"
+            f"<b>操作人</b>: <code>{actor_safe}</code>\n\n"
+            f"<b>时间</b>: {now_str}"
         )
     else:
         err_safe = html.escape(str(error_msg or "操作失败"))
         text = (
-            f"❌ <b>【OCIX】{title} 失败</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            f"• <b>账户</b>: <code>{p_safe}</code>\n"
-            f"• <b>实例</b>: {name_str}<code>{id_safe}</code>\n"
-            f"• <b>原因</b>: <i>{err_safe}</i>\n"
-            f"• <b>面板服务器 IP</b>: <code>{html.escape(server_ip)}</code>\n"
-            f"• <b>操作人</b>: <code>{actor_safe}</code>\n"
-            f"• <b>时间</b>: {now_str} (北京时间)"
+            f"<b>OCIX · {title} 失败</b>\n\n"
+            f"<b>账户</b>: <code>{p_safe}</code>\n"
+            f"<b>实例</b>: <code>{n_safe}</code>\n"
+            f"<b>原因</b>: <i>{err_safe}</i>\n"
+            f"<b>操作人</b>: <code>{actor_safe}</code>\n\n"
+            f"<b>时间</b>: {now_str}"
         )
 
     send_telegram_async(text)

@@ -82,7 +82,7 @@ _CAPACITY_HINT = (
 def options(
     profile: str,
     compartment_id: str = None,
-    shape: str = freetier.ARM_FREE_SHAPE,
+    shape: str = freetier.AMD_FREE_SHAPE,
     request: Request = None,
     user: str = Depends(security.get_current_user),
 ):

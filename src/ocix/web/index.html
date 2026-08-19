@@ -2848,8 +2848,8 @@ createApp({
     const preflight = ref(null);
     const preflightLoading = ref(false);
     const createForm = reactive({
-      display_name: randomName(), shape: 'VM.Standard.A1.Flex',
-      ocpus: 4, memory_gb: 24, boot_gb: 50,
+      display_name: randomName(), shape: 'VM.Standard.E2.1.Micro',
+      ocpus: 1, memory_gb: 1, boot_gb: 50,
       availability_domain: '', image_id: '', ssh_public_key: '',
       use_password: false, root_password: '',
       assign_ipv6: false, open_all_ports: true,
