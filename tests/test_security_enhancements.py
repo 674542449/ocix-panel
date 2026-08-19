@@ -224,3 +224,14 @@ def test_jwt_token_epoch():
     epoch2 = payload2["epoch"]
 
     assert epoch2 > epoch1, "修改密码后 epoch 应递增"
+
+
+def test_global_http_exception_sanitizer(app_client):
+    """测试全局异常处理器自动对 HTTPException detail 进行脱敏"""
+    r = app_client.get("/api/instances", params={"profile": "INVALID_TEST_PROFILE"})
+    assert r.status_code == 400
+    detail = r.json().get("detail", "")
+    assert "C:\\Users" not in detail
+    assert "/home/" not in detail
+    assert "ocid1.instance." not in detail
+

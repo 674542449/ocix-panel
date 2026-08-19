@@ -3597,7 +3597,7 @@ createApp({
       } catch { return; }
       try {
         await axios.post('/api/provision/storage/delete', {
-          profile: currentProfile.value, volume_id: row.id, kind: row.kind,
+          profile: row.profile || currentProfile.value, volume_id: row.id, kind: row.kind,
         });
         ElMessage.success(`已删除，释放 ${row.size_gb}GB`);
         await loadStorage();

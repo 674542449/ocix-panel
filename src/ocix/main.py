@@ -6,11 +6,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, security
 from .backends import get_backend
 from .common import list_profiles_from_config
 from .config import CORS_ORIGINS, DEV_MODE, ENABLE_DOCS, FRONTEND_DIR, OCI_CONFIG_PATH
+from .sanitize import sanitize_error_message
 from .db import init_db
 from .routers import (
     audit,
@@ -78,6 +80,19 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
         field = ".".join(str(x) for x in err.get("loc", []) if x not in ("body", "query"))
         parts.append(f"{field}: {msg}" if field and len(exc.errors()) > 1 else msg)
     return JSONResponse(status_code=422, content={"detail": "；".join(parts) or "请求参数不合法"})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """确保所有通过 HTTPException 抛出的错误详情中的 OCID、本地路径等敏感信息被自动脱敏。"""
+    detail = exc.detail
+    if isinstance(detail, str):
+        detail = sanitize_error_message(detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail},
+        headers=exc.headers,
+    )
 
 
 @app.middleware("http")
