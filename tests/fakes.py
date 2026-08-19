@@ -48,6 +48,7 @@ class FakeBackend(Backend):
         # 监控数据点，按 SDK 形态回给上层
         self.metrics = []
         self.home_region_name = "us-ashburn-1"
+        self.region_subscriptions = None
         self.invoices = []
         self.console = []
         self.boot_volume_attachments = []
@@ -97,9 +98,15 @@ class FakeBackend(Backend):
         self._rec("list_compartments")
         return list(self.compartments)
 
-    def list_availability_domains(self, profile, compartment_id):
+    def list_availability_domains(self, profile, compartment_id, region=None):
         self._rec("list_availability_domains")
         return list(self.ads)
+
+    def list_region_subscriptions(self, profile, tenancy_id):
+        self._rec("list_region_subscriptions")
+        if self.region_subscriptions is not None:
+            return list(self.region_subscriptions)
+        return [{"region_name": self.home_region_name, "is_home_region": True}]
 
     # ---------- Compute ----------
     def list_instances(self, profile, compartment_id):
@@ -116,6 +123,25 @@ class FakeBackend(Backend):
         self.launched.append(spec)
         return {"id": "ocid1.instance.oc1..new", "display_name": spec["display_name"],
                 "lifecycle_state": "PROVISIONING"}
+
+    def create_compute_capacity_report(self, profile, compartment_id, availability_domain,
+                                       shape_availabilities, region=None):
+        self._rec("create_compute_capacity_report")
+        status = getattr(self, "capacity_status", "AVAILABLE")
+        avail_list = []
+        for s in shape_availabilities:
+            avail_list.append({
+                "instance_shape": s.get("instance_shape") or s.get("shape", "VM.Standard.A1.Flex"),
+                "fault_domain": s.get("fault_domain", "FAULT-DOMAIN-1"),
+                "availability_status": status,
+                "available_count": 1 if status == "AVAILABLE" else 0,
+            })
+        return {
+            "id": "ocid1.computecapacityreport.oc1..test",
+            "compartment_id": compartment_id,
+            "availability_domain": availability_domain,
+            "shape_availabilities": avail_list,
+        }
 
     def terminate_instance(self, profile, instance_id, preserve_boot_volume):
         self._rec("terminate_instance")

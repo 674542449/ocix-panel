@@ -27,10 +27,12 @@ from ..oci_helpers import (
     firewall_status,
     instance_compartment,
     instance_detail,
+    is_capacity_available,
     launch_instance,
     list_availability_domains,
     list_images,
     list_subnets,
+    list_subscribed_regions,
     open_all_ports,
     open_all_ports_on_subnet,
     preflight_create,
@@ -39,12 +41,14 @@ from ..oci_helpers import (
     resolve_subnet,
     restore_backup,
     revoke_all_ports,
+    scan_capacity_radar,
     storage_overview,
     terminate_instance,
     update_volume_performance,
 )
 from ..schemas import (
     BackupRequest,
+    CapacityRadarRequest,
     ClearRulesRequest,
     ConsoleRequest,
     CreateInstanceRequest,
@@ -117,6 +121,42 @@ def preflight(
         raise HTTPException(status_code=400, detail=e.message)
 
 
+@router.post("/capacity-radar")
+def capacity_radar(
+    req: CapacityRadarRequest,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """全区域 / 当前区域容量雷达扫描。仅纯检测，绝不开机。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        return scan_capacity_radar(
+            req.profile,
+            compartment_id=req.compartment_id,
+            shape=req.shape,
+            ocpus=req.ocpus,
+            memory_in_gbs=req.memory_gb,
+            all_regions=req.all_regions,
+            regions=req.regions,
+        )
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.get("/subscribed-regions")
+def subscribed_regions(
+    profile: str,
+    request: Request,
+    user: str = Depends(security.get_current_user),
+):
+    """列出当前账户已订阅的所有区域列表。"""
+    security.check_rate(request, security.API_RATE_LIMIT)
+    try:
+        return list_subscribed_regions(profile)
+    except OCIError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+
 def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: str) -> dict:
     """真正干活的那段，跑在后台线程里。
 
@@ -170,6 +210,56 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         tags = dict(params.get("freeform_tags") or {})
         tags[ROOT_PW_TAG] = req.root_password
         params["freeform_tags"] = tags
+
+    # ── 智能容量探测前置 (先探测 OCI 放货状态，避免频繁 429 报错与封号) ──
+    if req.capacity_probe:
+        job.step("探测 OCI 实时容量状态（智能节流防封号）")
+        ocpus_val = float(check["plan"].get("ocpus", 1))
+        mem_val = float(check["plan"].get("memory_gb", 6))
+        avail, best_fd = is_capacity_available(
+            req.profile, req.compartment_id, req.availability_domain,
+            shape=req.shape, ocpus=ocpus_val, memory_in_gbs=mem_val
+        )
+        if avail and best_fd and not params.get("fault_domain"):
+            params["fault_domain"] = best_fd
+
+        if not avail:
+            if req.auto_retry_until_available:
+                max_retries = max(1, min(int(req.max_retry_minutes or 60) * 3, 360))
+                retry_count = 0
+                job.step(
+                    f"当前可用域暂无库存，已进入智能低频容量探测抢机（最大 {req.max_retry_minutes} 分钟）"
+                )
+                while not avail and retry_count < max_retries:
+                    time.sleep(20)
+                    retry_count += 1
+                    job.step(f"智能容量雷达探测中（第 {retry_count} 次，已等待 {retry_count * 20}s）...")
+                    avail, best_fd = is_capacity_available(
+                        req.profile, req.compartment_id, req.availability_domain,
+                        shape=req.shape, ocpus=ocpus_val, memory_in_gbs=mem_val
+                    )
+                    if avail:
+                        job.step(f"检测到 OCI 已放货！立即锁定 {best_fd or '推荐故障域'} 下单创建...")
+                        if best_fd and not params.get("fault_domain"):
+                            params["fault_domain"] = best_fd
+                        break
+                if not avail:
+                    raise JobError({
+                        "message": (
+                            f"在指定的 {req.max_retry_minutes} 分钟内未探测到放货。"
+                            "已安全退出，未产生无效请求或风控风险。"
+                        )
+                    })
+            else:
+                audit(user, "create-instance", profile=req.profile, target=req.display_name,
+                      detail=f"{req.shape} -> 容量探测拦截（暂无库存）", result="fail", ip=ip)
+                raise JobError({
+                    "message": (
+                        "通过 OCI 容量探测接口检测到当前可用域暂无库存（Out of host capacity）。"
+                        "已智能拦截，未向 OCI 提交无效订单（彻底避免 429 报错与风控）。"
+                        "你可以开启「放货自动抢机」或更换可用域重试。"
+                    )
+                })
 
     job.step(f"向 OCI 下单：{req.shape}")
     try:

@@ -424,6 +424,32 @@
 
     .empty { text-align:center; color:var(--text-3); padding:var(--sp-6) var(--sp-4); font-size:13px; }
     .empty b { display:block; color:#ffffff; font-size:14.5px; margin-bottom:6px; font-weight:600; }
+
+    /* ── 容量雷达 (Capacity Radar) ── */
+    .radar-banner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+                    background:linear-gradient(135deg, rgba(56,189,248,0.12), rgba(43,114,214,0.06));
+                    border:1px solid rgba(56,189,248,0.25); border-radius:12px; padding:16px 20px; margin-bottom:var(--sp-4); }
+    .radar-stats { display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
+    .radar-stat-item { display:flex; flex-direction:column; }
+    .radar-stat-k { font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; }
+    .radar-stat-v { font-family:var(--mono); font-size:20px; font-weight:700; color:#ffffff; }
+    .radar-stat-v.ok { color:var(--ok); }
+    .radar-region-card { background:rgba(30,41,59,0.45); border:1px solid rgba(255,255,255,0.08);
+                         border-radius:12px; padding:16px; margin-bottom:14px; transition:border-color .2s ease; }
+    .radar-region-card.has-stock { border-color:rgba(40,158,109,0.4); background:rgba(40,158,109,0.04); }
+    .radar-region-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+    .radar-region-title { display:flex; align-items:center; gap:8px; font-size:14.5px; font-weight:700; color:#ffffff; }
+    .radar-ad-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; }
+    .radar-ad-box { background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px; }
+    .radar-ad-box.ok { border-color:rgba(40,158,109,0.3); }
+    .radar-ad-name { display:flex; align-items:center; justify-content:space-between; font-size:12.5px; font-weight:600; color:var(--text-2); margin-bottom:8px; }
+    .radar-fd-list { display:flex; flex-direction:column; gap:6px; }
+    .radar-fd-row { display:flex; align-items:center; justify-content:space-between; font-size:11.5px; padding:5px 8px; border-radius:6px; background:rgba(255,255,255,0.03); }
+    .radar-fd-row.ok { background:rgba(40,158,109,0.12); color:#a7f3d0; }
+    .radar-badge { font-size:11px; padding:2px 6px; border-radius:4px; font-weight:600; }
+    .radar-badge.ok { background:rgba(40,158,109,0.2); color:#4ade80; border:1px solid rgba(40,158,109,0.4); }
+    .radar-badge.crit { background:rgba(244,63,94,0.12); color:#fda4af; border:1px solid rgba(244,63,94,0.25); }
+
     .ip-cell { display:inline-flex; align-items:center; gap:6px; max-width:100%; }
     .ip-stack { display:flex; flex-direction:column; gap:1px; line-height:1.35; }
     .ip-sub { font-size:11px; color:var(--text-3); }
@@ -974,6 +1000,24 @@
                     </div>
                   </el-form-item>
 
+                  <el-form-item label="智能容量探测与防封号抢机">
+                    <div style="width:100%;">
+                      <el-checkbox v-model="createForm.capacity_probe" label="智能容量预检（先探测 OCI 放货状态再下单，避免 429 报错与封号）" />
+                      <div v-if="createForm.capacity_probe" style="margin-top:6px;">
+                        <el-checkbox v-model="createForm.auto_retry_until_available" label="无库存时自动抢机（智能低频探测直到放货自动下单）" />
+                        <div v-if="createForm.auto_retry_until_available" style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+                          <span style="font-size:12px; color:var(--text-3);">最大抢机时长：</span>
+                          <el-select v-model="createForm.max_retry_minutes" size="small" style="width:110px;">
+                            <el-option :value="30" label="30 分钟" />
+                            <el-option :value="60" label="1 小时" />
+                            <el-option :value="180" label="3 小时" />
+                            <el-option :value="360" label="6 小时" />
+                          </el-select>
+                        </div>
+                      </div>
+                    </div>
+                  </el-form-item>
+
                   <el-form-item label="登录方式">
                     <div style="width:100%;">
                       <el-checkbox v-model="createForm.use_password"
@@ -1038,12 +1082,141 @@
 
                 <el-button type="primary" size="large" style="width:100%; margin-top:14px;"
                            :disabled="!canCreate" :loading="creating" @click="createInstance">
-                  {{ preflight && !preflight.allow ? '超出免费额度，无法创建' : '创建实例' }}
+                  {{ preflight && !preflight.allow ? '超出免费额度，无法创建' : (createForm.auto_retry_until_available ? '开启智能抢机' : '创建实例') }}
                 </el-button>
                 <p class="create-step" v-if="creating && createStep">
                   <i class="dot warn"></i><span>{{ createStep }}</span>
                 </p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 容量雷达 -->
+        <section class="pane" v-show="activeTab === 'radar'">
+          <div class="card">
+            <div class="card-head">
+              <h2 class="card-title">全区域容量雷达 (纯探测 · 不建机)</h2>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <el-button type="primary" :loading="radarLoading" @click="scanRadar">
+                  <svg class="btn-icon" :class="{ spin: radarLoading }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>
+                  {{ radarLoading ? '雷达扫描中…' : '立即扫描容量雷达' }}
+                </el-button>
+              </div>
+            </div>
+
+            <div class="radar-banner">
+              <div>
+                <div style="font-size:14px; font-weight:700; color:#ffffff; margin-bottom:4px;">
+                  Oracle 官方 ComputeCapacityReport 探测引擎
+                </div>
+                <div style="font-size:12px; color:var(--text-2);">
+                  实时向 OCI 获取各可用区 (AD) 与故障域 (Fault Domain) 的放货与库存状态，纯只读探测，绝不创建任何实例，零风控消耗。
+                </div>
+              </div>
+              <div class="radar-stats" v-if="radarData">
+                <div class="radar-stat-item">
+                  <span class="radar-stat-k">扫描区域</span>
+                  <span class="radar-stat-v">{{ radarData.scanned_regions_count }} 个</span>
+                </div>
+                <div class="radar-stat-item">
+                  <span class="radar-stat-k">有货位置</span>
+                  <span class="radar-stat-v" :class="{ ok: radarData.total_available_locations > 0 }">
+                    {{ radarData.total_available_locations }} 处
+                  </span>
+                </div>
+                <div class="radar-stat-item">
+                  <span class="radar-stat-k">探测耗时</span>
+                  <span class="radar-stat-v mono">{{ radarData.elapsed_seconds }}s</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 扫描选项 -->
+            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:18px; padding:12px 14px; background:rgba(30,41,59,0.35); border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:12.5px; color:var(--text-3); font-weight:600;">探测规格:</span>
+                <div class="seg" role="group" aria-label="雷达规格">
+                  <button type="button" :class="{ on: radarForm.shape === 'VM.Standard.A1.Flex' && radarForm.ocpus === 4 }"
+                          @click="setRadarSpec('VM.Standard.A1.Flex', 4, 24)">A1 4C/24G</button>
+                  <button type="button" :class="{ on: radarForm.shape === 'VM.Standard.A1.Flex' && radarForm.ocpus === 2 }"
+                          @click="setRadarSpec('VM.Standard.A1.Flex', 2, 12)">A1 2C/12G</button>
+                  <button type="button" :class="{ on: radarForm.shape === 'VM.Standard.A1.Flex' && radarForm.ocpus === 1 }"
+                          @click="setRadarSpec('VM.Standard.A1.Flex', 1, 6)">A1 1C/6G</button>
+                  <button type="button" :class="{ on: radarForm.shape === 'VM.Standard.E2.1.Micro' }"
+                          @click="setRadarSpec('VM.Standard.E2.1.Micro', 1, 1)">AMD Micro</button>
+                </div>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+                <el-switch v-model="radarForm.all_regions" active-text="扫描全部已订阅区域" />
+              </div>
+            </div>
+
+            <!-- 扫描中骨架屏 -->
+            <div v-if="radarLoading" style="padding:16px 0;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px; color:#38bdf8; font-weight:600; font-size:13px;">
+                <i class="dot ok"></i><span>正在并发连接 OCI 区域端点，获取各可用区容量报告…</span>
+              </div>
+              <div class="skel skel-row" v-for="i in 4" :key="i"></div>
+            </div>
+
+            <!-- 扫描结果列表 -->
+            <div v-else-if="radarData">
+              <div v-if="!radarData.regions || !radarData.regions.length" class="empty">未找到任何可用区域</div>
+              <div v-for="it in radarData.regions" :key="it.region"
+                   class="radar-region-card" :class="{ 'has-stock': it.has_capacity }">
+                <div class="radar-region-head">
+                  <div class="radar-region-title">
+                    <span>{{ it.region }}</span>
+                    <span class="who" v-if="it.is_current">（当前默认区域）</span>
+                    <span v-if="it.has_capacity" class="radar-badge ok">有可用容量 AVAILABLE</span>
+                    <span v-else-if="!it.error" class="radar-badge crit">暂无库存 NO CAPACITY</span>
+                    <span v-else class="radar-badge crit">查询失败</span>
+                  </div>
+                  <div v-if="it.has_capacity" style="font-size:12px; color:#4ade80; font-weight:600;">
+                    发现可用放货！
+                  </div>
+                </div>
+
+                <div v-if="it.error" style="color:var(--crit); font-size:12px; padding:6px 0;">
+                  探测错误：{{ it.error }}
+                </div>
+
+                <div v-else class="radar-ad-grid">
+                  <div v-for="item in it.ads" :key="item.availability_domain"
+                       class="radar-ad-box" :class="{ ok: item.has_capacity }">
+                    <div class="radar-ad-name">
+                      <span>{{ item.availability_domain }}</span>
+                      <span :class="['radar-badge', item.has_capacity ? 'ok' : 'crit']">
+                        {{ item.has_capacity ? '有货' : '无货' }}
+                      </span>
+                    </div>
+
+                    <div class="radar-fd-list">
+                      <div v-for="fd in item.fault_domains" :key="fd.fault_domain"
+                           class="radar-fd-row" :class="{ ok: fd.available }">
+                        <span class="mono">{{ fd.fault_domain }}</span>
+                        <span style="font-weight:600;">{{ fd.available ? 'AVAILABLE (有货)' : '缺货' }}</span>
+                      </div>
+                    </div>
+
+                    <div v-if="item.has_capacity && it.is_current" style="margin-top:10px;">
+                      <el-button type="primary" size="small" style="width:100%;"
+                                 @click="jumpToCreateWithAd(item.availability_domain)">
+                        使用此可用域去开机
+                      </el-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="empty" style="padding:40px 10px;">
+              <b>点击「立即扫描容量雷达」开始检测</b>
+              <p style="color:var(--text-3); font-size:12px; margin-top:6px;">
+                支持一键探测当前账户所在区域或全球已订阅区域的 A1.Flex 及 Micro 规格库存
+              </p>
             </div>
           </div>
         </section>
@@ -2096,6 +2269,7 @@ const NAV = [
     { name: 'ssh_keys', label: 'SSH 公钥', icon: 'm21 2-2 2m-1.5 1.5L14 9l-1.5-1.5L11 9l-1.5-1.5L8 9l-1.5-1.5L5 9l-3 3 7 7 3-3' },
   ]},
   { title: '观测', items: [
+    { name: 'radar', label: '容量雷达', icon: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z' },
     { name: 'usage', label: '免费额度', icon: 'M21.21 15.89A10 10 0 1 1 8 2.83M22 12A10 10 0 0 0 12 2v10z' },
     { name: 'metrics', label: '监控', icon: 'M3 3v18h18M19 9l-5 5-4-4-3 3' },
     { name: 'billing', label: '账单', icon: 'M2 5h20v14H2zM2 10h20' },
@@ -2220,9 +2394,11 @@ const OcixScene = (() => {
     ctx.beginPath(); ctx.arc(L.cx, L.cy, L.R * 1.35, 0, Math.PI * 2); ctx.fill();
 
     // 赤道光晕环：淡环带凸显球体轮廓
-    ctx.strokeStyle = 'rgba(56,189,248,0.06)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.ellipse(L.cx, L.cy, L.R * 1.02, L.R * 0.28, 0, 0, Math.PI * 2); ctx.stroke();
+    if (ctx.ellipse) {
+      ctx.strokeStyle = 'rgba(56,189,248,0.06)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(L.cx, L.cy, L.R * 1.02, L.R * 0.28, 0, 0, Math.PI * 2); ctx.stroke();
+    }
 
     // 点阵：前面的点明亮青蓝，背面的压暗但保留半透明
     for (let k = 0; k < dots.length; k++) {
@@ -2671,10 +2847,58 @@ createApp({
       availability_domain: '', image_id: '', ssh_public_key: '',
       use_password: false, root_password: '',
       assign_ipv6: false, open_all_ports: true,
+      capacity_probe: true, auto_retry_until_available: false, max_retry_minutes: 60,
     });
     const pubKeyName = ref('');
-    // 存的是正在加 IPv6 的实例 id，用来只给那一行显示 loading
     const ipv6Busy = ref('');
+
+    const radarForm = reactive({
+      shape: 'VM.Standard.A1.Flex',
+      ocpus: 4,
+      memory_gb: 24,
+      all_regions: false,
+    });
+    const radarLoading = ref(false);
+    const radarData = ref(null);
+
+    function setRadarSpec(shape, ocpus, mem) {
+      radarForm.shape = shape;
+      radarForm.ocpus = ocpus;
+      radarForm.memory_gb = mem;
+    }
+
+    async function scanRadar() {
+      radarLoading.value = true;
+      try {
+        const { data } = await axios.post('/api/provision/capacity-radar', {
+          profile: currentProfile.value,
+          compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
+          shape: radarForm.shape,
+          ocpus: radarForm.ocpus,
+          memory_gb: radarForm.memory_gb,
+          all_regions: radarForm.all_regions,
+        });
+        radarData.value = data;
+        if (data.has_any_capacity) {
+          ElMessage.success(`扫描完成！在 ${data.total_available_locations} 处发现可用放货容量`);
+        } else {
+          ElMessage.info('扫描完成，所选规格当前暂无放货库存');
+        }
+      } catch (e) {
+        ElMessage.error(e.response?.data?.detail || '容量雷达扫描失败');
+      } finally {
+        radarLoading.value = false;
+      }
+    }
+
+    function jumpToCreateWithAd(ad) {
+      createForm.shape = radarForm.shape;
+      createForm.ocpus = radarForm.ocpus;
+      createForm.memory_gb = radarForm.memory_gb;
+      createForm.availability_domain = ad;
+      go('create');
+      ElMessage.info(`已切换至新建实例，并自动选中可用域 ${ad}`);
+    }
 
     function rollName() { createForm.display_name = randomName(); }
 
@@ -3117,6 +3341,9 @@ createApp({
           root_password: createForm.use_password ? createForm.root_password : '',
           assign_ipv6: createForm.assign_ipv6,
           open_all_ports: createForm.open_all_ports,
+          capacity_probe: createForm.capacity_probe,
+          auto_retry_until_available: createForm.auto_retry_until_available,
+          max_retry_minutes: createForm.max_retry_minutes,
         });
         const data = await pollJob(sub.job_id);
         ElMessage.success(`${data.display_name} 已创建，正在初始化`);
@@ -4518,6 +4745,7 @@ createApp({
       auditLogs, auditTotal, auditActions, auditPage, auditSize, auditLoading, auditFilter,
       opts, optsLoading, createForm, isArm, canCreate, creating,
       preflight, preflightLoading, storage, storageLoading,
+      radarForm, radarLoading, radarData, setRadarSpec, scanRadar, jumpToCreateWithAd,
       doLogin, logout, refreshActive, loadMetrics, loadAudit,
       onProfileChange, onTabChange, act, batchAct, clearInstSelection,
       canStart, canStop, canReset, stateTone, stateText, specText,

@@ -85,6 +85,14 @@ def tenancy_of(profile: str) -> str:
     return tenancy
 
 
+def region_of(profile: str) -> str:
+    try:
+        cfg = read_profile_config(profile)
+        return cfg.get("region") or ""
+    except Exception:
+        return ""
+
+
 def get_user(profile: str) -> dict:
     cfg = read_profile_config(profile)
     user = cfg.get("user")
@@ -356,21 +364,17 @@ def _availability_domains(profile: str) -> list:
         return []
 
 
-def list_availability_domains(profile: str) -> list:
-    """建实例表单用的可用域列表。
-
-    和上面那个内部函数不同：**这里不吞异常**。
-    内部那些地方查不到可用域只是少一条兜底路径，而这里查不到，
-    表单的下拉就是空的——「创建」按钮又要求必须选一个可用域，
-    于是按钮一直灰着，界面一句解释都没有。宁可把错误抛上去让人看见。
-    """
-    ck = (profile, "ads")
+def list_availability_domains(profile: str, region: str = None) -> list:
+    """建实例表单与容量探测用的可用域列表。"""
+    ck = (profile, "ads", region)
     cached = _read_cache.get(ck)
     if cached is not None:
         return cached
-    ads = _b().list_availability_domains(profile, tenancy_of(profile))
+    ads = _b().list_availability_domains(profile, tenancy_of(profile), region=region)
     names = [a.get("name") for a in ads if a.get("name")]
     if not names:
+        if region:
+            return []
         raise OCIError("这个账户下没有可用域（Availability Domain），没法建实例")
     return _read_cache.set(ck, names)
 
@@ -2002,3 +2006,167 @@ def resize_boot_volume(profile: str, boot_volume_id: str, size_gb: int,
             "note": "云端的卷已经变大了，但系统里还看不到——"
                     "要进实例执行 sudo /usr/libexec/oci-growfs 把分区撑开"
                     "（Oracle 的 Ubuntu 镜像自带这个脚本）。"}
+
+
+# ── 容量探测与全区域雷达扫描 (纯探测 / 不建机) ──
+
+DEFAULT_FAULT_DOMAINS = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
+
+
+def list_subscribed_regions(profile: str) -> list[dict]:
+    """列出当前账户已订阅的所有区域。"""
+    tid = tenancy_of(profile)
+    try:
+        regs = _b().list_region_subscriptions(profile, tid)
+        res = []
+        for r in regs:
+            rn = _get(r, "region-name", "region_name")
+            if rn:
+                res.append({
+                    "region_name": rn,
+                    "region_key": _get(r, "region-key", "region_key") or "",
+                    "is_home_region": bool(_get(r, "is-home-region", "is_home_region")),
+                    "status": _get(r, "status", "status") or "READY",
+                })
+        if res:
+            return res
+    except Exception:
+        pass
+    cfg_reg = region_of(profile)
+    return [{"region_name": cfg_reg, "region_key": "", "is_home_region": True, "status": "READY"}]
+
+
+def probe_single_ad_capacity(profile: str, compartment_id: str, availability_domain: str,
+                             shape: str = "VM.Standard.A1.Flex", ocpus: float = 4.0,
+                             memory_in_gbs: float = 24.0, region: str = None) -> dict:
+    """探测指定可用域下各个 Fault Domain 的容量。"""
+    cid = compartment_id or tenancy_of(profile)
+    shape_availabilities = []
+    is_flex = "flex" in (shape or "").lower()
+
+    for fd in DEFAULT_FAULT_DOMAINS:
+        item = {
+            "instance_shape": shape,
+            "fault_domain": fd,
+        }
+        if is_flex:
+            item["instance_shape_config"] = {
+                "ocpus": float(ocpus or 4.0),
+                "memory_in_gbs": float(memory_in_gbs or 24.0),
+            }
+        shape_availabilities.append(item)
+
+    rep = _b().create_compute_capacity_report(
+        profile, cid, availability_domain, shape_availabilities, region=region
+    )
+
+    raw_avails = _get(rep, "shape-availabilities", "shape_availabilities") or []
+    fd_results = []
+    has_capacity = False
+    best_fd = None
+
+    for a in raw_avails:
+        st = str(_get(a, "availability-status", "availability_status") or "OUT_OF_HOST_CAPACITY").upper()
+        fd_name = _get(a, "fault-domain", "fault_domain")
+        cnt = _num(_get(a, "available-count", "available_count"), 0)
+        is_avail = st == "AVAILABLE"
+        if is_avail:
+            has_capacity = True
+            if not best_fd:
+                best_fd = fd_name
+        fd_results.append({
+            "fault_domain": fd_name,
+            "status": st,
+            "available": is_avail,
+            "available_count": cnt if cnt > 0 else (1 if is_avail else 0),
+        })
+
+    return {
+        "availability_domain": availability_domain,
+        "region": region or region_of(profile),
+        "shape": shape,
+        "ocpus": ocpus if is_flex else 1,
+        "memory_in_gbs": memory_in_gbs if is_flex else 1,
+        "has_capacity": has_capacity,
+        "best_fault_domain": best_fd,
+        "fault_domains": fd_results,
+    }
+
+
+def scan_capacity_radar(profile: str, compartment_id: str = None,
+                        shape: str = "VM.Standard.A1.Flex", ocpus: float = 4.0,
+                        memory_in_gbs: float = 24.0, all_regions: bool = False,
+                        regions: list[str] = None) -> dict:
+    """全区域或当前区域容量雷达扫描。仅纯检测，绝不开机。"""
+    cid = compartment_id or tenancy_of(profile)
+    start_time = time.time()
+
+    target_regions = []
+    if regions:
+        target_regions = list(regions)
+    elif all_regions:
+        sub_regs = list_subscribed_regions(profile)
+        target_regions = [r["region_name"] for r in sub_regs]
+    if not target_regions:
+        target_regions = [region_of(profile)]
+
+    results_by_region = []
+    total_available_locations = 0
+
+    for reg in target_regions:
+        reg_entry = {
+            "region": reg,
+            "is_current": reg == region_of(profile),
+            "ads": [],
+            "has_capacity": False,
+            "error": None,
+        }
+        try:
+            ads = list_availability_domains(profile, region=reg)
+            for ad_name in ads:
+                ad_probe = probe_single_ad_capacity(
+                    profile, cid, ad_name, shape=shape, ocpus=ocpus,
+                    memory_in_gbs=memory_in_gbs, region=reg
+                )
+                if ad_probe["has_capacity"]:
+                    reg_entry["has_capacity"] = True
+                    total_available_locations += 1
+                reg_entry["ads"].append(ad_probe)
+        except Exception as e:
+            reg_entry["error"] = str(e)
+
+        results_by_region.append(reg_entry)
+
+    elapsed = round(time.time() - start_time, 2)
+    return {
+        "profile": profile,
+        "shape": shape,
+        "ocpus": ocpus,
+        "memory_in_gbs": memory_in_gbs,
+        "scanned_regions_count": len(results_by_region),
+        "total_available_locations": total_available_locations,
+        "has_any_capacity": total_available_locations > 0,
+        "elapsed_seconds": elapsed,
+        "time_scanned": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "regions": results_by_region,
+    }
+
+
+def is_capacity_available(profile: str, compartment_id: str, availability_domain: str,
+                          shape: str, ocpus: float, memory_in_gbs: float,
+                          fault_domain: str = None, region: str = None) -> tuple[bool, str | None]:
+    """快速单点容量预检。返回 (是否可用, 推荐的可用 Fault Domain)。"""
+    try:
+        probe = probe_single_ad_capacity(
+            profile, compartment_id, availability_domain,
+            shape=shape, ocpus=ocpus, memory_in_gbs=memory_in_gbs, region=region
+        )
+        if fault_domain:
+            for fd in probe["fault_domains"]:
+                if fd["fault_domain"] == fault_domain:
+                    return fd["available"], (fault_domain if fd["available"] else None)
+            return False, None
+        return probe["has_capacity"], probe["best_fault_domain"]
+    except Exception:
+        # 如果容量报告接口调用失败（例如部分区域权限不支持），则放行给 launch_instance 尝试
+        return True, fault_domain

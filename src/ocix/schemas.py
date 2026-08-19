@@ -63,6 +63,16 @@ class PreflightRequest(BaseModel):
     compartment_id: str | None = None
 
 
+class CapacityRadarRequest(BaseModel):
+    profile: str
+    compartment_id: str | None = None
+    shape: str = "VM.Standard.A1.Flex"
+    ocpus: float = 4
+    memory_gb: float = 24
+    all_regions: bool = False
+    regions: list[str] | None = None
+
+
 class CreateInstanceRequest(BaseModel):
     profile: str
     compartment_id: str
@@ -83,6 +93,11 @@ class CreateInstanceRequest(BaseModel):
     assign_ipv6: bool = False
     # 建完自动放行全部端口；关掉则只留 OCI 默认的 22 端口
     open_all_ports: bool = True
+    # 智能容量探测前置（先探测 OCI 放货状态再下单，避免频繁 429 和封号）
+    capacity_probe: bool = True
+    # 智能放货抢机（检测到无库存时进入智能低频容量探测直到放货创建）
+    auto_retry_until_available: bool = False
+    max_retry_minutes: int = 60
 
     @field_validator("display_name")
     @classmethod

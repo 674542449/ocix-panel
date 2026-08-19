@@ -81,13 +81,15 @@ class SDKBackend(Backend):
         except CONFIG_ERRORS as e:
             raise OCIError(f"读取 OCI 配置失败: {e}") from None
 
-    def _client(self, profile: str, kind: str):
-        key = (profile, kind)
+    def _client(self, profile: str, kind: str, region: str = None):
+        key = (profile, kind, region)
         with self._lock:
             hit = self._clients.get(key)
         if hit is not None:
             return hit
         cfg = self._cfg(profile)
+        if region:
+            cfg = dict(cfg, region=region)
         try:
             oci.config.validate_config(cfg)
         except Exception as e:  # noqa: BLE001 - 任何配置问题都要变成可读提示
@@ -107,23 +109,23 @@ class SDKBackend(Backend):
             self._clients[key] = client
         return client
 
-    def _compute(self, p):
-        return self._client(p, "compute")
+    def _compute(self, p, region=None):
+        return self._client(p, "compute", region=region)
 
-    def _net(self, p):
-        return self._client(p, "network")
+    def _net(self, p, region=None):
+        return self._client(p, "network", region=region)
 
-    def _block(self, p):
-        return self._client(p, "block")
+    def _block(self, p, region=None):
+        return self._client(p, "block", region=region)
 
-    def _iam(self, p):
-        return self._client(p, "identity")
+    def _iam(self, p, region=None):
+        return self._client(p, "identity", region=region)
 
-    def _mon(self, p):
-        return self._client(p, "monitoring")
+    def _mon(self, p, region=None):
+        return self._client(p, "monitoring", region=region)
 
-    def _limits(self, p):
-        return self._client(p, "limits")
+    def _limits(self, p, region=None):
+        return self._client(p, "limits", region=region)
 
     def _all(self, fn, *a, **kw) -> list:
         """自动翻页，等价于 CLI 的 --all。"""
@@ -150,8 +152,11 @@ class SDKBackend(Backend):
         return self._all(self._iam(profile).list_compartments, tenancy_id,
                          compartment_id_in_subtree=True, access_level="ACCESSIBLE")
 
-    def list_availability_domains(self, profile, compartment_id):
-        return _list(_wrap(self._iam(profile).list_availability_domains, compartment_id))
+    def list_availability_domains(self, profile, compartment_id, region=None):
+        return _list(_wrap(self._iam(profile, region=region).list_availability_domains, compartment_id))
+
+    def list_region_subscriptions(self, profile, tenancy_id):
+        return self._all(self._iam(profile).list_region_subscriptions, tenancy_id)
 
     # ---------- Compute ----------
     def list_instances(self, profile, compartment_id):
@@ -197,6 +202,35 @@ class SDKBackend(Backend):
             details.shape_config = oci.core.models.LaunchInstanceShapeConfigDetails(
                 ocpus=float(sc["ocpus"]), memory_in_gbs=float(sc["memoryInGBs"]))
         return _d(_wrap(self._compute(profile).launch_instance, details).data)
+
+    def create_compute_capacity_report(self, profile, compartment_id, availability_domain,
+                                       shape_availabilities, region=None):
+        req_shapes = []
+        for s in shape_availabilities:
+            sc = s.get("instance_shape_config") or s.get("shape_config")
+            shape_cfg = None
+            if sc:
+                ocpus = float(sc.get("ocpus", 4.0))
+                mem = float(sc.get("memory_in_gbs") or sc.get("memoryInGBs") or 24.0)
+                shape_cfg = oci.core.models.CapacityReportInstanceShapeConfig(
+                    ocpus=ocpus,
+                    memory_in_gbs=mem,
+                )
+            fd = s.get("fault_domain")
+            shape_detail = oci.core.models.CreateCapacityReportShapeAvailabilityDetails(
+                instance_shape=s.get("instance_shape") or s.get("shape"),
+                instance_shape_config=shape_cfg,
+                fault_domain=fd,
+            )
+            req_shapes.append(shape_detail)
+
+        details = oci.core.models.CreateComputeCapacityReportDetails(
+            compartment_id=compartment_id,
+            availability_domain=availability_domain,
+            shape_availabilities=req_shapes,
+        )
+        client = self._compute(profile, region=region)
+        return _d(_wrap(client.create_compute_capacity_report, details).data)
 
     def terminate_instance(self, profile, instance_id, preserve_boot_volume):
         _wrap(self._compute(profile).terminate_instance, instance_id,

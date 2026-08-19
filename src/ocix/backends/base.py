@@ -34,8 +34,13 @@ class Backend(ABC):
     def list_compartments(self, profile: str, tenancy_id: str) -> list: ...
 
     @abstractmethod
-    def list_availability_domains(self, profile: str, compartment_id: str) -> list:
-        """返回 [{"name": ...}, ...]。"""
+    def list_availability_domains(self, profile: str, compartment_id: str,
+                                  region: str = None) -> list:
+        """返回 [{"name": ...}, ...]，支持指定 region。"""
+
+    @abstractmethod
+    def list_region_subscriptions(self, profile: str, tenancy_id: str) -> list:
+        """返回已订阅的区域列表 [{"region_name": ...}, ...]。"""
 
     # ---------- Compute ----------
     @abstractmethod
@@ -49,6 +54,13 @@ class Backend(ABC):
         """spec 字段：compartment_id / availability_domain / display_name / image_id /
         subnet_id / shape / boot_gb / ssh_public_key / assign_ipv6 /
         ocpus+memory_gb（仅 Flex 规格）。"""
+
+    @abstractmethod
+    def create_compute_capacity_report(self, profile: str, compartment_id: str,
+                                       availability_domain: str,
+                                       shape_availabilities: list[dict],
+                                       region: str = None) -> dict:
+        """创建计算实例容量报告，探测各可用域与故障域是否有可用库存。"""
 
     @abstractmethod
     def terminate_instance(self, profile: str, instance_id: str,
