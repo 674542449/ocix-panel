@@ -502,16 +502,6 @@
     .el-pagination .el-pagination__total { color:#cbd5e1 !important; font-weight:600; font-size:13px; }
 
     /* ── 企业级财务中心 (Financial Center) ── */
-    .fin-grid { display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-4); margin-bottom:var(--sp-4); }
-    @media (max-width:1000px) { .fin-grid { grid-template-columns:1fr; } }
-    .pay-card { background:linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9));
-                border:1px solid rgba(255, 255, 255, 0.1); border-radius:12px; padding:18px 20px;
-                position:relative; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
-    .pay-card::after { content:""; position:absolute; right:-20px; bottom:-20px; width:120px; height:120px;
-                       background:radial-gradient(circle, rgba(56, 189, 248, 0.15), transparent 70%); pointer-events:none; }
-    .pay-card-brand { font-size:13px; font-weight:700; color:#38bdf8; letter-spacing:.05em; text-transform:uppercase; margin-bottom:12px; }
-    .pay-card-num { font-family:var(--mono); font-size:19px; font-weight:700; letter-spacing:.12em; color:#ffffff; margin-bottom:14px; }
-    .pay-card-foot { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-3); }
     .cost-bar-wrap { margin-bottom:12px; }
     .cost-bar-head { display:flex; align-items:center; justify-content:space-between; font-size:12.5px; margin-bottom:5px; }
     .cost-bar-track { height:8px; background:rgba(255, 255, 255, 0.08); border-radius:4px; overflow:hidden; }
@@ -1938,52 +1928,32 @@
             </div>
           </div>
 
-          <!-- 支付方式与成本概览两栏布局 -->
-          <div class="fin-grid">
-            <!-- 支付方式 -->
-            <div class="card" style="margin-bottom:0;">
-              <div class="card-head">
-                <h2 class="card-title">支付方式与结算</h2>
-                <span class="who">安全只读</span>
-              </div>
-              <div v-for="pm in (paymentMethods.methods || [])" :key="pm.subscription_id" class="pay-card" style="margin-bottom:12px;">
-                <div class="pay-card-brand">{{ pm.card_brand }} · {{ pm.plan_type }}</div>
-                <div class="pay-card-num">{{ pm.masked_card }}</div>
-                <div class="pay-card-foot">
-                  <span>结算币种：<b style="color:#ffffff;">{{ pm.currency }}</b></span>
-                  <span>{{ pm.billing_cycle }}</span>
-                  <span class="state"><i class="dot ok"></i><span class="state-label">{{ pm.status }}</span></span>
-                </div>
-              </div>
+          <!-- 期间成本与预测分析 -->
+          <div class="card">
+            <div class="card-head">
+              <h2 class="card-title">成本分析与月度支出预测</h2>
+              <el-button size="small" text bg @click="downloadCostCsv">导出期间成本明细 (CSV)</el-button>
             </div>
-
-            <!-- 期间成本与预测分析 -->
-            <div class="card" style="margin-bottom:0;">
-              <div class="card-head">
-                <h2 class="card-title">成本分析与预测</h2>
-                <el-button size="small" text bg @click="downloadCostCsv">导出成本明细 (CSV)</el-button>
+            <div style="margin-bottom:14px;">
+              <el-radio-group v-model="selectedPeriod" size="small" @change="loadPeriodCost">
+                <el-radio-button value="current_month">本月至今</el-radio-button>
+                <el-radio-button value="last_month">上月整月</el-radio-button>
+                <el-radio-button value="last_3_months">近 3 个月</el-radio-button>
+                <el-radio-button value="last_6_months">近 6 个月</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="stats" style="margin-bottom:8px;">
+              <div class="stat">
+                <div class="v" style="color:#38bdf8;">{{ periodCost.currency || 'USD' }} {{ periodCost.total || '0.00' }}</div>
+                <div class="k">期间实际消费</div>
               </div>
-              <div style="margin-bottom:14px;">
-                <el-radio-group v-model="selectedPeriod" size="small" @change="loadPeriodCost">
-                  <el-radio-button value="current_month">本月至今</el-radio-button>
-                  <el-radio-button value="last_month">上月整月</el-radio-button>
-                  <el-radio-button value="last_3_months">近 3 个月</el-radio-button>
-                  <el-radio-button value="last_6_months">近 6 个月</el-radio-button>
-                </el-radio-group>
+              <div class="stat" v-if="selectedPeriod === 'current_month'">
+                <div class="v" style="color:#fde047;">{{ periodCost.currency || 'USD' }} {{ periodCost.forecast_total || '0.00' }}</div>
+                <div class="k">本月预估总消费</div>
               </div>
-              <div class="stats" style="margin-bottom:16px;">
-                <div class="stat">
-                  <div class="v" style="color:#38bdf8;">{{ periodCost.currency || 'USD' }} {{ periodCost.total || '0.00' }}</div>
-                  <div class="k">期间实际消费</div>
-                </div>
-                <div class="stat" v-if="selectedPeriod === 'current_month'">
-                  <div class="v" style="color:#fde047;">{{ periodCost.currency || 'USD' }} {{ periodCost.forecast_total || '0.00' }}</div>
-                  <div class="k">本月预估总消费</div>
-                </div>
-                <div class="stat">
-                  <div class="v">{{ (periodCost.by_service || []).length }}</div>
-                  <div class="k">涉及计费服务</div>
-                </div>
+              <div class="stat">
+                <div class="v">{{ (periodCost.by_service || []).length }}</div>
+                <div class="k">涉及计费服务</div>
               </div>
             </div>
           </div>
@@ -2973,7 +2943,6 @@ createApp({
     const invoices = ref({});
     const periodCost = ref({});
     const selectedPeriod = ref('current_month');
-    const paymentMethods = ref({ methods: [], total: 0 });
     const billingLoading = ref(false);
     const tier = ref({});
     const tierLoading = ref(false);
@@ -4215,8 +4184,6 @@ createApp({
         await loadPeriodCost();
         const inv = await axios.get('/api/monitor/invoices', { params: { profile: currentProfile.value } });
         invoices.value = inv.data;
-        const pm = await axios.get('/api/monitor/payment-methods', { params: { profile: currentProfile.value } });
-        paymentMethods.value = pm.data;
       } catch (e) {
         ElMessage.error(errMsg(e, '财务数据查询失败'));
       } finally { billingLoading.value = false; }
@@ -4917,7 +4884,7 @@ createApp({
       termConnecting, termConnected, termEl, termTitle,
       openTerm, closeTerm, termConnect, onPrivateKeyFile,
       egress, egressLoading, loadEgress, fmtGb, fmtDay,
-      cost, invoices, periodCost, selectedPeriod, paymentMethods, billingLoading, loadBilling, loadPeriodCost, downloadInvoicesCsv, downloadCostCsv, invoiceDot, invoiceText,
+      cost, invoices, periodCost, selectedPeriod, billingLoading, loadBilling, loadPeriodCost, downloadInvoicesCsv, downloadCostCsv, invoiceDot, invoiceText,
       tierDot, tierText, tierTitle, tierDotOf,
       sys, sysLoading, loadSystem,
       changeIp, changePerformance,

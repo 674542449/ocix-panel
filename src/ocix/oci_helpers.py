@@ -1722,9 +1722,9 @@ def period_cost(profile: str, period: str = "current_month") -> dict:
     now = datetime.now(timezone.utc)
     forecast_total = total
     if period == "current_month" and now.day > 0:
-        # 基于当前月已过去天数推算整月预测消费
         import calendar
         days_in_month = calendar.monthrange(now.year, now.month)[1]
+        forecast_total = round((total / max(1, now.day)) * days_in_month, 2)
     by_svc_list = sorted(
         ({"service": k, "amount": round(v, 4)} for k, v in by_service.items()),
         key=lambda x: -x["amount"]
@@ -1750,48 +1750,6 @@ def period_cost(profile: str, period: str = "current_month") -> dict:
 def month_cost(profile: str) -> dict:
     """当月消费汇总（向后兼容）。"""
     return period_cost(profile, "current_month")
-
-
-def get_payment_methods(profile: str) -> dict:
-    """获取租户支付方式与结算信息（安全只读脱敏展示）。"""
-    ck = (profile, "payment_methods")
-    cached = _read_cache.get(ck)
-    if cached is not None:
-        return cached
-
-    tenancy = tenancy_of(profile)
-    methods = []
-    try:
-        raw_list = _b().list_payment_methods(profile, tenancy, _home_region(profile))
-        for it in raw_list:
-            card_num = _get(it, "payment-gateway", "card-number") or _get(it, "card-number") or ""
-            masked_card = f"•••• {card_num[-4:]}" if len(card_num) >= 4 else (card_num or "•••• 8888")
-            methods.append({
-                "subscription_id": _get(it, "id") or _get(it, "subscription-id") or "",
-                "plan_type": _get(it, "plan-type") or "Pay-As-You-Go（按量付费）",
-                "payment_type": _get(it, "payment-type") or "Credit Card (信用卡)",
-                "card_brand": _get(it, "card-brand") or "Visa / Mastercard",
-                "masked_card": masked_card,
-                "currency": _get(it, "currency") or "USD",
-                "billing_cycle": "按月周期出账结算",
-                "status": _get(it, "status") or "ACTIVE",
-            })
-    except Exception:
-        pass
-
-    if not methods:
-        methods.append({
-            "subscription_id": "SUB-DEFAULT",
-            "plan_type": "Always Free / Pay-As-You-Go",
-            "payment_type": "Credit Card (安全绑定)",
-            "card_brand": "国际信用卡",
-            "masked_card": "•••• 自动扣缴",
-            "currency": "USD",
-            "billing_cycle": "次月结算",
-            "status": "ACTIVE",
-        })
-
-    return _read_cache.set(ck, {"methods": methods, "total": len(methods)})
 
 
 def export_invoices_csv(profile: str) -> str:

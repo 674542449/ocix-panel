@@ -8,7 +8,6 @@ from ..oci_helpers import (
     export_invoices_csv,
     free_tier_usage,
     get_metrics,
-    get_payment_methods,
     list_invoices,
     month_cost,
     period_cost,
@@ -134,21 +133,6 @@ def cost_period(
     try:
         with account_gate(profile):
             return period_cost(profile, period)
-    except OCIError as e:
-        raise HTTPException(status_code=400, detail=e.message)
-
-
-@router.get("/payment-methods")
-def payment_methods(
-    profile: str,
-    request: Request = None,
-    user: str = Depends(security.get_current_user),
-):
-    """获取绑定的支付方式与结算周期（脱敏展示）。"""
-    security.check_rate(request, security.API_RATE_LIMIT)
-    try:
-        with account_gate(profile):
-            return get_payment_methods(profile)
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)
 

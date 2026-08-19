@@ -582,10 +582,6 @@ def test_billing_endpoints(app_client, live_backend):
     assert period.json()["total"] == 1.0
     assert period.json()["period"] == "current_month"
 
-    pm = app_client.get("/api/monitor/payment-methods?profile=EXISTING")
-    assert pm.status_code == 200
-    assert pm.json()["total"] >= 1
-
     inv_dl = app_client.get("/api/monitor/invoices/download?profile=EXISTING")
     assert inv_dl.status_code == 200
     assert "text/csv" in inv_dl.headers["content-type"]

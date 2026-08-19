@@ -366,10 +366,6 @@ class FakeBackend(Backend):
         self._rec("list_invoices")
         return [_to_sdk_shape(x) for x in self.invoices[:limit]]
 
-    def list_payment_methods(self, profile, tenancy_id, home_region=None):
-        self._rec("list_payment_methods")
-        return list(getattr(self, "payment_methods", []))
-
     def summarize_usage(self, profile, tenant_id, start, end, granularity, group_by):
         self._rec("summarize_usage")
         return [_to_sdk_shape(x) for x in self.usage_items]
