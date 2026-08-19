@@ -16,10 +16,16 @@
 
 ## 一键搭建
 
-全面原生兼容 **Ubuntu / Debian / Alpine Linux** 等主流 Linux 系统（需要 Docker）：
+全面原生兼容 **Ubuntu / Debian / Alpine Linux** 等主流 Linux 系统：
 
+**Ubuntu / Debian 用户：**
 ```bash
 sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && sudo bash scripts/install.sh
+```
+
+**Alpine Linux 用户（默认 root 运行，自动就绪环境）：**
+```bash
+apk add --no-cache git bash curl docker docker-cli-compose openssl && rc-update add docker default && service docker start && git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && bash scripts/install.sh
 ```
 
 装到 **`/opt/ocix`**。脚本会依次问你：**用域名还是 IP+端口**访问、**管理员用户名和密码**（明文显示便于核对）。会话密钥自动生成，不用你填任何密钥类的东西。
@@ -28,15 +34,15 @@ sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/
 
 ```bash
 # 方式 A：域名 + 自动 HTTPS（证书在部署时就申请好）
-sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && \
-  sudo bash scripts/install.sh --domain panel.example.com --email you@example.com \
+git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && \
+  bash scripts/install.sh --domain panel.example.com --email you@example.com \
     --admin-user admin --admin-password 你的密码
 ```
 
 ```bash
 # 方式 B：IP + 端口 直连（无 HTTPS，适合内网或临时使用）
-sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && \
-  sudo bash scripts/install.sh --port 8000 --admin-user admin --admin-password 你的密码
+git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/ocix && \
+  bash scripts/install.sh --port 8000 --admin-user admin --admin-password 你的密码
 ```
 
 > **域名模式**需要域名的 A 记录已指向本机公网 IP，且 80 / 443 没被占用、安全组已放行。
@@ -45,10 +51,6 @@ sudo git clone https://github.com/674542449/ocix-panel.git /opt/ocix && cd /opt/
 > **直连模式**没有 HTTPS，密码是明文传输，别长期挂公网。记得在云厂商安全组放行你选的端口。
 
 > 从别的目录跑也行，脚本会自动把项目搬到 `/opt/ocix` 再继续；加 `--dir /其他/路径` 可改位置，`--here` 则就地安装。
-
-**安装依赖环境（未安装 Docker 时）：**
-- **Ubuntu / Debian**：`curl -fsSL https://get.docker.com | sh`
-- **Alpine Linux**：`apk add --no-cache git bash curl docker docker-cli-compose openssl && rc-update add docker default && service docker start`
 
 ---
 

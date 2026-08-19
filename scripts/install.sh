@@ -4,6 +4,19 @@
 #   交互式:  sudo bash scripts/install.sh
 #   域名:    sudo bash scripts/install.sh --domain panel.example.com --email me@example.com
 #   直连:    sudo bash scripts/install.sh --port 8000
+# 如果在精简环境（如 Alpine Linux ash）下用 sh 运行且未装 bash，自动补全并切入 bash
+if [ -z "${BASH_VERSION:-}" ]; then
+  if command -v apk >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+    echo "Alpine Linux 环境：正在自动补全 bash 与基础组件..."
+    apk add --no-cache bash curl docker docker-cli-compose openssl git || true
+    rc-update add docker default 2>/dev/null || true
+    service docker start 2>/dev/null || true
+  fi
+  if command -v bash >/dev/null 2>&1; then
+    exec bash "$0" "$@"
+  fi
+fi
+
 set -euo pipefail
 
 ORIG_ARGS=("$@")

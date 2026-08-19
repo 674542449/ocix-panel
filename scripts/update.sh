@@ -4,6 +4,15 @@
 #   bash /opt/ocix/scripts/update.sh          更新到最新版
 #   bash /opt/ocix/scripts/update.sh --check  只看有没有新版本，不动手
 #   bash /opt/ocix/scripts/update.sh --yes    不交互，本地改动直接丢弃（更新代理用这个）
+if [ -z "${BASH_VERSION:-}" ]; then
+  if command -v bash >/dev/null 2>&1; then
+    exec bash "$0" "$@"
+  elif command -v apk >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+    apk add --no-cache bash >/dev/null 2>&1 || true
+    command -v bash >/dev/null 2>&1 && exec bash "$0" "$@"
+  fi
+fi
+
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
