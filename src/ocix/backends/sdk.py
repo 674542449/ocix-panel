@@ -586,15 +586,19 @@ class SDKBackend(Backend):
                              subscription_id).data)
 
 
-def _port_range(opt: dict):
-    rng = (opt or {}).get("destinationPortRange")
+def _port_range(rng: dict):
     if not rng:
         return None
     return oci.core.models.PortRange(min=int(rng["min"]), max=int(rng["max"]))
 
 
 def _ingress_model(r: dict):
-    """把 camelCase 的规则 dict 转成 SDK 模型。"""
+    """把 camelCase 的规则 dict 转成 SDK 模型。
+
+    源端口范围必须一起带上。改一条规则时面板是「整表读回来 → 改 → 整表写回去」，
+    这里漏掉 sourcePortRange 就等于把别的规则悄悄放宽成「任意源端口」——
+    加一条 80 端口，顺手把一条限定源端口的规则改成了全放行。
+    """
     rule = oci.core.models.IngressSecurityRule(
         protocol=str(r.get("protocol")),
         source=r.get("source"),
@@ -602,12 +606,14 @@ def _ingress_model(r: dict):
         is_stateless=bool(r.get("isStateless", False)),
         description=r.get("description"),
     )
-    if r.get("tcpOptions"):
-        rule.tcp_options = oci.core.models.TcpOptions(
-            destination_port_range=_port_range(r["tcpOptions"]))
-    if r.get("udpOptions"):
-        rule.udp_options = oci.core.models.UdpOptions(
-            destination_port_range=_port_range(r["udpOptions"]))
+    for key, model in (("tcpOptions", oci.core.models.TcpOptions),
+                       ("udpOptions", oci.core.models.UdpOptions)):
+        opt = r.get(key)
+        if not opt:
+            continue
+        built = model(destination_port_range=_port_range(opt.get("destinationPortRange")))
+        built.source_port_range = _port_range(opt.get("sourcePortRange"))
+        setattr(rule, "tcp_options" if key == "tcpOptions" else "udp_options", built)
     if r.get("icmpOptions"):
         icmp = r["icmpOptions"]
         rule.icmp_options = oci.core.models.IcmpOptions(

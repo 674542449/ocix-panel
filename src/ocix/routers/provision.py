@@ -7,6 +7,7 @@ from ..cloudinit import ROOT_PW_TAG, root_password_cloud_config
 from ..common import OCIError, account_gate
 from ..db import audit
 from ..jobs import JobError
+from ..sanitize import sanitize_error_message
 from ..oci_helpers import (
     VPU_RANGE,
     add_ipv6_to_instance,
@@ -93,7 +94,7 @@ def options(
         images = list_images(profile, compartment_id, shape=shape)
         subnets = list_subnets(profile, compartment_id)
     except OCIError as e:
-        raise HTTPException(status_code=400, detail=e.message)
+        raise HTTPException(status_code=400, detail=sanitize_error_message(e.message))
     return {
         "availability_domains": ads,
         "images": images,
@@ -623,7 +624,8 @@ def delete_firewall_rule(
     cid = _compartment_of(req)
     try:
         st = firewall_status(req.profile, req.instance_id, cid)
-        res = delete_port_rule(req.profile, st["subnet_id"], req.index)
+        res = delete_port_rule(req.profile, st["subnet_id"], req.index,
+                               req.security_list_id)
         status = firewall_status(req.profile, req.instance_id, cid)
     except OCIError as e:
         raise HTTPException(status_code=400, detail=e.message)

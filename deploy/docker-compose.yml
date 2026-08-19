@@ -20,7 +20,6 @@ services:
       - OCIX_TRUST_PROXY=${OCIX_TRUST_PROXY:-false}
       - OCIX_PROXY_HOPS=${OCIX_PROXY_HOPS:-1}
       - OCIX_ENABLE_DOCS=${OCIX_ENABLE_DOCS:-false}
-      - OCIX_PASSWORD_MAX_AGE_DAYS=${OCIX_PASSWORD_MAX_AGE_DAYS:-0}
       - OCIX_HOME=${OCIX_HOME:-/opt/ocix}
       - OCIX_CONTROL_DIR=/app/control
     volumes:

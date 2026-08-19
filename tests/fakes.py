@@ -75,6 +75,8 @@ class FakeBackend(Backend):
         self.subnet: dict = {"security_list_ids": ["sl1"], "vcn_id": "vcn1",
                              "display_name": "public", "route_table_id": "rt1"}
         self.ingress_rules: list = []
+        # 需要区分「哪条规则属于哪个安全列表」时改成 {sl_id: [rules]}
+        self.ingress_by_list: dict | None = None
         self.launched: list = []
         self.private_ips: list = [{"id": "pip1", "is_primary": True}]
         self.public_ip: dict = {"id": "pub1", "lifetime": "EPHEMERAL"}
@@ -240,12 +242,27 @@ class FakeBackend(Backend):
         # 真实 SDK 回的是 snake_case。这里必须照做——
         # 之前原样回显面板写进去的 camelCase，等于把「读回来」这一步的
         # 键名问题全遮住了，结果 tcp_options 取不到的 bug 一直测不出来。
-        return {"ingress_security_rules": [_to_sdk_shape(r) for r in self.ingress_rules],
+        return {"ingress_security_rules": [_to_sdk_shape(r)
+                                           for r in self._rules_of(security_list_id)],
                 "display_name": "Default Security List"}
 
     def update_ingress_rules(self, profile, security_list_id, rules):
         self._rec("update_ingress_rules")
-        self.ingress_rules = list(rules)
+        if self.ingress_by_list is not None:
+            self.ingress_by_list[security_list_id] = list(rules)
+        else:
+            self.ingress_rules = list(rules)
+
+    def _rules_of(self, security_list_id):
+        """一个子网可以挂多个安全列表。
+
+        默认所有 id 共用 ``ingress_rules``（多数用例只有一个列表）；
+        设了 ``ingress_by_list`` 就按 id 分开存，用来验证「收回端口要遍历
+        每一个安全列表」这类只在多列表下才暴露的行为。
+        """
+        if self.ingress_by_list is not None:
+            return self.ingress_by_list.get(security_list_id, [])
+        return self.ingress_rules
 
     # ---------- Block storage ----------
     def list_boot_volumes(self, profile, compartment_id, availability_domain=None):

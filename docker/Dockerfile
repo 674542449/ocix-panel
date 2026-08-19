@@ -18,7 +18,7 @@ COPY src/ocix/ ./ocix/
 COPY VERSION ./VERSION
 COPY VERSION ./ocix/VERSION
 
-# 前端依赖（Vue / Element Plus / axios）在构建期下载到包内 web/assets，
+# 前端依赖（Vue / Element Plus / axios / xterm）在构建期下载到包内 web/assets，
 # 运行时不依赖 unpkg 等 CDN（国内浏览器常无法访问）。
 # 依次尝试 unpkg / jsdelivr / npmmirror 三个源，任一可通即可。
 RUN set -e; \
@@ -51,6 +51,18 @@ RUN set -e; \
        https://unpkg.com/axios/dist/axios.min.js \
        https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js \
        https://registry.npmmirror.com/axios/files/dist/axios.min.js; \
+    dl "$A/xterm.js" \
+       https://unpkg.com/xterm@5.3.0/lib/xterm.js \
+       https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js \
+       https://registry.npmmirror.com/xterm/5.3.0/files/lib/xterm.js; \
+    dl "$A/xterm.css" \
+       https://unpkg.com/xterm@5.3.0/css/xterm.css \
+       https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css \
+       https://registry.npmmirror.com/xterm/5.3.0/files/css/xterm.css; \
+    dl "$A/xterm-addon-fit.js" \
+       https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js \
+       https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js \
+       https://registry.npmmirror.com/xterm-addon-fit/0.8.0/files/lib/xterm-addon-fit.js; \
     ls -lh "$A"
 
 RUN mkdir -p /app/data/keys && chmod 700 /app/data/keys

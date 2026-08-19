@@ -123,6 +123,30 @@ def test_ingress_model_maps_udp_and_icmp():
     assert icmp.icmp_options.type == 3 and icmp.icmp_options.code == 4
 
 
+def test_ingress_model_keeps_source_port_range():
+    """源端口范围不能在改规则时丢掉。
+
+    面板改一条规则的方式是「整表读回来 → 改 → 整表写回去」。这里漏掉
+    sourcePortRange，就会把别人限定了源端口的规则悄悄放宽成任意源端口——
+    加一条 80 端口，顺手把一条更严的规则改松了。
+    """
+    rule = _ingress_model({
+        "protocol": "6", "source": "10.0.0.0/16",
+        "tcpOptions": {"destinationPortRange": {"min": 80, "max": 80},
+                       "sourcePortRange": {"min": 1024, "max": 2048}},
+    })
+    assert rule.tcp_options.destination_port_range.min == 80
+    assert rule.tcp_options.source_port_range.min == 1024
+    assert rule.tcp_options.source_port_range.max == 2048
+
+    udp = _ingress_model({
+        "protocol": "17", "source": "10.0.0.0/16",
+        "udpOptions": {"sourcePortRange": {"min": 500, "max": 500}},
+    })
+    assert udp.udp_options.source_port_range.min == 500
+    assert udp.udp_options.destination_port_range is None
+
+
 # ── SDK：配置类错误必须是可读的 400，不能是 500 ──
 
 @pytest.mark.parametrize("exc_name", [

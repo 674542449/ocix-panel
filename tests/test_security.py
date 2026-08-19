@@ -225,7 +225,6 @@ def test_github_repo_falls_back_when_malformed(bad, monkeypatch):
 
 
 # ── XSS：前端不得存在 HTML 注入点 ──
-
 def test_frontend_has_no_html_injection_sinks():
     """Vue 的 {{ }} 会转义；一旦用上 v-html 或 dangerouslyUseHTMLString，
     实例名、错误信息这些来自 OCI 的数据就能注入脚本。"""

@@ -85,7 +85,14 @@ def _post_telegram(bot_token: str, chat_id: str, text: str, parse_mode: str = "H
 
 def send_telegram_async(text: str, bot_token: str | None = None, chat_id: str | None = None) -> None:
     """非阻塞后台线程发送 Telegram 消息。"""
-    token = (bot_token or db.get_setting("tg_bot_token", "")).strip()
+    from .crypto import decrypt_token
+
+    if bot_token:
+        token = bot_token.strip()
+    else:
+        token_encrypted = db.get_setting("tg_bot_token", "")
+        token = decrypt_token(token_encrypted) if token_encrypted else ""
+
     cid = (chat_id or db.get_setting("tg_chat_id", "")).strip()
 
     if not token or not cid:
@@ -146,8 +153,10 @@ def notify_instance_created(
     error_msg: str | None = None,
     elapsed: float = 0.0,
 ) -> None:
-    """通知实例创建（开机）成功或失败。在后台等待直到获取到公网 IP 再发送通知。"""
-    token = db.get_setting("tg_bot_token", "").strip()
+    from .crypto import decrypt_token
+
+    token_encrypted = db.get_setting("tg_bot_token", "").strip()
+    token = decrypt_token(token_encrypted) if token_encrypted else ""
     cid = db.get_setting("tg_chat_id", "").strip()
     enabled_raw = db.get_setting("tg_enabled", "1")
     enabled = enabled_raw not in ("0", "false", "False", "")

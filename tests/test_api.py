@@ -300,6 +300,85 @@ def test_paid_shape_is_blocked(app_client, stub_usage):
     assert any("Always Free" in b for b in snap["error"]["blockers"])
 
 
+def test_quota_gate_counts_the_whole_tenancy(app_client, live_backend, monkeypatch):
+    """额度是**租户级**的，闸门不能跟着界面上选中的 compartment 缩小范围。
+
+    否则在 A 里占满 ARM 额度后，切到 B 建一台就能绕过这道闸门——
+    而这道闸门是本面板存在的主要理由。
+    """
+    from ocix import oci_helpers as helpers
+
+    live_backend.compartments = [
+        {"id": "cA", "name": "a", "compartment_id": "root", "lifecycle_state": "ACTIVE"},
+        {"id": "cB", "name": "b", "compartment_id": "root", "lifecycle_state": "ACTIVE"},
+    ]
+    # 4 个 ARM OCPU 全在 cA 里，cB 是空的
+    live_backend.instances = [{
+        "id": "i-arm", "display_name": "arm", "lifecycle_state": "RUNNING",
+        "shape": "VM.Standard.A1.Flex", "compartment_id": "cA",
+        "shape_config": {"ocpus": 4, "memory_in_gbs": 24},
+    }]
+    live_backend.boot_volumes = [{"size_in_gbs": 50, "lifecycle_state": "AVAILABLE"}]
+
+    seen = {}
+    real = helpers.current_usage
+
+    def spy(profile, compartment_id=None, subtree=True):
+        seen["compartment_id"] = compartment_id
+        return real(profile, compartment_id, subtree=subtree)
+
+    monkeypatch.setattr(helpers, "current_usage", spy)
+    res = helpers.preflight_create("EXISTING", {"shape": "VM.Standard.A1.Flex",
+                                               "ocpus": 1, "memory_gb": 6, "boot_gb": 50},
+                                   compartment_id="cB")
+    assert seen["compartment_id"] is None, "预检不该只统计选中的 compartment"
+    assert res["current"]["arm_ocpu"] == 4
+    assert res["allow"] is False
+
+
+# ── 批量操作：参数得先过校验，不能靠路由层猜 ──
+
+@pytest.mark.parametrize("targets", [
+    ["ocid1.instance.oc1..a"],                       # 裸字符串
+    [{"instance_id": "ocid1.instance.oc1..a"}],      # 少 profile
+    [{"profile": "EXISTING"}],                       # 少 instance_id
+    [],                                              # 空
+])
+def test_batch_action_rejects_malformed_targets(app_client, targets):
+    """以前 targets 是裸 list，路由层直接对元素调 .get()——
+    传字符串进来就是 500，而这明显是「参数不合法」。"""
+    r = app_client.post("/api/instances/batch-action",
+                        json={"action": "START", "targets": targets})
+    assert r.status_code == 422, r.text
+
+
+def test_batch_action_caps_the_number_of_targets(app_client):
+    targets = [{"profile": "EXISTING", "instance_id": f"i{i}"} for i in range(51)]
+    r = app_client.post("/api/instances/batch-action",
+                        json={"action": "START", "targets": targets})
+    assert r.status_code == 422, r.text
+
+
+# ── 防火墙：界面给的选项后端必须都认 ──
+
+@pytest.mark.parametrize("proto", ["ALL", "TCP", "UDP", "ICMP", "ICMPv6"])
+def test_firewall_accepts_every_protocol_the_ui_offers(proto):
+    """协议下拉里就有 ICMPv6，执行层也认 58，不能被自家校验挡掉。"""
+    from ocix.schemas import PortRuleRequest
+
+    req = PortRuleRequest(profile="EXISTING", instance_id="i1", protocol=proto,
+                          port_from=1, port_to=1, source="::/0")
+    assert req.protocol == proto.upper()
+
+
+def test_firewall_rejects_unknown_protocol():
+    import pydantic
+
+    from ocix.schemas import PortRuleRequest
+    with pytest.raises(pydantic.ValidationError):
+        PortRuleRequest(profile="P", instance_id="i1", protocol="SCTP")
+
+
 @pytest.mark.parametrize("key", [
     "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----",
     "not-a-key",
@@ -555,7 +634,7 @@ def test_invalid_instance_action_is_rejected(app_client):
 
 def test_missing_cli_surfaces_as_400(app_client):
     r = app_client.get("/api/instances?profile=EXISTING")
-    assert r.status_code == 400 and "oci" in r.text
+    assert r.status_code == 400 and "oci" in r.text.lower()
 
 
 def test_all_accounts_endpoint_is_gone(app_client):

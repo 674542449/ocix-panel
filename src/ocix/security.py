@@ -1,4 +1,5 @@
 import hashlib
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -102,9 +103,17 @@ def set_admin_password(plain: str) -> None:
 
 
 def authenticate(username: str, password: str) -> bool:
-    if username != ADMIN_USER:
-        return False
-    return verify_password(password, current_admin_hash())
+    """校验用户名 + 密码。
+
+    用户名不对时**也要**走一遍 bcrypt：直接 return False 会让「用户名不存在」
+    比「密码错误」快上一个数量级（bcrypt 一次要几十到几百毫秒），
+    攻击者据此就能确认管理员账号名，再把爆破火力全压到密码上。
+    比较本身用 compare_digest，避免逐字符提前退出。
+    """
+    ok_user = secrets.compare_digest((username or "").encode("utf-8"),
+                                     ADMIN_USER.encode("utf-8"))
+    ok_pass = verify_password(password, current_admin_hash())
+    return ok_user and ok_pass
 
 
 def create_token(username: str) -> str:

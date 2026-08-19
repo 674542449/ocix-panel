@@ -175,6 +175,66 @@ def test_clear_without_ssh_leaves_nothing(fw):
     assert fw.ingress_rules == []
 
 
+# ── 多安全列表的子网 ──
+# OCI 的安全列表是「取并集」的：一个子网可以挂到 5 个，任何一个列表里有 allow
+# 端口就是开的。所以放行写一个列表够用，收回必须遍历每一个。
+
+@pytest.fixture()
+def fw_multi(fake):
+    """两个安全列表：sl1 只放 22，sl2 是 IPv4 全放行。"""
+    fake.subnet = {"security_list_ids": ["sl1", "sl2"]}
+    fake.ingress_by_list = {
+        "sl1": [dict(DEFAULT_RULES[0])],
+        "sl2": [{"protocol": "all", "source": "0.0.0.0/0", "sourceType": "CIDR_BLOCK",
+                 "isStateless": False, "description": "wide open"}],
+    }
+    fake.vnic_attachments = [{"lifecycle_state": "ATTACHED", "instance_id": "i1",
+                              "vnic_id": "v1"}]
+    return fake
+
+
+def test_clear_sweeps_every_security_list(fw_multi):
+    """只清第一个列表的话，面板报「已清空」而 sl2 的全放行还在——端口实际仍然开着。"""
+    res = H.clear_ingress_rules("P", "sub1", keep_ssh=True)
+    assert res["removed"] == 2
+    assert fw_multi.ingress_by_list["sl2"] == []
+    assert len(fw_multi.ingress_by_list["sl1"]) == 1
+    assert fw_multi.ingress_by_list["sl1"][0]["tcpOptions"][
+        "destinationPortRange"]["min"] == 22
+
+
+def test_revoke_all_ports_sweeps_every_security_list(fw_multi):
+    res = H.revoke_all_ports("P", "i1", "root")
+    assert res["removed"] == 1
+    assert fw_multi.ingress_by_list["sl2"] == []
+    assert res["status"]["all_open_v4"] is False
+
+
+def test_firewall_status_reports_rule_ownership(fw_multi):
+    """删除要靠 (security_list_id, index) 定位，聚合列表的下标不能当序号用。"""
+    rules = H.firewall_status("P", "i1", "root")["ingress_rules"]
+    assert [r["security_list_id"] for r in rules] == ["sl1", "sl2"]
+    assert [r["index"] for r in rules] == [0, 0]
+
+
+def test_delete_rule_uses_the_owning_security_list(fw_multi):
+    """表格第 2 行属于 sl2 的第 0 条。不带归属就会去删 sl1 的第 1 条（并不存在）。"""
+    H.delete_port_rule("P", "sub1", 0, security_list_id="sl2")
+    assert fw_multi.ingress_by_list["sl2"] == []
+    assert len(fw_multi.ingress_by_list["sl1"]) == 1
+
+
+def test_delete_rule_rejects_a_foreign_security_list(fw_multi):
+    with pytest.raises(Exception, match="不属于"):
+        H.delete_port_rule("P", "sub1", 0, security_list_id="sl-other")
+
+
+def test_icmpv6_is_an_accepted_protocol(fw):
+    """界面的协议下拉里有 ICMPv6，执行层也认 58——不能被自家校验挡住。"""
+    H.add_port_rule("P", "sub1", "ICMPv6", 1, 1, "::/0")
+    assert fw.ingress_rules[-1]["protocol"] == "58"
+
+
 # ── 调用次数：每次后端调用都对应一次网络往返（CLI 后端还要加 1.1 秒进程开销）──
 
 def test_availability_domains_are_fetched_once(fake):

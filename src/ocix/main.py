@@ -106,10 +106,13 @@ async def security_headers(request: Request, call_next):
     return response
 
 # 默认部署由 Caddy 同源反代，无需 CORS；仅在显式配置来源时才放开。
-if CORS_ORIGINS:
+# 通配符会被丢掉：allow_origins=["*"] 配上 allow_credentials=True，
+# 等于任何站点都能带着凭据打这套接口。要跨域就把来源一个个写清楚。
+_cors_origins = [o for o in CORS_ORIGINS if o != "*"]
+if _cors_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
+        allow_origins=_cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

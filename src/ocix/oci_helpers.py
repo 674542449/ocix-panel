@@ -654,8 +654,10 @@ def launch_instance(profile: str, params: dict) -> dict:
         "boot_gb": plan["boot_gb"],
         "ssh_public_key": (params.get("ssh_public_key") or "").strip(),
         "user_data": params.get("user_data"),
-        # 写进实例的自由标签。root 密码就存在这儿——控制台和面板都看得到，
-        # 而实例自己读不到（标签不走实例元数据服务）。
+        # 写进实例的自由标签。root 密码就存在这儿，方便换台电脑也能看到。
+        # 别以为标签比 user_data 安全：实例元数据服务（169.254.169.254 的
+        # /opc/v2/instance/）里同样带 freeformTags，机器上任何本地账号都读得到。
+        # 这条路本来就是拿安全换方便，代价写在 cloudinit 模块开头。
         "freeform_tags": params.get("freeform_tags") or None,
         # CLI 后端无法在创建时分配 IPv6（没有对应参数），会忽略这个标志，
         # 由上层在创建完成后补挂；SDK 后端则可以一次到位。
@@ -973,10 +975,14 @@ def firewall_status(profile: str, instance_id: str, compartment_id: str) -> dict
         if err is not None or not sl:
             continue
         lists.append({"id": sid, "name": _get(sl, "display-name", "display_name")})
-        for r in _get(sl, "ingress-security-rules", "ingress_security_rules", default=[]) or []:
+        raw = _get(sl, "ingress-security-rules", "ingress_security_rules", default=[]) or []
+        for idx, r in enumerate(raw):
             proto = str(_get(r, "protocol", default="all"))
             rules.append({
                 "security_list_id": sid,
+                # 删除要靠它定位：这是**该安全列表内部**的序号，
+                # 不是下面这个聚合列表的下标（多个安全列表拼在一起就对不上了）
+                "index": idx,
                 "protocol": _PROTO.get(proto, proto),
                 "protocol_raw": proto,
                 "source": _get(r, "source"),
@@ -1045,6 +1051,12 @@ def _raw_ingress(profile: str, security_list_id: str) -> list:
 
 
 def _subnet_security(profile: str, subnet_id: str) -> tuple:
+    """子网关联的**全部**安全列表 id，以及子网有没有开 IPv6。
+
+    返回全部而不是第一个：OCI 的安全列表是「取并集」的，一个子网可以挂到 5 个。
+    放行只写第一个就够（并集里多一条 allow 即生效），但**收回**必须遍历所有列表，
+    否则面板会报「已清空」而另一个列表里的放行还在，端口实际仍然开着。
+    """
     ck = (profile, "subnet_sec", subnet_id)
     cached = _read_cache.get(ck)
     if cached is not None:
@@ -1054,7 +1066,7 @@ def _subnet_security(profile: str, subnet_id: str) -> tuple:
     if not sl_ids:
         raise OCIError("该子网未关联安全列表，无法修改防火墙规则")
     return _read_cache.set(
-        ck, (sl_ids[0], bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))))
+        ck, (list(sl_ids), bool(_get(sub, "ipv6-cidr-block", "ipv6_cidr_block"))))
 
 
 def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = True) -> dict:
@@ -1063,7 +1075,8 @@ def open_all_ports_on_subnet(profile: str, subnet_id: str, include_ipv6: bool = 
     先删除 Oracle 预置的默认规则（仅 22 端口 + ICMP）再写入，
     避免与全放行规则重复叠加，规则列表也更容易看懂。
     """
-    sid, _ = _subnet_security(profile, subnet_id)
+    sl_ids, _ = _subnet_security(profile, subnet_id)
+    sid = sl_ids[0]
     before = len(_raw_ingress(profile, sid))
 
     rules = [{"protocol": "all", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
@@ -1082,11 +1095,12 @@ _PROTO_NUM = {"TCP": "6", "UDP": "17", "ICMP": "1", "ICMPV6": "58", "ALL": "all"
 
 def add_port_rule(profile: str, subnet_id: str, protocol: str, port_from: int,
                   port_to: int, source: str, description: str = "") -> dict:
-    """追加一条入站规则。protocol 取 TCP / UDP / ICMP / ALL。"""
+    """追加一条入站规则。protocol 取 TCP / UDP / ICMP / ICMPv6 / ALL。"""
     proto = _PROTO_NUM.get((protocol or "").upper())
     if not proto:
         raise OCIError(f"不支持的协议: {protocol}")
-    sid, _ = _subnet_security(profile, subnet_id)
+    sl_ids, _ = _subnet_security(profile, subnet_id)
+    sid = sl_ids[0]
     rules = _raw_ingress(profile, sid)
 
     rule = {
@@ -1110,9 +1124,22 @@ def add_port_rule(profile: str, subnet_id: str, protocol: str, port_from: int,
     return {"security_list_id": sid, "subnet_id": subnet_id, "added": True}
 
 
-def delete_port_rule(profile: str, subnet_id: str, index: int) -> dict:
-    """按序号删除一条入站规则（序号与 firewall_status 返回的顺序一致）。"""
-    sid, _ = _subnet_security(profile, subnet_id)
+def delete_port_rule(profile: str, subnet_id: str, index: int,
+                     security_list_id: str = None) -> dict:
+    """删除一条入站规则。
+
+    ``index`` 是**该安全列表内部**的序号（与 firewall_status 里每条规则带的
+    ``index`` 字段一致）。子网可以挂多个安全列表，所以调用方要一并给出
+    ``security_list_id``；不给时只能退回第一个列表——历史客户端如此，
+    在多列表的子网上会删错规则，这也是为什么现在把归属显式传上来。
+    """
+    sl_ids, _ = _subnet_security(profile, subnet_id)
+    if security_list_id:
+        if security_list_id not in sl_ids:
+            raise OCIError("这条规则不属于该子网的安全列表，请刷新后重试")
+        sid = security_list_id
+    else:
+        sid = sl_ids[0]
     rules = _raw_ingress(profile, sid)
     if index < 0 or index >= len(rules):
         raise OCIError("规则序号超出范围，请刷新后重试")
@@ -1122,20 +1149,29 @@ def delete_port_rule(profile: str, subnet_id: str, index: int) -> dict:
             "removed": removed.get("source"), "remaining": len(rules)}
 
 
+_KEEP_SSH_RULE = {
+    "protocol": "6", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
+    "isStateless": False, "description": "ocix: keep ssh",
+    "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}},
+}
+
+
 def clear_ingress_rules(profile: str, subnet_id: str, keep_ssh: bool = True) -> dict:
-    """清空全部入站规则；keep_ssh 时保留 22 端口，避免把自己关在门外。"""
-    sid, _ = _subnet_security(profile, subnet_id)
-    before = len(_raw_ingress(profile, sid))
-    rules = []
-    if keep_ssh:
-        rules.append({"protocol": "6", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
-                      "isStateless": False, "description": "ocix: keep ssh",
-                      "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}}})
-    _set_ingress(profile, sid, rules)
+    """清空全部入站规则；keep_ssh 时保留 22 端口，避免把自己关在门外。
+
+    要遍历子网的**每一个**安全列表：只清第一个的话，另一个列表里的放行仍然生效，
+    面板却已经报「已清空」——用户以为端口关了，实际还开着。
+    SSH 那条只往第一个列表里写一次，免得每个列表都多出一条一样的规则。
+    """
+    sl_ids, _ = _subnet_security(profile, subnet_id)
+    before = 0
+    for i, sid in enumerate(sl_ids):
+        before += len(_raw_ingress(profile, sid))
+        _set_ingress(profile, sid, [dict(_KEEP_SSH_RULE)] if (keep_ssh and i == 0) else [])
     # removed 报的是「原本删掉了几条」，不是净差值——
     # 保留 SSH 时用净差值会算出 0 条，读起来像什么都没做
-    return {"security_list_id": sid, "subnet_id": subnet_id,
-            "removed": before, "kept_ssh": keep_ssh}
+    return {"security_list_id": sl_ids[0], "subnet_id": subnet_id,
+            "security_list_ids": sl_ids, "removed": before, "kept_ssh": keep_ssh}
 
 
 def open_all_ports(profile: str, instance_id: str, compartment_id: str,
@@ -1147,23 +1183,34 @@ def open_all_ports(profile: str, instance_id: str, compartment_id: str,
 
 
 def revoke_all_ports(profile: str, instance_id: str, compartment_id: str) -> dict:
-    """撤掉全放行规则，回到只剩具体端口的状态。"""
+    """撤掉全放行规则，回到只剩具体端口的状态。
+
+    同 clear_ingress_rules：安全列表是取并集的，漏掉任何一个列表都等于没收回。
+    """
     st = firewall_status(profile, instance_id, compartment_id)
     if not st["security_lists"]:
         raise OCIError("这个子网没有关联安全列表，无法修改防火墙")
-    sid = st["security_lists"][0]["id"]
-    rules = _raw_ingress(profile, sid)
-    kept = [r for r in rules
-            if not (r["protocol"] == "all" and r["source"] in (_ALL_V4, _ALL_V6))]
-    removed = len(rules) - len(kept)
+    sl_ids = [sl["id"] for sl in st["security_lists"]]
+    removed = 0
+    kept_any = False
+    per_list = []
+    for sid in sl_ids:
+        rules = _raw_ingress(profile, sid)
+        kept = [r for r in rules
+                if not (r["protocol"] == "all" and r["source"] in (_ALL_V4, _ALL_V6))]
+        per_list.append((sid, rules, kept))
+        removed += len(rules) - len(kept)
+        if kept:
+            kept_any = True
     if removed:
-        if not kept:
-            # 全删会把自己关在门外，至少留一条 SSH
-            kept = [{"protocol": "6", "source": _ALL_V4, "sourceType": "CIDR_BLOCK",
-                     "isStateless": False, "description": "ocix: keep ssh",
-                     "tcpOptions": {"destinationPortRange": {"min": 22, "max": 22}}}]
-        _set_ingress(profile, sid, kept)
-    return {"security_list_id": sid, "removed": removed,
+        for i, (sid, rules, kept) in enumerate(per_list):
+            if len(kept) == len(rules):
+                continue                     # 这个列表里没有全放行规则，别白写一次
+            if not kept_any and i == 0:
+                # 一条都不剩会把自己关在门外，至少留一条 SSH
+                kept = [dict(_KEEP_SSH_RULE)]
+            _set_ingress(profile, sid, kept)
+    return {"security_list_id": sl_ids[0], "security_list_ids": sl_ids, "removed": removed,
             "status": firewall_status(profile, instance_id, compartment_id)}
 
 
@@ -1195,8 +1242,15 @@ def free_tier_usage(profile: str, compartment_id: str = None, subtree: bool = Tr
 
 
 def preflight_create(profile: str, plan: dict, compartment_id: str = None) -> dict:
-    """创建实例前的额度预检：先查真实用量，再核算「建完之后」。"""
-    current = current_usage(profile, compartment_id, subtree=True)
+    """创建实例前的额度预检：先查真实用量，再核算「建完之后」。
+
+    **用量一律按整个租户统计，不受界面上选中的 compartment 影响**（参数只为
+    兼容调用方，故意不传给 current_usage）。Always Free 的额度是租户级的：
+    在 A 里已经占满 4 个 ARM OCPU，切到 B 再开一台照样超额。
+    以前跟着选中的 compartment 缩小统计范围，等于开一个子 compartment
+    就能绕过这道闸门，而这道闸门是本面板存在的主要理由。
+    """
+    current = current_usage(profile, None, subtree=True)
     result = freetier.preflight(current, plan)
     result["current"] = current
     return result

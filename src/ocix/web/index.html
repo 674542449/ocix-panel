@@ -3035,6 +3035,8 @@ createApp({
       createForm.ocpus = radarForm.ocpus;
       createForm.memory_gb = radarForm.memory_gb;
       createForm.availability_domain = ad;
+      loadCreateOptions();
+      runPreflight();
       go('create');
       ElMessage.info(`已切换至新建实例，并自动选中可用域 ${ad}`);
     }
@@ -3111,13 +3113,15 @@ createApp({
       return '超高性能';
     }
     const isArm = computed(() => createForm.shape !== AMD_SHAPE);
+    // 公钥和 root 密码「至少有一样」——和后端 CreateInstanceRequest 的校验对齐。
+    // 之前末尾多挂了一个 createForm.ssh_public_key，于是勾了「启用 root 密码登录」
+    // 也必须再贴一把公钥，只用密码登录这条路在界面上根本走不通。
     const canCreate = computed(() =>
       !!(preflight.value && preflight.value.allow && createForm.display_name &&
          createForm.availability_domain && createForm.image_id &&
          (createForm.use_password
             ? (createForm.root_password || '').length >= 12
-            : !!createForm.ssh_public_key) &&
-         createForm.ssh_public_key));
+            : !!createForm.ssh_public_key)));
 
     // ---- 一键更新状态 ----
     const upd = ref({});
@@ -3730,7 +3734,7 @@ createApp({
 
     async function addRule() {
       const f = ruleForm;
-      if (f.protocol !== 'ICMP' && f.protocol !== 'ALL' && f.port_to < f.port_from) {
+      if (f.protocol !== 'ICMP' && f.protocol !== 'ICMPv6' && f.protocol !== 'ALL' && f.port_to < f.port_from) {
         ElMessage.warning('结束端口不能小于起始端口');
         return;
       }
@@ -3757,8 +3761,13 @@ createApp({
       } catch { return; }
       fwBusy.value = true;
       try {
+        // 表格里的行号是「所有安全列表拼起来」之后的下标，不能直接当删除序号：
+        // 子网挂了两个安全列表时会删错规则。用后端给的归属和列表内序号。
         const { data } = await axios.post('/api/provision/firewall/rules/delete',
-          fwPayload({ index }));
+          fwPayload({
+            index: rule.index === undefined ? index : rule.index,
+            security_list_id: rule.security_list_id,
+          }));
         firewall.value = data.status;
         ElMessage.success('规则已删除');
       } catch (e) {
@@ -4208,14 +4217,46 @@ createApp({
       } finally { billingLoading.value = false; }
     }
 
-    function downloadInvoicesCsv() {
+    async function downloadInvoicesCsv() {
       if (!currentProfile.value) return;
-      window.open('/api/monitor/invoices/download?profile=' + encodeURIComponent(currentProfile.value), '_blank');
+      try {
+        const res = await axios.get('/api/monitor/invoices/download', {
+          params: { profile: currentProfile.value },
+          responseType: 'blob',
+        });
+        const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `oci-invoices-${currentProfile.value}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        ElMessage.error(errMsg(e, '导出账单失败'));
+      }
     }
 
-    function downloadCostCsv() {
+    async function downloadCostCsv() {
       if (!currentProfile.value) return;
-      window.open('/api/monitor/cost/export?profile=' + encodeURIComponent(currentProfile.value) + '&period=' + encodeURIComponent(selectedPeriod.value), '_blank');
+      try {
+        const res = await axios.get('/api/monitor/cost/export', {
+          params: { profile: currentProfile.value, period: selectedPeriod.value },
+          responseType: 'blob',
+        });
+        const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `oci-cost-${currentProfile.value}-${selectedPeriod.value}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        ElMessage.error(errMsg(e, '导出成本明细失败'));
+      }
     }
 
     async function openDetail(row) {
@@ -4467,27 +4508,41 @@ createApp({
       });
     }
 
-    // xterm 体积不小，等真的要开终端时再加载
+    // xterm 体积不小，等真的要开终端时再加载。
+    // 和启动时那批依赖一样：先找构建期落到 /assets 的本地副本，下不到再退 CDN。
+    // 之前只写死了 unpkg，而 unpkg 在国内经常不通——面板本体好好的，
+    // 一点「网页终端」就报「终端组件加载失败」，而且完全看不出是被墙了。
     let xtermReady = null;
+    const XTERM_CDN = {
+      'xterm.css': 'https://unpkg.com/xterm@5.3.0/css/xterm.css',
+      'xterm.js': 'https://unpkg.com/xterm@5.3.0/lib/xterm.js',
+      'xterm-addon-fit.js': 'https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js',
+    };
     function ensureXterm() {
       if (xtermReady) return xtermReady;
+      const loadScript = (src) => new Promise((res, rej) => {
+        const el = document.createElement('script');
+        el.src = src; el.onload = res; el.onerror = rej;
+        document.head.appendChild(el);
+      });
+      const loadLocalOrCdn = async (name) => {
+        try { await loadScript('/assets/' + name); }
+        catch { await loadScript(XTERM_CDN[name]); }
+      };
       xtermReady = (async () => {
         if (!document.querySelector('link[data-xterm]')) {
           const css = document.createElement('link');
           css.rel = 'stylesheet'; css.dataset.xterm = '1';
-          css.href = 'https://unpkg.com/xterm@5.3.0/css/xterm.css';
+          // 本地没有就换 CDN；两边都挂了也只是样式差，不该拦住连接
+          css.onerror = () => { css.onerror = null; css.href = XTERM_CDN['xterm.css']; };
+          css.href = '/assets/xterm.css';
           document.head.appendChild(css);
         }
-        const load = (src) => new Promise((res, rej) => {
-          const el = document.createElement('script');
-          el.src = src; el.onload = res; el.onerror = rej;
-          document.head.appendChild(el);
-        });
         if (typeof window.Terminal === 'undefined') {
-          await load('https://unpkg.com/xterm@5.3.0/lib/xterm.js');
+          await loadLocalOrCdn('xterm.js');
         }
         if (typeof window.FitAddon === 'undefined') {
-          await load('https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js');
+          await loadLocalOrCdn('xterm-addon-fit.js');
         }
       })();
       return xtermReady;
@@ -4525,6 +4580,12 @@ createApp({
 
     async function termConnect() {
       if (!termKey.value) { ElMessage.warning('先选一个私钥文件'); return; }
+      if (termWs) { try { termWs.close(); } catch {} termWs = null; }
+      if (termInst) { try { termInst.dispose(); } catch {} termInst = null; }
+      if (termResizeHandler) {
+        window.removeEventListener('resize', termResizeHandler);
+        termResizeHandler = null;
+      }
       termConnecting.value = true;
       try {
         await ensureXterm();

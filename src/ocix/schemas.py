@@ -98,7 +98,8 @@ class CreateInstanceRequest(BaseModel):
     capacity_probe: bool = True
     # 智能放货抢机（检测到无库存时进入智能低频容量探测直到放货创建）
     auto_retry_until_available: bool = False
-    max_retry_minutes: int = 60
+    # 上限 6 小时：执行层每 20 秒探一次，再长就是拿后台线程死等
+    max_retry_minutes: int = Field(default=60, ge=1, le=360)
 
     @field_validator("display_name")
     @classmethod
@@ -171,9 +172,13 @@ class PortRuleRequest(InstanceRefRequest):
     @field_validator("protocol")
     @classmethod
     def _check_proto(cls, v: str) -> str:
+        # ICMPV6 也要收：界面的协议下拉里就有 ICMPv6，而执行层
+        # （oci_helpers._PROTO_NUM）本来就认它。这里漏掉的话，
+        # 用户在界面上选了 ICMPv6 会拿到一句「协议仅支持 TCP/UDP/ICMP/ALL」，
+        # 明明是可用的功能却被自家校验挡住。
         up = (v or "").strip().upper()
-        if up not in ("TCP", "UDP", "ICMP", "ALL"):
-            raise ValueError("协议仅支持 TCP / UDP / ICMP / ALL")
+        if up not in ("TCP", "UDP", "ICMP", "ICMPV6", "ALL"):
+            raise ValueError("协议仅支持 TCP / UDP / ICMP / ICMPv6 / ALL")
         return up
 
 
@@ -248,6 +253,10 @@ class ResizeBootVolumeRequest(BaseModel):
 
 class DeleteRuleRequest(InstanceRefRequest):
     index: int = Field(ge=0)
+    # 子网可以关联多个安全列表，序号只在**某一个列表内部**才有意义。
+    # 不带这一项时后端只能猜第一个列表，多列表的子网上会删错规则，
+    # 所以前端必须把规则所属的列表一起报上来（旧客户端仍兼容）。
+    security_list_id: str | None = None
 
 
 class ClearRulesRequest(InstanceRefRequest):
@@ -308,9 +317,21 @@ class CreateNetworkRequest(BaseModel):
         return name
 
 
+class BatchActionTarget(BaseModel):
+    """批量操作里的一台实例。
+
+    以前 targets 是裸 list，路由层直接对元素调 `.get()`——传进来的是字符串
+    或数字就会抛 AttributeError，用户看到的是 500 而不是「参数不合法」。
+    """
+    profile: str = Field(min_length=1, max_length=64)
+    instance_id: str = Field(min_length=1, max_length=255)
+    display_name: str | None = None
+
+
 class BatchActionRequest(BaseModel):
     action: str
-    targets: list  # [{profile, instance_id, display_name?}]
+    # 上限和路由层的 50 台一致，超了在校验阶段就说清楚
+    targets: list[BatchActionTarget] = Field(min_length=1, max_length=50)
 
     @field_validator("action")
     @classmethod
@@ -371,11 +392,13 @@ class SSHKeyUpdateRequest(BaseModel):
 # ---- Telegram 通知设置 ----
 class TelegramSettingsRequest(BaseModel):
     enabled: bool = False
-    bot_token: str = ""
-    chat_id: str = ""
+    # 长度上限是防呆也是防滥用：这两个值会原样拼进 api.telegram.org 的请求
+    bot_token: str = Field(default="", max_length=200)
+    chat_id: str = Field(default="", max_length=64)
 
 
 class TelegramTestRequest(BaseModel):
-    bot_token: str
-    chat_id: str
+    """两项都允许留空：空值表示「用已保存的那份」，由接口回库里取。"""
+    bot_token: str = Field(default="", max_length=200)
+    chat_id: str = Field(default="", max_length=64)
 

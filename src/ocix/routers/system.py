@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from .. import __version__, security
 from ..config import CONTROL_DIR, GITHUB_REPO, INSTALL_DIR
 from ..db import audit
+from ..schemas import TelegramSettingsRequest, TelegramTestRequest
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -259,14 +260,22 @@ def get_telegram_settings(
     request: Request,
     user: str = Depends(security.get_current_user),
 ):
+    """读回通知设置。
+
+    **Bot Token 一定要脱敏**：拿到它就能以这个机器人的身份发消息、读会话，
+    等于一份可用的凭据。前端只需要「配没配过」，不需要原文——
+    保存时带 `*` 的值会被识别成「没改动」，测试连接也会自动回库里取真值。
+    """
     security.check_rate(request, security.API_RATE_LIMIT)
     from .. import db
+    from ..crypto import decrypt_token
     enabled = db.get_setting("tg_enabled", "0") in ("1", "true", "True")
-    token = db.get_setting("tg_bot_token", "")
+    token_encrypted = db.get_setting("tg_bot_token", "")
+    token = decrypt_token(token_encrypted) if token_encrypted else ""
     chat_id = db.get_setting("tg_chat_id", "")
     return {
         "enabled": enabled,
-        "bot_token": token,
+        "bot_token": _mask_token(token),
         "has_token": bool(token),
         "chat_id": chat_id,
     }
@@ -274,28 +283,32 @@ def get_telegram_settings(
 
 @router.post("/telegram")
 def save_telegram_settings(
-    req: dict,
+    req: TelegramSettingsRequest,
     request: Request,
     user: str = Depends(security.get_current_user),
 ):
     security.check_rate(request, security.API_RATE_LIMIT)
     ip = security.client_ip(request)
     from .. import db
-    enabled = req.get("enabled", True)
-    bot_token = (req.get("bot_token") or "").strip()
-    chat_id = (req.get("chat_id") or "").strip()
+    from ..crypto import encrypt_token, decrypt_token
+    enabled = req.enabled
+    bot_token = req.bot_token.strip()
+    chat_id = req.chat_id.strip()
 
-    if bot_token and not bot_token.startswith("****") and "*" not in bot_token:
-        db.set_setting("tg_bot_token", bot_token)
+    # 带 `*` 的是前端回显的脱敏值，说明用户没改 token，保持库里那份
+    if bot_token and "*" not in bot_token:
+        # 新 token：加密后存储
+        db.set_setting("tg_bot_token", encrypt_token(bot_token))
     if chat_id:
         db.set_setting("tg_chat_id", chat_id)
 
-    stored_token = db.get_setting("tg_bot_token", "")
+    # 读取时解密，用于判断是否真的配置了 token
+    stored_token_encrypted = db.get_setting("tg_bot_token", "")
+    stored_token = decrypt_token(stored_token_encrypted) if stored_token_encrypted else ""
     stored_cid = db.get_setting("tg_chat_id", "")
-    if stored_token and stored_cid and enabled:
-        db.set_setting("tg_enabled", "1")
-    else:
-        db.set_setting("tg_enabled", "1" if enabled else "0")
+    # 没有 token 或 chat_id 就发不出消息，这时不能标成「已启用」——
+    # 否则界面显示开着，实际每条通知都在后台静默失败。
+    db.set_setting("tg_enabled", "1" if (enabled and stored_token and stored_cid) else "0")
 
     audit(
         user,
@@ -314,18 +327,20 @@ def save_telegram_settings(
 
 @router.post("/telegram/test")
 def test_telegram_connection(
-    req: dict,
+    req: TelegramTestRequest,
     request: Request,
     user: str = Depends(security.get_current_user),
 ):
     security.check_rate(request, security.API_RATE_LIMIT)
     from .. import db, notifier
-    bot_token = (req.get("bot_token") or "").strip()
-    chat_id = (req.get("chat_id") or "").strip()
+    from ..crypto import decrypt_token
+    bot_token = req.bot_token.strip()
+    chat_id = req.chat_id.strip()
 
-    # 如果传进来的是脱敏后的 token，从库里读真实 token
+    # 如果传进来的是脱敏后的 token，从库里读真实 token（并解密）
     if not bot_token or "*" in bot_token:
-        bot_token = db.get_setting("tg_bot_token", "")
+        token_encrypted = db.get_setting("tg_bot_token", "")
+        bot_token = decrypt_token(token_encrypted) if token_encrypted else ""
     if not chat_id:
         chat_id = db.get_setting("tg_chat_id", "")
 

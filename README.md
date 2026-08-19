@@ -619,13 +619,12 @@ OCI 可能会为此重启实例。
 | GET | `/api/health` | 探活（无需鉴权，只回 ok） |
 | GET | `/api/diagnostics` | 环境自检：版本 / SDK / 配置状态（需登录） |
 | GET | `/api/profiles/{name}/tier` | 账户等级；`?limits=false` 可省掉配额查询 |
-| GET · PUT | `/api/auth/password-policy` | **面板**登录密码有效期（0 = 永不过期） |
 | GET · PUT | `/api/profiles/{name}/console-password-policy` | **Oracle 账号**控制台密码有效期 |
 | POST | `/api/system/update` | 请求更新（由宿主机代理执行） |
 | GET | `/api/system/update/status` | 更新进度与日志 |
 | POST | `/api/auth/login` | 登录获取 JWT |
 | GET | `/api/profiles` · POST `/api/profiles/import` | 账户管理 |
-| GET | `/api/instances` · `/api/instances/all` | 实例列表 / 跨账户聚合 |
+| GET | `/api/instances` | 实例列表（可选 compartment / 子树 / 附带 IP） |
 | POST | `/api/instances/action` · `/batch-action` | 开关机 / 批量 |
 | POST | `/api/provision/preflight` | 额度预检（不创建资源） |
 | POST | `/api/provision/instances` | 创建实例（服务端强制预检） |

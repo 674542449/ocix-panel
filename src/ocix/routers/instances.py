@@ -4,6 +4,7 @@ from .. import notifier, security
 from ..cloudinit import ROOT_PW_TAG
 from ..common import OCIError, gather
 from ..db import audit
+from ..sanitize import sanitize_error_message
 from ..oci_helpers import (
     attach_ips,
     instance_action,
@@ -55,7 +56,7 @@ def get_compartments(
     try:
         items = list_compartments(profile, use_cache=not refresh)
     except OCIError as e:
-        raise HTTPException(status_code=400, detail=e.message)
+        raise HTTPException(status_code=400, detail=sanitize_error_message(e.message))
     return {"compartments": items}
 
 
@@ -76,7 +77,7 @@ def get_instances(
         if with_ip:
             items = attach_ips(profile, items)
     except OCIError as e:
-        raise HTTPException(status_code=400, detail=e.message)
+        raise HTTPException(status_code=400, detail=sanitize_error_message(e.message))
     return {"instances": _simplify_list(items)}
 
 
@@ -129,7 +130,7 @@ def do_batch_action(
     """对多台实例（可跨账户）执行同一操作。"""
     security.check_rate(request, security.API_RATE_LIMIT)
     ip = security.client_ip(request)
-    targets = [t for t in req.targets if t.get("profile") and t.get("instance_id")]
+    targets = [t.model_dump() for t in req.targets]
     if not targets:
         raise HTTPException(status_code=400, detail="targets 为空")
     if len(targets) > 50:
