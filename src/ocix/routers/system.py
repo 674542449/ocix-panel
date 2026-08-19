@@ -169,10 +169,40 @@ def update_status(user: str = Depends(security.get_current_user)):
     """更新进度。容器会在更新过程中被重启，前端断连后继续轮询即可。"""
     status = _read_json(_STATUS_FILE)
     pending = _control_path(_REQUEST_FILE).exists()
+    state = status.get("state") or ("pending" if pending else "idle")
+    started_at = status.get("started_at")
+
+    # 状态自愈：如果标记为 running/pending，但已超时（>180s）或当前版本已大于等于目标版本，自动归位为 done
+    if state in ("running", "pending"):
+        is_stale = False
+        target_ver = status.get("version")
+        if started_at and (time.time() - started_at > 180):
+            is_stale = True
+        elif not pending and target_ver and _version_tuple(__version__) >= _version_tuple(target_ver):
+            is_stale = True
+
+        if is_stale:
+            state = "done"
+            status["state"] = "done"
+            status["message"] = f"已是最新版本 (v{__version__})"
+            try:
+                with open(_control_path(_STATUS_FILE), "w", encoding="utf-8") as f:
+                    json.dump({
+                        "state": "done",
+                        "message": f"已是最新版本 (v{__version__})",
+                        "version": __version__,
+                        "finished_at": int(time.time()),
+                    }, f)
+                req = _control_path(_REQUEST_FILE)
+                if req.exists():
+                    req.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     return {
-        "state": status.get("state") or ("pending" if pending else "idle"),
+        "state": state,
         "message": status.get("message"),
-        "version": status.get("version"),
+        "version": status.get("version") or __version__,
         "started_at": status.get("started_at"),
         "finished_at": status.get("finished_at"),
         "log": _read_log(),

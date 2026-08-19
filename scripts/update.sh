@@ -64,6 +64,11 @@ if [[ "$BEHIND" == "0" && $FORCE -eq 0 ]]; then
   else
     ok "已经是最新版了（v${CURRENT}）。如需强制重新构建容器，可加 --force 参数："
     echo "  bash ${REPO_ROOT}/scripts/update.sh --force"
+    if [[ -d "${REPO_ROOT}/var/control" ]]; then
+      rm -f "${REPO_ROOT}/var/control/update.request"
+      printf '{"state":"done","message":"当前已是最新版本","version":"%s","finished_at":%s}\n' \
+        "$CURRENT" "$(date +%s)" > "${REPO_ROOT}/var/control/update.status" 2>/dev/null || true
+    fi
     exit 0
   fi
 elif [[ "$BEHIND" == "0" && $FORCE -eq 1 ]]; then
@@ -157,6 +162,11 @@ printf '等待后端就绪'
 for _ in $(seq 1 60); do
   if bash "$REPO_ROOT/scripts/ocix.sh" exec -T backend \
        curl -fsS http://localhost:8000/api/health >/dev/null 2>&1; then
+    if [[ -d "${REPO_ROOT}/var/control" ]]; then
+      rm -f "${REPO_ROOT}/var/control/update.request"
+      printf '{"state":"done","message":"更新完成","version":"%s","finished_at":%s}\n' \
+        "$NEW" "$(date +%s)" > "${REPO_ROOT}/var/control/update.status" 2>/dev/null || true
+    fi
     printf '\n'; ok "OCIX 已更新到 v${NEW} 并重新启动"
     exit 0
   fi

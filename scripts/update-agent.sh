@@ -29,6 +29,15 @@ mkdir -p "$CONTROL_DIR"
 # 启动时立即写下第一次心跳
 touch "$ALIVE" 2>/dev/null || true
 
+# 启动自愈：若历史遗留了 running 状态且当前无请求，重置为 done
+if [ ! -f "$REQUEST" ] && [ -f "$STATUS" ]; then
+  if grep -q '"state":"running"' "$STATUS" 2>/dev/null; then
+    ver="$(cat "${REPO_ROOT}/VERSION" 2>/dev/null || echo unknown)"
+    printf '{"state":"done","message":"当前已是最新版本","version":"%s","finished_at":%s}\n' \
+      "$ver" "$(date +%s)" > "$STATUS" 2>/dev/null || true
+  fi
+fi
+
 write_status() {
   local state="$1" message="$2"
   local version; version="$(cat "${REPO_ROOT}/VERSION" 2>/dev/null || echo unknown)"
