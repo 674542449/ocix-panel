@@ -78,6 +78,7 @@ class CreateInstanceRequest(BaseModel):
     compartment_id: str
     display_name: str = Field(min_length=1, max_length=255)
     availability_domain: str
+    fault_domain: str = ""
     image_id: str
     # 不传就由后端挑一个共用子网，没有则自动建——前端不再让用户选子网
     subnet_id: str | None = None

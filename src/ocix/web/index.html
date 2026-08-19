@@ -978,10 +978,28 @@
                                @change="runPreflight" style="width:100%;" />
                   </el-form-item>
 
-                  <el-form-item label="可用域">
-                    <el-select v-model="createForm.availability_domain" style="width:100%;"
-                               placeholder="选择可用域">
-                      <el-option v-for="ad in opts.availability_domains" :key="ad" :value="ad" :label="ad" />
+                  <el-form-item label="可用域 (AD 域)">
+                    <div style="width:100%;">
+                      <el-select v-model="createForm.availability_domain" style="width:100%;"
+                                 filterable allow-create default-first-option
+                                 placeholder="选择或直接输入可用域 (如 ...-AD-1)">
+                        <el-option v-for="ad in opts.availability_domains" :key="ad" :value="ad" :label="ad" />
+                      </el-select>
+                      <div style="margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <span style="font-size:11.5px; color:var(--text-3);">快速切换 AD：</span>
+                        <el-button size="small" text bg @click="switchAdNumber('1')">AD-1</el-button>
+                        <el-button size="small" text bg @click="switchAdNumber('2')">AD-2</el-button>
+                        <el-button size="small" text bg @click="switchAdNumber('3')">AD-3</el-button>
+                      </div>
+                    </div>
+                  </el-form-item>
+
+                  <el-form-item label="故障域 (Fault Domain)">
+                    <el-select v-model="createForm.fault_domain" style="width:100%;" placeholder="自动选择 (智能推荐)">
+                      <el-option value="" label="自动选择 (智能推荐有库存的故障域)" />
+                      <el-option value="FAULT-DOMAIN-1" label="FAULT-DOMAIN-1 (故障域 1)" />
+                      <el-option value="FAULT-DOMAIN-2" label="FAULT-DOMAIN-2 (故障域 2)" />
+                      <el-option value="FAULT-DOMAIN-3" label="FAULT-DOMAIN-3 (故障域 3)" />
                     </el-select>
                   </el-form-item>
 
@@ -2850,7 +2868,7 @@ createApp({
     const createForm = reactive({
       display_name: randomName(), shape: 'VM.Standard.E2.1.Micro',
       ocpus: 1, memory_gb: 1, boot_gb: 50,
-      availability_domain: '', image_id: '', ssh_public_key: '',
+      availability_domain: '', fault_domain: '', image_id: '', ssh_public_key: '',
       use_password: false, root_password: '',
       assign_ipv6: false, open_all_ports: true,
       capacity_probe: true, auto_retry_until_available: false, max_retry_minutes: 60,
@@ -2904,6 +2922,19 @@ createApp({
       createForm.availability_domain = ad;
       go('create');
       ElMessage.info(`已切换至新建实例，并自动选中可用域 ${ad}`);
+    }
+
+    function switchAdNumber(num) {
+      const cur = createForm.availability_domain || (opts.value.availability_domains && opts.value.availability_domains[0]) || '';
+      if (!cur) {
+        createForm.availability_domain = `AD-${num}`;
+        return;
+      }
+      if (/AD-\d+/i.test(cur)) {
+        createForm.availability_domain = cur.replace(/AD-\d+/i, `AD-${num}`);
+      } else {
+        createForm.availability_domain = `${cur}-AD-${num}`;
+      }
     }
 
     function rollName() { createForm.display_name = randomName(); }
@@ -3338,6 +3369,7 @@ createApp({
           compartment_id: compartmentId.value || (compartments.value[0] || {}).id,
           display_name: createForm.display_name,
           availability_domain: createForm.availability_domain,
+          fault_domain: createForm.fault_domain || '',
           image_id: createForm.image_id,
           shape: createForm.shape,
           ocpus: createForm.ocpus,
@@ -4751,7 +4783,7 @@ createApp({
       auditLogs, auditTotal, auditActions, auditPage, auditSize, auditLoading, auditFilter,
       opts, optsLoading, createForm, isArm, canCreate, creating,
       preflight, preflightLoading, storage, storageLoading,
-      radarForm, radarLoading, radarData, setRadarSpec, scanRadar, jumpToCreateWithAd,
+      radarForm, radarLoading, radarData, setRadarSpec, scanRadar, jumpToCreateWithAd, switchAdNumber,
       doLogin, logout, refreshActive, loadMetrics, loadAudit,
       onProfileChange, onTabChange, act, batchAct, clearInstSelection,
       canStart, canStop, canReset, stateTone, stateText, specText,

@@ -211,6 +211,9 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         tags[ROOT_PW_TAG] = req.root_password
         params["freeform_tags"] = tags
 
+    if req.fault_domain:
+        params["fault_domain"] = req.fault_domain
+
     # ── 智能容量探测前置 (先探测 OCI 放货状态，避免频繁 429 报错与封号) ──
     if req.capacity_probe:
         job.step("探测 OCI 实时容量状态（智能节流防封号）")
@@ -218,7 +221,8 @@ def _run_create(job, req: CreateInstanceRequest, params: dict, user: str, ip: st
         mem_val = float(check["plan"].get("memory_gb", 6))
         avail, best_fd = is_capacity_available(
             req.profile, req.compartment_id, req.availability_domain,
-            shape=req.shape, ocpus=ocpus_val, memory_in_gbs=mem_val
+            shape=req.shape, ocpus=ocpus_val, memory_in_gbs=mem_val,
+            fault_domain=req.fault_domain or None,
         )
         if avail and best_fd and not params.get("fault_domain"):
             params["fault_domain"] = best_fd
