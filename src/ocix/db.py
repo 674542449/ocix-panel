@@ -68,7 +68,6 @@ def init_db():
                 name        TEXT UNIQUE NOT NULL,
                 public_key  TEXT NOT NULL,
                 fingerprint TEXT,
-                tier_data   TEXT,
                 created_at  TEXT DEFAULT (datetime('now'))
             )
             """
@@ -83,8 +82,9 @@ def set_account_tier(profile: str, tier_info: dict):
     import json
     with get_conn() as conn:
         conn.execute(
-            "UPDATE profiles SET tier_data=? WHERE name=?",
-            (json.dumps(tier_info, ensure_ascii=False), profile),
+            "INSERT INTO profiles (name, tier_data) VALUES (?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET tier_data=excluded.tier_data",
+            (profile, json.dumps(tier_info, ensure_ascii=False)),
         )
 
 
